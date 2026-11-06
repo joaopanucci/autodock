@@ -37,6 +37,23 @@
     "shortDescription": "Configure projetos locais com Docker de forma guiada",
     "longDescription": "AutoDock analisa projetos locais e gera Dockerfile e docker-compose.yml com um assistente guiado, sem instalar nada além do Docker.",
     "copyright": "Copyright 2026 AutoDock contributors. Apache-2.0",
-    "publisher": "AutoDock"
+    "publisher": "AutoDock",
+    "macOS": {
+      "dmg": {
+        "background": "dmg/background.png",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 210
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 210
+        }
+      }
+    }
   }
 }
