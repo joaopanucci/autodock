@@ -16,6 +16,18 @@ pub(crate) struct Directory {
     _parents: Vec<File>,
 }
 
+/// True when any component navigates relatively. `Path::components` only emits
+/// `ParentDir` for non-verbatim paths: after a `\\?\` prefix (which
+/// `canonicalize` produces on Windows) `..` and `.` surface as `Normal`
+/// components, so inspecting `Component::ParentDir` alone lets them through.
+pub(crate) fn has_relative_navigation(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::ParentDir | Component::CurDir => true,
+        Component::Normal(part) => part == ".." || part == ".",
+        _ => false,
+    })
+}
+
 fn name(name: &std::ffi::OsStr) -> io::Result<()> {
     let mut parts = Path::new(name).components();
     if !matches!(parts.next(), Some(Component::Normal(_))) || parts.next().is_some() {
@@ -114,11 +126,7 @@ impl Directory {
         } else {
             std::env::current_dir()?.join(path)
         };
-        if path.as_os_str().is_empty()
-            || absolute
-                .components()
-                .any(|c| matches!(c, Component::ParentDir))
-        {
+        if path.as_os_str().is_empty() || has_relative_navigation(&absolute) {
             return Err(io::Error::other("Caminho de diretorio inseguro"));
         }
         #[cfg(unix)]
@@ -492,6 +500,22 @@ mod tests {
             .publish("source".as_ref(), "target".as_ref())
             .is_err());
         assert_eq!(std::fs::read(dir.path().join("target")).unwrap(), b"old");
+    }
+    #[test]
+    fn detects_relative_navigation_in_every_component_form() {
+        assert!(has_relative_navigation(Path::new("a/../b")));
+        assert!(has_relative_navigation(Path::new("../b")));
+        assert!(!has_relative_navigation(Path::new("a/b/c")));
+        assert!(!has_relative_navigation(Path::new("a/..b/c.")));
+        // Verbatim paths do not normalize `..`; it must still be rejected.
+        #[cfg(windows)]
+        {
+            assert!(has_relative_navigation(Path::new(r"\\?\C:\a\..\b")));
+            assert!(has_relative_navigation(Path::new(r"\\?\C:\a\.\b")));
+            assert!(!has_relative_navigation(Path::new(r"\\?\C:\a\..b\c")));
+            let dir = tempdir();
+            assert!(Directory::open(&dir.path().join("sub").join("..").join("p")).is_err());
+        }
     }
     #[test]
     fn repeated_enumeration_has_independent_offsets() {
