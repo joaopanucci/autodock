@@ -4,7 +4,12 @@
 //! validated request (the UI never supplies file contents), creates files with
 //! exclusive creation and never overwrites or follows symlinks. `.env` files are
 //! never read. Every interpolated value is validated against an allowlist.
+use crate::{
+    ports::{self, PortAssignment, Wanted},
+    secrets::{self, Seed},
+};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::{
     fs,
     io::{Read, Write},
@@ -22,6 +27,7 @@ pub const DOCKERFILE: &str = "Dockerfile";
 pub const COMPOSE_FILE: &str = "docker-compose.yml";
 pub const DOCKERIGNORE: &str = ".dockerignore";
 pub const ENV_EXAMPLE: &str = ".env.docker.example";
+pub const ENV_FILE: &str = ".env.docker";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -84,6 +90,13 @@ pub struct GenerateRequest {
     /// Name used in the starter manifests; defaults to the folder name.
     #[serde(default)]
     pub project_name: Option<String>,
+    /// Seed returned by a previous preview. Sending it back makes the written
+    /// passwords identical to the previewed ones; without it a new one is created.
+    #[serde(default)]
+    pub seed: Option<String>,
+    /// Port assignments returned by a previous preview (validated again).
+    #[serde(default)]
+    pub ports: Option<Vec<PortAssignment>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,6 +105,8 @@ pub struct GeneratedFile {
     pub name: String,
     pub description: String,
     pub content: String,
+    /// The file holds secrets: it must not be versioned and is created private.
+    pub sensitive: bool,
     /// True when writing would collide with an existing file (never overwritten).
     pub exists: bool,
 }
@@ -103,6 +118,9 @@ pub struct GeneratePlan {
     pub project: String,
     pub files: Vec<GeneratedFile>,
     pub notes: Vec<String>,
+    /// Pass back with the request when applying, so the content stays identical.
+    pub seed: String,
+    pub ports: Vec<PortAssignment>,
 }
 
 #[derive(Debug, Serialize)]
@@ -314,15 +332,31 @@ const SERVICE_ORDER: [Service; 7] = [
     Service::Mailhog,
 ];
 
-fn host_ports(service: Service) -> &'static [u16] {
+/// `(name, container port, preferred host port)` for every port a service publishes.
+fn service_ports(service: Service) -> &'static [(&'static str, u16, u16)] {
     match service {
-        Service::Postgres => &[5432],
-        Service::Mysql => &[3306],
-        Service::Mongodb => &[27017],
-        Service::Redis => &[6379],
-        Service::Rabbitmq => &[5672, 15672],
-        Service::Adminer => &[8088],
-        Service::Mailhog => &[8025],
+        Service::Postgres => &[("postgres", 5432, 5432)],
+        Service::Mysql => &[("mysql", 3306, 3306)],
+        Service::Mongodb => &[("mongodb", 27017, 27017)],
+        Service::Redis => &[("redis", 6379, 6379)],
+        Service::Rabbitmq => &[
+            ("rabbitmq", 5672, 5672),
+            ("rabbitmq-management", 15672, 15672),
+        ],
+        Service::Adminer => &[("adminer", 8080, 8088)],
+        Service::Mailhog => &[("mailhog", 8025, 8025)],
+    }
+}
+
+fn display_name(service: Service) -> &'static str {
+    match service {
+        Service::Postgres => "o PostgreSQL",
+        Service::Mysql => "o MySQL",
+        Service::Mongodb => "o MongoDB",
+        Service::Redis => "o Redis",
+        Service::Rabbitmq => "o RabbitMQ",
+        Service::Adminer => "o Adminer",
+        Service::Mailhog => "o MailHog",
     }
 }
 
@@ -354,6 +388,10 @@ struct Resolved {
     project_name: String,
     /// The chosen npm script runs the Vite dev server, which must bind 0.0.0.0.
     vite: bool,
+    seed: Seed,
+    ports: Vec<PortAssignment>,
+    /// `.gitignore` already keeps `.env.docker` out of version control.
+    gitignore_covers_env: bool,
 }
 
 fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
@@ -385,17 +423,20 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         .copied()
         .filter(|s| request.services.contains(s))
         .collect();
-    let mut used = vec![request.port];
+    let mut wanted: Vec<Wanted> = vec![("app".to_string(), request.port, request.port)];
     for service in &services {
-        for port in host_ports(*service) {
-            if used.contains(port) {
-                return Err(format!(
-                    "A porta {port} já está em uso por outro item do plano. Escolha outra porta para a aplicação."
-                ));
-            }
-            used.push(*port);
+        for (name, container, preferred) in service_ports(*service) {
+            wanted.push((name.to_string(), *container, *preferred));
         }
     }
+    let assigned_ports = match &request.ports {
+        Some(given) => ports::validate_given(root, &wanted, given)?,
+        None => ports::allocate(root, &wanted)?,
+    };
+    let seed = match &request.seed {
+        Some(hex) => secrets::seed_from_hex(hex)?,
+        None => secrets::new_seed()?,
+    };
     let start_script = match &request.start_script {
         Some(script) if !valid_script(script) => {
             return Err("Nome de script inválido.".into());
@@ -468,6 +509,9 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         services,
         python_uses_pyproject,
         new_project: request.new_project,
+        seed,
+        ports: assigned_ports,
+        gitignore_covers_env: gitignore_covers_env(root),
         vite: request.stack == Stack::Nodejs
             && !request.new_project
             && script_runs_vite(root, &start_script_value),
@@ -527,6 +571,20 @@ fn laravel_min_php_minor(root: &Path) -> Option<u32> {
     (min > 0).then_some(min)
 }
 
+/// Whether `.gitignore` already ignores `.env.docker` (reads that file only).
+fn gitignore_covers_env(root: &Path) -> bool {
+    read_manifest(root, ".gitignore")
+        .map(|text| {
+            text.lines().map(str::trim).any(|line| {
+                matches!(
+                    line,
+                    ".env.docker" | "/.env.docker" | ".env.*" | ".env*" | "*.env.docker"
+                )
+            })
+        })
+        .unwrap_or(false)
+}
+
 fn script_runs_vite(root: &Path, script: &str) -> bool {
     read_manifest(root, "package.json")
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
@@ -562,6 +620,7 @@ fn project_name(root: &Path) -> String {
 fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
     let name = &r.project_name;
     let port = r.port;
+    let host = host_port(r, "app");
     let mut files: Vec<(&'static str, String, &'static str)> = vec![];
     match r.stack {
         Stack::Nodejs => {
@@ -634,10 +693,10 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
         Stack::Laravel => {}
     }
     let ignore = match r.stack {
-        Stack::Nodejs => "node_modules/\n.env\n",
-        Stack::SpringBoot => "target/\n.idea/\n*.iml\n.env\n",
-        Stack::Python => "__pycache__/\n*.pyc\n.venv/\n.env\n",
-        Stack::Laravel => ".env\n",
+        Stack::Nodejs => "node_modules/\n.env\n.env.docker\n",
+        Stack::SpringBoot => "target/\n.idea/\n*.iml\n.env\n.env.docker\n",
+        Stack::Python => "__pycache__/\n*.pyc\n.venv/\n.env\n.env.docker\n",
+        Stack::Laravel => ".env\n.env.docker\n",
     };
     files.push((
         ".gitignore",
@@ -647,7 +706,7 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
     files.push((
         "README.md",
         format!(
-            "# {name}\n\nProjeto criado com o AutoDock.\n\n## Rodar com Docker\n\n```bash\ndocker compose up --build\n```\n\nDepois acesse http://localhost:{port}.\n"
+            "# {name}\n\nProjeto criado com o AutoDock.\n\n## Rodar com Docker\n\n```bash\ndocker compose up --build\n```\n\nDepois acesse http://localhost:{host}.\n"
         ),
         "Instruções para rodar o projeto.",
     ));
@@ -835,27 +894,91 @@ fn dockerignore(stack: Stack) -> String {
     format!("# Gerado pelo AutoDock.\n{}\n", lines.join("\n"))
 }
 
-/// (key, default) pairs used as `${KEY:-default}` in compose and listed in the example file.
-fn secrets(services: &[Service]) -> Vec<(&'static str, &'static str)> {
-    let mut vars = vec![];
-    for service in services {
+fn host_port(r: &Resolved, name: &str) -> u16 {
+    r.ports
+        .iter()
+        .find(|p| p.name == name)
+        .map(|p| p.host_port)
+        .unwrap_or(0)
+}
+
+/// Services whose containers need a password.
+fn has_secrets(services: &[Service]) -> bool {
+    services.iter().any(|s| {
+        matches!(
+            s,
+            Service::Postgres | Service::Mysql | Service::Mongodb | Service::Rabbitmq
+        )
+    })
+}
+
+type Passwords = BTreeMap<&'static str, String>;
+
+/// Strong generated passwords, one per credential, derived from the seed.
+fn passwords(r: &Resolved) -> Passwords {
+    let mut map = BTreeMap::new();
+    for service in &r.services {
         match service {
-            Service::Postgres => vars.push(("POSTGRES_PASSWORD", "autodock")),
-            Service::Mysql => vars.push(("MYSQL_PASSWORD", "autodock")),
-            Service::Mongodb => vars.push(("MONGODB_PASSWORD", "autodock")),
-            Service::Rabbitmq => vars.push(("RABBITMQ_PASSWORD", "autodock")),
+            Service::Postgres => {
+                map.insert("postgres", secrets::password(&r.seed, "postgres"));
+            }
+            Service::Mysql => {
+                map.insert("mysql", secrets::password(&r.seed, "mysql"));
+                map.insert("mysql-root", secrets::password(&r.seed, "mysql-root"));
+            }
+            Service::Mongodb => {
+                map.insert("mongodb", secrets::password(&r.seed, "mongodb"));
+            }
+            Service::Rabbitmq => {
+                map.insert("rabbitmq", secrets::password(&r.seed, "rabbitmq"));
+            }
+            _ => {}
+        }
+    }
+    map
+}
+
+fn placeholder_passwords(passwords: &Passwords) -> Passwords {
+    passwords
+        .keys()
+        .map(|key| (*key, "change-me".to_string()))
+        .collect()
+}
+
+/// Variables the service containers read (names fixed by the official images).
+fn service_env_vars(r: &Resolved, pw: &Passwords) -> Vec<(String, String)> {
+    let mut vars = vec![];
+    for service in &r.services {
+        match service {
+            Service::Postgres => vars.push(("POSTGRES_PASSWORD".into(), pw["postgres"].clone())),
+            Service::Mysql => {
+                vars.push(("MYSQL_PASSWORD".into(), pw["mysql"].clone()));
+                vars.push(("MYSQL_ROOT_PASSWORD".into(), pw["mysql-root"].clone()));
+            }
+            Service::Mongodb => {
+                vars.push(("MONGO_INITDB_ROOT_PASSWORD".into(), pw["mongodb"].clone()))
+            }
+            Service::Rabbitmq => {
+                vars.push(("RABBITMQ_DEFAULT_PASS".into(), pw["rabbitmq"].clone()))
+            }
             _ => {}
         }
     }
     vars
 }
 
-fn app_environment(r: &Resolved) -> Vec<(String, String)> {
-    let mut env: Vec<(String, String)> = vec![("PORT".into(), r.port.to_string())];
-    let mut add = |k: &str, v: &str| env.push((k.into(), v.into()));
+/// Returns `(plain, secret)` variables for the application container. Secret ones
+/// embed a password, so they go to `.env.docker` and never into the compose file.
+#[allow(clippy::type_complexity)]
+fn app_environment(r: &Resolved, pw: &Passwords) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    fn push(list: &mut Vec<(String, String)>, key: &str, value: &str) {
+        list.push((key.into(), value.into()));
+    }
+    let mut plain: Vec<(String, String)> = vec![("PORT".into(), r.port.to_string())];
+    let mut secret: Vec<(String, String)> = vec![];
     match r.stack {
-        Stack::Nodejs => add("HOST", "0.0.0.0"),
-        Stack::SpringBoot => add("SERVER_PORT", &r.port.to_string()),
+        Stack::Nodejs => push(&mut plain, "HOST", "0.0.0.0"),
+        Stack::SpringBoot => push(&mut plain, "SERVER_PORT", &r.port.to_string()),
         _ => {}
     }
     let has = |s: Service| r.services.contains(&s);
@@ -867,108 +990,163 @@ fn app_environment(r: &Resolved) -> Vec<(String, String)> {
         if !has(sql) {
             continue;
         }
-        let (scheme, jdbc, host, db_port, pass) = match sql {
-            Service::Postgres => (
-                "postgresql",
-                "postgresql",
-                "postgres",
-                5432,
-                "${POSTGRES_PASSWORD:-autodock}",
-            ),
-            _ => (
-                "mysql",
-                "mysql",
-                "mysql",
-                3306,
-                "${MYSQL_PASSWORD:-autodock}",
-            ),
+        let (scheme, host, db_port, password) = match sql {
+            Service::Postgres => ("postgresql", "postgres", 5432, pw["postgres"].as_str()),
+            _ => ("mysql", "mysql", 3306, pw["mysql"].as_str()),
         };
+        let url = format!("{scheme}://app:{password}@{host}:{db_port}/app");
         if Some(sql) != primary {
-            let key = format!("{}_URL", host.to_ascii_uppercase());
-            add(&key, &format!("{scheme}://app:{pass}@{host}:{db_port}/app"));
+            push(
+                &mut secret,
+                &format!("{}_URL", host.to_ascii_uppercase()),
+                &url,
+            );
             continue;
         }
-        add(
-            "DATABASE_URL",
-            &format!("{scheme}://app:{pass}@{host}:{db_port}/app"),
-        );
+        push(&mut secret, "DATABASE_URL", &url);
         match r.stack {
             Stack::SpringBoot => {
-                add(
+                push(
+                    &mut plain,
                     "SPRING_DATASOURCE_URL",
-                    &format!("jdbc:{jdbc}://{host}:{db_port}/app"),
+                    &format!("jdbc:{scheme}://{host}:{db_port}/app"),
                 );
-                add("SPRING_DATASOURCE_USERNAME", "app");
-                add("SPRING_DATASOURCE_PASSWORD", pass);
+                push(&mut plain, "SPRING_DATASOURCE_USERNAME", "app");
+                push(&mut secret, "SPRING_DATASOURCE_PASSWORD", password);
             }
             Stack::Laravel => {
-                add(
-                    "DB_CONNECTION",
-                    if sql == Service::Postgres {
-                        "pgsql"
-                    } else {
-                        "mysql"
-                    },
-                );
-                add("DB_HOST", host);
-                add("DB_PORT", &db_port.to_string());
-                add("DB_DATABASE", "app");
-                add("DB_USERNAME", "app");
-                add("DB_PASSWORD", pass);
+                let connection = if sql == Service::Postgres {
+                    "pgsql"
+                } else {
+                    "mysql"
+                };
+                push(&mut plain, "DB_CONNECTION", connection);
+                push(&mut plain, "DB_HOST", host);
+                push(&mut plain, "DB_PORT", &db_port.to_string());
+                push(&mut plain, "DB_DATABASE", "app");
+                push(&mut plain, "DB_USERNAME", "app");
+                push(&mut secret, "DB_PASSWORD", password);
             }
             _ => {}
         }
     }
     if has(Service::Mongodb) {
-        add(
+        push(
+            &mut secret,
             "MONGODB_URI",
-            "mongodb://app:${MONGODB_PASSWORD:-autodock}@mongodb:27017/app?authSource=admin",
+            &format!(
+                "mongodb://app:{}@mongodb:27017/app?authSource=admin",
+                pw["mongodb"]
+            ),
         );
     }
     if has(Service::Redis) {
-        add("REDIS_URL", "redis://redis:6379");
+        push(&mut plain, "REDIS_URL", "redis://redis:6379");
         match r.stack {
-            Stack::SpringBoot => add("SPRING_DATA_REDIS_HOST", "redis"),
-            Stack::Laravel => add("REDIS_HOST", "redis"),
+            Stack::SpringBoot => push(&mut plain, "SPRING_DATA_REDIS_HOST", "redis"),
+            Stack::Laravel => push(&mut plain, "REDIS_HOST", "redis"),
             _ => {}
         }
     }
     if has(Service::Rabbitmq) {
-        add(
+        push(
+            &mut secret,
             "AMQP_URL",
-            "amqp://app:${RABBITMQ_PASSWORD:-autodock}@rabbitmq:5672",
+            &format!("amqp://app:{}@rabbitmq:5672", pw["rabbitmq"]),
         );
         if r.stack == Stack::SpringBoot {
-            add("SPRING_RABBITMQ_HOST", "rabbitmq");
-            add("SPRING_RABBITMQ_USERNAME", "app");
-            add("SPRING_RABBITMQ_PASSWORD", "${RABBITMQ_PASSWORD:-autodock}");
+            push(&mut plain, "SPRING_RABBITMQ_HOST", "rabbitmq");
+            push(&mut plain, "SPRING_RABBITMQ_USERNAME", "app");
+            push(&mut secret, "SPRING_RABBITMQ_PASSWORD", &pw["rabbitmq"]);
         }
     }
     if has(Service::Mailhog) {
-        add("SMTP_HOST", "mailhog");
-        add("SMTP_PORT", "1025");
+        push(&mut plain, "SMTP_HOST", "mailhog");
+        push(&mut plain, "SMTP_PORT", "1025");
         match r.stack {
             Stack::Laravel => {
-                add("MAIL_HOST", "mailhog");
-                add("MAIL_PORT", "1025");
+                push(&mut plain, "MAIL_HOST", "mailhog");
+                push(&mut plain, "MAIL_PORT", "1025");
             }
             Stack::SpringBoot => {
-                add("SPRING_MAIL_HOST", "mailhog");
-                add("SPRING_MAIL_PORT", "1025");
+                push(&mut plain, "SPRING_MAIL_HOST", "mailhog");
+                push(&mut plain, "SPRING_MAIL_PORT", "1025");
             }
             _ => {}
         }
     }
-    env
+    (plain, secret)
+}
+
+/// Content of `.env.docker` (real passwords) or of the example file (placeholders).
+fn env_content(r: &Resolved, pw: &Passwords, example: bool) -> String {
+    let mut out = if example {
+        String::from(
+            "# Gerado pelo AutoDock. Copie para .env.docker e troque cada \"change-me\" por uma senha forte.\n# Este arquivo é só um modelo, sem segredos, e pode ser versionado.\n",
+        )
+    } else {
+        String::from(
+            "# Gerado pelo AutoDock. Contém senhas fortes: NÃO versione este arquivo.\n# Lido pelo docker-compose.yml (env_file).\n",
+        )
+    };
+    let (_, secret) = app_environment(r, pw);
+    for (key, value) in service_env_vars(r, pw).into_iter().chain(secret) {
+        out.push_str(&format!("{key}={value}\n"));
+    }
+    out
+}
+
+fn service_block(r: &Resolved, service: Service) -> String {
+    let hp = |name: &str| host_port(r, name);
+    match service {
+        Service::Postgres => format!(
+            "  postgres:\n    image: postgres:16-alpine\n    env_file:\n      - {ENV_FILE}\n    environment:\n      POSTGRES_USER: app\n      POSTGRES_DB: app\n    ports:\n      - \"127.0.0.1:{}:5432\"\n    volumes:\n      - postgres_data:/var/lib/postgresql/data\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U app -d app\"]\n      interval: 5s\n      timeout: 5s\n      retries: 10\n",
+            hp("postgres")
+        ),
+        Service::Mysql => format!(
+            "  mysql:\n    image: mysql:8.4\n    env_file:\n      - {ENV_FILE}\n    environment:\n      MYSQL_DATABASE: app\n      MYSQL_USER: app\n    ports:\n      - \"127.0.0.1:{}:3306\"\n    volumes:\n      - mysql_data:/var/lib/mysql\n    healthcheck:\n      test: [\"CMD-SHELL\", \"mysqladmin ping -h 127.0.0.1 -uroot -p\\\"$$MYSQL_ROOT_PASSWORD\\\"\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\n",
+            hp("mysql")
+        ),
+        Service::Mongodb => format!(
+            "  mongodb:\n    image: mongo:7\n    env_file:\n      - {ENV_FILE}\n    environment:\n      MONGO_INITDB_ROOT_USERNAME: app\n    ports:\n      - \"127.0.0.1:{}:27017\"\n    volumes:\n      - mongodb_data:/data/db\n    healthcheck:\n      test: [\"CMD\", \"mongosh\", \"--quiet\", \"--eval\", \"db.adminCommand('ping')\"]\n      interval: 5s\n      timeout: 5s\n      retries: 10\n",
+            hp("mongodb")
+        ),
+        Service::Redis => format!(
+            "  redis:\n    image: redis:7-alpine\n    ports:\n      - \"127.0.0.1:{}:6379\"\n    volumes:\n      - redis_data:/data\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"ping\"]\n      interval: 5s\n      timeout: 3s\n      retries: 10\n",
+            hp("redis")
+        ),
+        Service::Rabbitmq => format!(
+            "  rabbitmq:\n    image: rabbitmq:3-management-alpine\n    env_file:\n      - {ENV_FILE}\n    environment:\n      RABBITMQ_DEFAULT_USER: app\n    ports:\n      - \"127.0.0.1:{}:5672\"\n      - \"127.0.0.1:{}:15672\"\n    volumes:\n      - rabbitmq_data:/var/lib/rabbitmq\n    healthcheck:\n      test: [\"CMD\", \"rabbitmq-diagnostics\", \"-q\", \"ping\"]\n      interval: 10s\n      timeout: 10s\n      retries: 10\n",
+            hp("rabbitmq"),
+            hp("rabbitmq-management")
+        ),
+        Service::Adminer => format!(
+            "  adminer:\n    image: adminer:4\n    ports:\n      - \"127.0.0.1:{}:8080\"\n",
+            hp("adminer")
+        ),
+        Service::Mailhog => format!(
+            "  mailhog:\n    image: mailhog/mailhog:v1.0.1\n    ports:\n      - \"127.0.0.1:{}:8025\"\n",
+            hp("mailhog")
+        ),
+    }
 }
 
 fn compose(r: &Resolved) -> String {
-    let mut out = String::from(
-        "# Gerado pelo AutoDock. Revise antes de usar.\nservices:\n  app:\n    build: .\n",
+    let pw = passwords(r);
+    let (plain, _) = app_environment(r, &pw);
+    let mut out = format!(
+        "# Gerado pelo AutoDock. Revise antes de usar.\n# Nenhuma senha fica neste arquivo: elas estão em {ENV_FILE} (não versione).\nservices:\n  app:\n    build: .\n"
     );
-    out.push_str(&format!("    ports:\n      - \"{0}:{0}\"\n", r.port));
+    out.push_str(&format!(
+        "    ports:\n      - \"{}:{}\"\n",
+        host_port(r, "app"),
+        r.port
+    ));
+    if has_secrets(&r.services) {
+        out.push_str(&format!("    env_file:\n      - {ENV_FILE}\n"));
+    }
     out.push_str("    environment:\n");
-    for (key, value) in app_environment(r) {
+    for (key, value) in plain {
         out.push_str(&format!("      {key}: \"{value}\"\n"));
     }
     match r.stack {
@@ -1003,15 +1181,7 @@ fn compose(r: &Resolved) -> String {
     let mut volumes: Vec<&str> = vec![];
     for service in &r.services {
         out.push('\n');
-        out.push_str(match service {
-            Service::Postgres => "  postgres:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_USER: app\n      POSTGRES_DB: app\n      POSTGRES_PASSWORD: \"${POSTGRES_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:5432:5432\"\n    volumes:\n      - postgres_data:/var/lib/postgresql/data\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U app -d app\"]\n      interval: 5s\n      timeout: 5s\n      retries: 10\n",
-            Service::Mysql => "  mysql:\n    image: mysql:8.4\n    environment:\n      MYSQL_DATABASE: app\n      MYSQL_USER: app\n      MYSQL_PASSWORD: \"${MYSQL_PASSWORD:-autodock}\"\n      MYSQL_ROOT_PASSWORD: \"${MYSQL_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:3306:3306\"\n    volumes:\n      - mysql_data:/var/lib/mysql\n    healthcheck:\n      test: [\"CMD-SHELL\", \"mysqladmin ping -h 127.0.0.1 -uroot -p\\\"$$MYSQL_ROOT_PASSWORD\\\"\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\n",
-            Service::Mongodb => "  mongodb:\n    image: mongo:7\n    environment:\n      MONGO_INITDB_ROOT_USERNAME: app\n      MONGO_INITDB_ROOT_PASSWORD: \"${MONGODB_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:27017:27017\"\n    volumes:\n      - mongodb_data:/data/db\n    healthcheck:\n      test: [\"CMD\", \"mongosh\", \"--quiet\", \"--eval\", \"db.adminCommand('ping')\"]\n      interval: 5s\n      timeout: 5s\n      retries: 10\n",
-            Service::Redis => "  redis:\n    image: redis:7-alpine\n    ports:\n      - \"127.0.0.1:6379:6379\"\n    volumes:\n      - redis_data:/data\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"ping\"]\n      interval: 5s\n      timeout: 3s\n      retries: 10\n",
-            Service::Rabbitmq => "  rabbitmq:\n    image: rabbitmq:3-management-alpine\n    environment:\n      RABBITMQ_DEFAULT_USER: app\n      RABBITMQ_DEFAULT_PASS: \"${RABBITMQ_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:5672:5672\"\n      - \"127.0.0.1:15672:15672\"\n    volumes:\n      - rabbitmq_data:/var/lib/rabbitmq\n    healthcheck:\n      test: [\"CMD\", \"rabbitmq-diagnostics\", \"-q\", \"ping\"]\n      interval: 10s\n      timeout: 10s\n      retries: 10\n",
-            Service::Adminer => "  adminer:\n    image: adminer:4\n    ports:\n      - \"127.0.0.1:8088:8080\"\n",
-            Service::Mailhog => "  mailhog:\n    image: mailhog/mailhog:v1.0.1\n    ports:\n      - \"127.0.0.1:8025:8025\"\n",
-        });
+        out.push_str(&service_block(r, *service));
         match service {
             Service::Postgres => volumes.push("postgres_data"),
             Service::Mysql => volumes.push("mysql_data"),
@@ -1030,23 +1200,34 @@ fn compose(r: &Resolved) -> String {
     out
 }
 
-fn env_example(r: &Resolved) -> String {
-    let mut out = String::from(
-        "# Gerado pelo AutoDock. Copie para .env e troque os valores.\n# Os padrões do compose servem apenas para desenvolvimento local.\n",
-    );
-    for (key, default) in secrets(&r.services) {
-        out.push_str(&format!("{key}={default}\n"));
-    }
-    out
-}
-
 fn notes(r: &Resolved) -> Vec<String> {
     let mut notes =
         vec!["Nada foi gravado ainda. Revise os arquivos antes de confirmar.".to_string()];
     if r.new_project {
         notes.push("Um projeto inicial mínimo será criado nesta pasta vazia, já pronto para rodar no Docker.".to_string());
     }
-    notes.extend(["Os serviços auxiliares publicam portas apenas em 127.0.0.1.".to_string()]);
+    for assigned in &r.ports {
+        if assigned.host_port != assigned.preferred_port {
+            let who = if assigned.name == "app" {
+                "a aplicação".to_string()
+            } else {
+                SERVICE_ORDER
+                    .iter()
+                    .find(|s| assigned.name.starts_with(name_of(**s)))
+                    .map(|s| display_name(*s).to_string())
+                    .unwrap_or_else(|| assigned.name.clone())
+            };
+            notes.push(format!(
+                "A porta {} está em uso ou reservada por outro projeto: {who} usará a {} no seu computador (dentro do Docker continua {}).",
+                assigned.preferred_port, assigned.host_port, assigned.container_port
+            ));
+        }
+    }
+    notes.push(format!(
+        "Depois de subir, acesse a aplicação em http://localhost:{}.",
+        host_port(r, "app")
+    ));
+    notes.push("Os serviços auxiliares publicam portas apenas em 127.0.0.1.".to_string());
     match r.stack {
         Stack::Nodejs => notes.push(format!(
             "A aplicação precisa escutar em 0.0.0.0 e na porta da variável PORT ({}), senão não ficará acessível fora do container.",
@@ -1076,10 +1257,15 @@ fn notes(r: &Resolved) -> Vec<String> {
                 .into(),
         );
     }
-    if !secrets(&r.services).is_empty() {
+    if has_secrets(&r.services) {
         notes.push(format!(
-            "Senhas padrão de desenvolvimento ('autodock') podem ser trocadas via {ENV_EXAMPLE}."
+            "Senhas fortes de 32 caracteres foram geradas agora e ficam em {ENV_FILE} (permissão restrita). Não versione esse arquivo."
         ));
+        if !r.new_project && !r.gitignore_covers_env {
+            notes.push(format!(
+                "Adicione {ENV_FILE} ao seu .gitignore para não versionar as senhas."
+            ));
+        }
     }
     notes
 }
@@ -1089,60 +1275,84 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
     let root = root_of(&request.path)?;
     let resolved = resolve(request, &root)?;
     let compose_exists = COMPOSE_NAMES.iter().any(|name| present(&root, name));
+    let file = |name: &str, description: &str, content: String, exists: bool, sensitive: bool| {
+        GeneratedFile {
+            name: name.into(),
+            description: description.into(),
+            content,
+            sensitive,
+            exists,
+        }
+    };
     let mut files: Vec<GeneratedFile> = vec![];
     if resolved.new_project {
         for (name, content, description) in starter_files(&resolved) {
-            files.push(GeneratedFile {
-                name: name.into(),
-                description: description.into(),
+            files.push(file(
+                name,
+                description,
                 content,
-                exists: present(&root, name),
-            });
+                present(&root, name),
+                false,
+            ));
         }
     }
-    files.extend(vec![
-        GeneratedFile {
-            name: DOCKERFILE.into(),
-            description: "Como a imagem da aplicação é construída.".into(),
-            content: dockerfile(&resolved),
-            exists: present(&root, DOCKERFILE),
-        },
-        GeneratedFile {
-            name: COMPOSE_FILE.into(),
-            description: "Orquestra a aplicação e os serviços escolhidos.".into(),
-            content: compose(&resolved),
-            exists: compose_exists,
-        },
-        GeneratedFile {
-            name: DOCKERIGNORE.into(),
-            description: "Evita copiar arquivos desnecessários ou sensíveis para a imagem.".into(),
-            content: dockerignore(resolved.stack),
-            exists: present(&root, DOCKERIGNORE),
-        },
-    ]);
-    if !secrets(&resolved.services).is_empty() {
-        files.push(GeneratedFile {
-            name: ENV_EXAMPLE.into(),
-            description: "Exemplo de variáveis para senhas de desenvolvimento.".into(),
-            content: env_example(&resolved),
-            exists: present(&root, ENV_EXAMPLE),
-        });
+    files.push(file(
+        DOCKERFILE,
+        "Como a imagem da aplicação é construída.",
+        dockerfile(&resolved),
+        present(&root, DOCKERFILE),
+        false,
+    ));
+    files.push(file(
+        COMPOSE_FILE,
+        "Orquestra a aplicação e os serviços escolhidos. Não contém senhas.",
+        compose(&resolved),
+        compose_exists,
+        false,
+    ));
+    files.push(file(
+        DOCKERIGNORE,
+        "Evita copiar arquivos desnecessários ou sensíveis para a imagem.",
+        dockerignore(resolved.stack),
+        present(&root, DOCKERIGNORE),
+        false,
+    ));
+    if has_secrets(&resolved.services) {
+        let real = passwords(&resolved);
+        files.push(file(
+            ENV_FILE,
+            "Senhas fortes de 32 caracteres geradas agora. Não versione este arquivo.",
+            env_content(&resolved, &real, false),
+            present(&root, ENV_FILE),
+            true,
+        ));
+        files.push(file(
+            ENV_EXAMPLE,
+            "Modelo das variáveis, sem segredos, para quem clonar o projeto.",
+            env_content(&resolved, &placeholder_passwords(&real), true),
+            present(&root, ENV_EXAMPLE),
+            false,
+        ));
     }
     Ok(GeneratePlan {
         schema_version: 1,
         project: root.display().to_string(),
         files,
         notes: notes(&resolved),
+        seed: secrets::seed_to_hex(&resolved.seed),
+        ports: resolved.ports.clone(),
     })
 }
 
-fn create_new(path: &Path, content: &str) -> std::io::Result<()> {
+fn create_new(path: &Path, content: &str, private: bool) -> std::io::Result<()> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o644).custom_flags(libc::O_NOFOLLOW);
+        options
+            .mode(if private { 0o600 } else { 0o644 })
+            .custom_flags(libc::O_NOFOLLOW);
     }
     let mut file = options.open(path)?;
     file.write_all(content.as_bytes())?;
@@ -1187,7 +1397,7 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
                 continue;
             }
         }
-        match create_new(&root.join(&file.name), &file.content) {
+        match create_new(&root.join(&file.name), &file.content, file.sensitive) {
             Ok(()) => report.written.push(file.name.clone()),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 report.skipped.push(SkippedFile {
@@ -1200,6 +1410,10 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
                 reason: format!("Falha ao gravar: {e}"),
             }),
         }
+    }
+    if !report.written.is_empty() {
+        // Best effort: reserving ports must never block writing the project files.
+        let _ = ports::register(&root, &plan.ports);
     }
     Ok(report)
 }
@@ -1229,7 +1443,17 @@ mod tests {
             services: vec![],
             new_project: false,
             project_name: None,
+            seed: None,
+            ports: None,
         }
+    }
+
+    fn host(plan: &GeneratePlan, name: &str) -> u16 {
+        plan.ports
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap()
+            .host_port
     }
 
     fn file<'a>(plan: &'a GeneratePlan, name: &str) -> &'a GeneratedFile {
@@ -1249,10 +1473,15 @@ mod tests {
         assert!(dockerfile
             .contains(r#"CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]"#));
         let compose = &file(&plan, COMPOSE_FILE).content;
-        assert!(compose.contains("\"3000:3000\""));
+        // host ports come from the allocation (3000 may be busy on this machine)
+        assert!(compose.contains(&format!("\"{}:3000\"", host(&plan, "app"))));
         assert!(compose.contains("condition: service_healthy"));
-        assert!(compose.contains("127.0.0.1:5432:5432"));
-        assert!(compose.contains("DATABASE_URL"));
+        assert!(compose.contains(&format!("127.0.0.1:{}:5432", host(&plan, "postgres"))));
+        // connection strings embed the password, so they live in .env.docker only
+        assert!(!compose.contains("DATABASE_URL"));
+        assert!(file(&plan, ENV_FILE)
+            .content
+            .contains("DATABASE_URL=postgresql://app:"));
         assert!(!compose.contains("version:"));
         assert!(plan.files.iter().any(|f| f.name == ENV_EXAMPLE));
         // preview must not create anything
@@ -1369,11 +1598,12 @@ mod tests {
         let mut req = request(&dir, Stack::Nodejs);
         req.port = 0;
         assert!(preview(&req).is_err());
-        // port collision with a service published on the host
+        // an app port that equals a service port no longer fails: the service moves
         let mut req = request(&dir, Stack::Nodejs);
         req.port = 5432;
         req.services = vec![Service::Postgres];
-        assert!(preview(&req).is_err());
+        let plan = preview(&req).unwrap();
+        assert_ne!(host(&plan, "app"), host(&plan, "postgres"));
         // unknown request fields are rejected at the boundary
         assert!(serde_json::from_str::<GenerateRequest>(
             r#"{"path":".","stack":"nodejs","port":1,"content":"x"}"#
@@ -1453,6 +1683,257 @@ mod tests {
                 "{folder}"
             );
         }
+    }
+
+    fn all_services() -> Vec<Service> {
+        vec![
+            Service::Postgres,
+            Service::Mysql,
+            Service::Mongodb,
+            Service::Redis,
+            Service::Rabbitmq,
+            Service::Adminer,
+            Service::Mailhog,
+        ]
+    }
+
+    /// Values of every `*PASSWORD*`/`*_PASS` variable in an env file.
+    fn secret_values(env: &str) -> Vec<String> {
+        env.lines()
+            .filter(|l| !l.starts_with('#'))
+            .filter_map(|l| l.split_once('='))
+            .filter(|(k, _)| k.contains("PASSWORD") || k.ends_with("_PASS"))
+            .map(|(_, v)| v.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn compose_never_contains_passwords_and_env_file_holds_32_char_secrets() {
+        for stack in [Stack::Nodejs, Stack::SpringBoot, Stack::Laravel] {
+            let dir = project(&[
+                ("package.json", "{}"),
+                ("pom.xml", "<project/>"),
+                ("composer.json", "{}"),
+            ]);
+            let mut req = request(&dir, stack);
+            req.services = all_services();
+            let plan = preview(&req).unwrap();
+            let env = file(&plan, ENV_FILE);
+            assert!(env.sensitive && !file(&plan, COMPOSE_FILE).sensitive);
+            let secrets = secret_values(&env.content);
+            assert!(secrets.len() >= 5, "{stack:?}: {secrets:?}");
+            for secret in &secrets {
+                assert_eq!(secret.len(), 32, "{secret}");
+                assert!(secret.bytes().all(|b| b.is_ascii_alphanumeric()));
+                assert!(!file(&plan, COMPOSE_FILE).content.contains(secret.as_str()));
+                assert!(!file(&plan, ENV_EXAMPLE).content.contains(secret.as_str()));
+            }
+            // MySQL user and root passwords differ, and every credential is unique
+            let unique: std::collections::HashSet<_> = secrets.iter().collect();
+            assert!(unique.len() >= 5);
+            let compose = &file(&plan, COMPOSE_FILE).content;
+            assert!(compose.contains("env_file:") && compose.contains(".env.docker"));
+            assert!(!compose.contains("autodock"), "no default password left");
+            assert!(file(&plan, ENV_EXAMPLE).content.contains("change-me"));
+            assert!(env.content.contains("MONGO_INITDB_ROOT_PASSWORD="));
+            assert!(env.content.contains("RABBITMQ_DEFAULT_PASS="));
+            assert!(env.content.contains("MYSQL_ROOT_PASSWORD="));
+        }
+    }
+
+    #[test]
+    fn services_without_passwords_need_no_env_file() {
+        let dir = project(&[("package.json", "{}")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.services = vec![Service::Redis, Service::Mailhog, Service::Adminer];
+        let plan = preview(&req).unwrap();
+        assert!(plan
+            .files
+            .iter()
+            .all(|f| f.name != ENV_FILE && f.name != ENV_EXAMPLE));
+        assert!(!file(&plan, COMPOSE_FILE).content.contains("env_file"));
+    }
+
+    #[test]
+    fn every_preview_gets_fresh_passwords_but_the_seed_reproduces_them() {
+        let dir = project(&[("package.json", "{}")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.services = vec![Service::Postgres];
+        let first = preview(&req).unwrap();
+        let second = preview(&req).unwrap();
+        assert_ne!(first.seed, second.seed);
+        assert_ne!(
+            file(&first, ENV_FILE).content,
+            file(&second, ENV_FILE).content
+        );
+        // sending the seed and the ports back reproduces the preview exactly
+        req.seed = Some(first.seed.clone());
+        req.ports = Some(first.ports.clone());
+        let again = preview(&req).unwrap();
+        for name in [ENV_FILE, COMPOSE_FILE, DOCKERFILE, ENV_EXAMPLE] {
+            assert_eq!(
+                file(&first, name).content,
+                file(&again, name).content,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_writes_exactly_what_the_preview_showed() {
+        let dir = project(&[("package.json", "{}")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.services = vec![Service::Postgres, Service::Mysql];
+        let plan = preview(&req).unwrap();
+        req.seed = Some(plan.seed.clone());
+        req.ports = Some(plan.ports.clone());
+        let names: Vec<String> = plan.files.iter().map(|f| f.name.clone()).collect();
+        let report = apply(&req, &names).unwrap();
+        assert_eq!(report.written.len(), names.len());
+        for f in &plan.files {
+            assert_eq!(
+                fs::read_to_string(dir.path().join(&f.name)).unwrap(),
+                f.content,
+                "{}",
+                f.name
+            );
+        }
+        // the compose file written to disk still has no password
+        let written = fs::read_to_string(dir.path().join(COMPOSE_FILE)).unwrap();
+        for secret in secret_values(&file(&plan, ENV_FILE).content) {
+            assert!(!written.contains(&secret));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn env_file_is_private_and_never_overwritten() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = project(&[("package.json", "{}")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.services = vec![Service::Postgres];
+        let report = apply(&req, &[ENV_FILE.into()]).unwrap();
+        assert_eq!(report.written, vec![ENV_FILE.to_string()]);
+        let mode = fs::metadata(dir.path().join(ENV_FILE))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        let before = fs::read_to_string(dir.path().join(ENV_FILE)).unwrap();
+        let report = apply(&req, &[ENV_FILE.into()]).unwrap();
+        assert!(report.written.is_empty() && report.skipped.len() == 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join(ENV_FILE)).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn tampered_seed_or_ports_are_rejected() {
+        let dir = project(&[("package.json", "{}")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.services = vec![Service::Postgres];
+        let plan = preview(&req).unwrap();
+        for bad in ["zz", "", &"0".repeat(63)] {
+            let mut bad_req = req.clone();
+            bad_req.seed = Some(bad.to_string());
+            assert!(preview(&bad_req).is_err(), "{bad:?}");
+        }
+        let mut bad_req = req.clone();
+        bad_req.ports = Some(vec![]);
+        assert!(preview(&bad_req).is_err());
+        let mut tampered = plan.ports.clone();
+        tampered[0].host_port = 0;
+        bad_req.ports = Some(tampered);
+        assert!(preview(&bad_req).is_err());
+        // unknown fields in a port entry are refused by the JSON boundary
+        assert!(serde_json::from_str::<PortAssignment>(
+            r#"{"name":"app","containerPort":1,"hostPort":2,"preferredPort":1,"x":1}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn projects_created_in_sequence_never_share_host_ports() {
+        let mut seen = std::collections::HashSet::new();
+        let mut keep = vec![];
+        for _ in 0..6 {
+            let dir = project(&[("package.json", "{}")]);
+            let mut req = request(&dir, Stack::Nodejs);
+            req.services = vec![Service::Postgres, Service::Redis, Service::Rabbitmq];
+            let plan = preview(&req).unwrap();
+            req.seed = Some(plan.seed.clone());
+            req.ports = Some(plan.ports.clone());
+            let names: Vec<String> = plan.files.iter().map(|f| f.name.clone()).collect();
+            apply(&req, &names).unwrap();
+            for port in &plan.ports {
+                assert!(
+                    seen.insert(port.host_port),
+                    "port {} reused: {:?}",
+                    port.host_port,
+                    plan.ports
+                );
+            }
+            keep.push(dir); // keep the folders alive: reservations of deleted projects are released
+        }
+    }
+
+    #[test]
+    fn a_busy_port_is_replaced_and_the_note_says_so() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy = listener.local_addr().unwrap().port();
+        let dir = project(&[("package.json", "{}")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.port = busy;
+        let plan = preview(&req).unwrap();
+        assert_ne!(host(&plan, "app"), busy);
+        let compose = &file(&plan, COMPOSE_FILE).content;
+        assert!(compose.contains(&format!("\"{}:{busy}\"", host(&plan, "app"))));
+        assert!(plan
+            .notes
+            .iter()
+            .any(|n| n.contains(&format!("A porta {busy} está em uso"))));
+        assert!(plan
+            .notes
+            .iter()
+            .any(|n| n.contains(&format!("http://localhost:{}", host(&plan, "app")))));
+        drop(listener);
+    }
+
+    #[test]
+    fn gitignore_advice_depends_on_the_project_gitignore() {
+        let advice = |dir: &tempfile::TempDir| {
+            let mut req = request(dir, Stack::Nodejs);
+            req.services = vec![Service::Postgres];
+            preview(&req)
+                .unwrap()
+                .notes
+                .iter()
+                .any(|n| n.contains("ao seu .gitignore"))
+        };
+        assert!(advice(&project(&[("package.json", "{}")])));
+        assert!(advice(&project(&[
+            ("package.json", "{}"),
+            (".gitignore", "node_modules\n")
+        ])));
+        assert!(!advice(&project(&[
+            ("package.json", "{}"),
+            (".gitignore", "node_modules\n.env.docker\n")
+        ])));
+        assert!(!advice(&project(&[
+            ("package.json", "{}"),
+            (".gitignore", ".env*\n")
+        ])));
+        // new projects already ship a .gitignore that covers it
+        let dir = project(&[]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.new_project = true;
+        req.services = vec![Service::Postgres];
+        let plan = preview(&req).unwrap();
+        assert!(file(&plan, ".gitignore").content.contains(".env.docker"));
+        assert!(file(&plan, "README.md")
+            .content
+            .contains(&format!("http://localhost:{}", host(&plan, "app"))));
     }
 
     #[test]

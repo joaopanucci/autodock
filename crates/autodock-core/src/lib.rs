@@ -13,8 +13,11 @@ pub use docker::{list_docker_containers, DockerContainer, DockerContainersReport
 mod findings;
 pub mod generate;
 pub mod ide;
+mod ports;
 pub mod scaffold;
+mod secrets;
 pub use findings::Finding;
+pub use ports::PortAssignment;
 mod scan;
 pub use doctor::{doctor, DoctorReport, ToolStatus};
 pub use scan::{scan, Component, ScanReport};

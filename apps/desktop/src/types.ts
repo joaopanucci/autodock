@@ -144,12 +144,23 @@ export type GenerateRequest = {
   services: ServiceId[];
   newProject?: boolean;
   projectName?: string;
+  seed?: string;
+  ports?: PortAssignment[];
+};
+
+export type PortAssignment = {
+  name: string;
+  containerPort: number;
+  hostPort: number;
+  preferredPort: number;
 };
 
 export type GeneratedFile = {
   name: string;
   description: string;
   content: string;
+  /** Holds secrets: must not be versioned. */
+  sensitive?: boolean;
   exists: boolean;
 };
 
@@ -158,6 +169,9 @@ export type GeneratePlan = {
   project: string;
   files: GeneratedFile[];
   notes: string[];
+  /** Sent back on apply so the written files match the preview. */
+  seed?: string;
+  ports?: PortAssignment[];
 };
 
 export type ApplyReport = {

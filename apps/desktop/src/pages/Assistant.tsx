@@ -367,7 +367,11 @@ export function Assistant({
     setBusy("apply");
     setError("");
     try {
-      const report = await invoke<ApplyReport>("apply_docker_setup", { request: body, files: selected });
+      const report = await invoke<ApplyReport>("apply_docker_setup", {
+        // The seed and ports come from the preview, so the written files are identical.
+        request: { ...body, seed: plan?.seed, ports: plan?.ports },
+        files: selected,
+      });
       setResult(report);
       if (report.written.length) {
         setOpened("");
@@ -570,7 +574,7 @@ export function Assistant({
                     setPlan(null);
                   }}
                 />
-                <small>Porta em que o app escuta dentro do container e no seu computador.</small>
+                <small>Porta preferida. Se estiver ocupada ou reservada por outro projeto, o AutoDock escolhe a próxima livre.</small>
               </label>
               <label className="question">
                 <span>{meta.versionLabel}</span>
@@ -740,10 +744,31 @@ export function Assistant({
                   ver
                 </button>
                 <small>{file.description}</small>
-                {file.exists ? <Badge tone="amber">Já existe, será mantido</Badge> : <Badge tone="blue">Novo</Badge>}
+                <span className="file-badges">
+                  {file.sensitive && <Badge tone="red">Contém senhas</Badge>}
+                  {file.exists ? <Badge tone="amber">Já existe, será mantido</Badge> : <Badge tone="blue">Novo</Badge>}
+                </span>
               </li>
             ))}
           </ul>
+          {!!plan.ports?.length && (
+            <div className="port-box">
+              <p className="field-label">Portas no seu computador</p>
+              <ul className="port-list">
+                {plan.ports.map((item) => (
+                  <li key={item.name} className={item.hostPort !== item.preferredPort ? "changed" : ""}>
+                    <span>{item.name === "app" ? "Aplicação" : item.name}</span>
+                    <code>
+                      localhost:{item.hostPort} → {item.containerPort}
+                    </code>
+                    {item.hostPort !== item.preferredPort && (
+                      <small>a {item.preferredPort} estava ocupada ou reservada</small>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {activeFile && (
             <pre className="code-preview" aria-label={`Conteúdo de ${activeFile.name}`}>
               <code>{activeFile.content}</code>
@@ -813,6 +838,12 @@ export function Assistant({
                         <Copy size={13} aria-hidden="true" /> {copied ? "Copiado" : "Copiar"}
                       </button>
                     </p>
+                    {plan?.ports?.find((item) => item.name === "app") && (
+                      <p>
+                        Depois, acesse{" "}
+                        <code>http://localhost:{plan.ports.find((item) => item.name === "app")!.hostPort}</code>
+                      </p>
+                    )}
                   </>
                 )}
               </div>

@@ -99,7 +99,7 @@ test.beforeEach(async ({ page }) => {
       };
       state.testCalls = [];
       state.__TAURI_INTERNALS__ = {
-        invoke: async (command: string) => {
+        invoke: async (command: string, args?: any) => {
           state.testCalls.push(command);
           if (command === "plugin:dialog|open")
             return state.testCancelPicker ? null : "C:\\work\\sample-project";
@@ -116,13 +116,21 @@ test.beforeEach(async ({ page }) => {
               schemaVersion: 1,
               project: "C:\\work\\sample-project",
               notes: ["Nada foi gravado ainda."],
+              seed: "ab".repeat(32),
+              ports: [
+                { name: "app", containerPort: 3000, hostPort: 3001, preferredPort: 3000 },
+                { name: "postgres", containerPort: 5432, hostPort: 5433, preferredPort: 5432 },
+              ],
               files: [
                 { name: "index.js", description: "Servidor.", content: "x", exists: false },
                 { name: "Dockerfile", description: "Imagem.", content: "FROM node", exists: false },
+                { name: ".env.docker", description: "Senhas.", content: "POSTGRES_PASSWORD=x", sensitive: true, exists: false },
               ],
             };
-          if (command === "apply_docker_setup")
-            return { written: ["index.js", "Dockerfile"], skipped: [] };
+          if (command === "apply_docker_setup") {
+            (state as any).applyArgs = args;
+            return { written: ["index.js", "Dockerfile", ".env.docker"], skipped: [] };
+          }
           if (command === "scaffold_plan")
             return {
               title: "Laravel (instalador oficial)",
@@ -345,8 +353,17 @@ test("empty folder offers a new project and then opens it in the detected IDE", 
   await page.getByRole("button", { name: /Continuar/ }).click();
   await page.getByRole("button", { name: /Revisar/ }).click();
   await expect(page.getByText("Revise o projeto novo antes de criar")).toBeVisible();
-  await page.getByRole("button", { name: /Criar 2 arquivo/ }).click();
+  // ports are shown and sensitive files are flagged
+  await expect(page.getByText("Contém senhas")).toBeVisible();
+  await expect(page.getByText("localhost:3001 → 3000")).toBeVisible();
+  await expect(page.getByText("a 3000 estava ocupada ou reservada")).toBeVisible();
+  await page.getByRole("button", { name: /Criar 3 arquivo/ }).click();
   await page.getByRole("button", { name: "VS Code" }).click();
+  // the preview's seed and ports are sent back so the written files match the preview
+  const sent = await page.evaluate(() => (window as any).applyArgs);
+  expect(sent.request.seed).toBe("ab".repeat(32));
+  expect(sent.request.ports).toHaveLength(2);
+  expect(sent.request.ports[0].hostPort).toBe(3001);
   expect(await page.evaluate(() => (window as any).testCalls)).toContain("open_in_ide");
 });
 
