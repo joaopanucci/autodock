@@ -86,32 +86,33 @@ export function Overview({
           className="import-panel"
         >
           <p className="lead">
-            Entenda a estrutura do seu projeto antes de preparar o ambiente.
+            Do código ao Docker, em poucos cliques. Ou só entenda a estrutura do
+            projeto antes de preparar o ambiente.
           </p>
           <div className="import-zone">
             <div className="folder-art">
               <FolderGit2 size={36} strokeWidth={1.4} aria-hidden="true" />
             </div>
-            <h3>Traga seu projeto para o AutoDock</h3>
+            <h3>Coloque seu projeto no Docker</h3>
             <p>
-              Selecione uma pasta local para identificar tecnologias,
-              <br className="wide-only" /> módulos e requisitos declarados.
+              Crie um projeto novo ou configure um existente com algumas
+              <br className="wide-only" /> perguntas. Você revisa tudo antes de gravar.
             </p>
             <button
               className="button primary"
-              disabled={busy}
-              onClick={importProject}
-            >
-              <FolderPlus size={17} aria-hidden="true" />
-              Selecionar projeto
-            </button>
-            <button
-              className="button secondary"
               disabled={busy}
               onClick={() => navigate("setup")}
             >
               <WandSparkles size={17} aria-hidden="true" />
               Preparar Docker com o assistente
+            </button>
+            <button
+              className="button secondary"
+              disabled={busy}
+              onClick={importProject}
+            >
+              <FolderPlus size={17} aria-hidden="true" />
+              Selecionar projeto
             </button>
             <span className="micro-copy">
               <ShieldCheck size={13} aria-hidden="true" />
