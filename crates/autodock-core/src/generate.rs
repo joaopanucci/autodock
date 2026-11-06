@@ -1,0 +1,1110 @@
+//! Docker scaffolding for existing projects: Dockerfile, compose, .dockerignore.
+//!
+//! Safety contract: `preview` never writes. `apply` regenerates the files from the
+//! validated request (the UI never supplies file contents), creates files with
+//! exclusive creation and never overwrites or follows symlinks. `.env` files are
+//! never read. Every interpolated value is validated against an allowlist.
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
+
+const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+const COMPOSE_NAMES: [&str; 4] = [
+    "compose.yaml",
+    "compose.yml",
+    "docker-compose.yaml",
+    "docker-compose.yml",
+];
+pub const DOCKERFILE: &str = "Dockerfile";
+pub const COMPOSE_FILE: &str = "docker-compose.yml";
+pub const DOCKERIGNORE: &str = ".dockerignore";
+pub const ENV_EXAMPLE: &str = ".env.docker.example";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Stack {
+    Nodejs,
+    SpringBoot,
+    Python,
+    Laravel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Service {
+    Postgres,
+    Mysql,
+    Mongodb,
+    Redis,
+    Rabbitmq,
+    Adminer,
+    Mailhog,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageManager {
+    Npm,
+    Pnpm,
+    Yarn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PythonFramework {
+    Fastapi,
+    Django,
+    Flask,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenerateRequest {
+    pub path: String,
+    pub stack: Stack,
+    pub port: u16,
+    #[serde(default)]
+    pub runtime_version: Option<String>,
+    #[serde(default)]
+    pub package_manager: Option<PackageManager>,
+    #[serde(default)]
+    pub start_script: Option<String>,
+    #[serde(default)]
+    pub python_framework: Option<PythonFramework>,
+    #[serde(default)]
+    pub python_module: Option<String>,
+    #[serde(default)]
+    pub services: Vec<Service>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedFile {
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    /// True when writing would collide with an existing file (never overwritten).
+    pub exists: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratePlan {
+    pub schema_version: u32,
+    pub project: String,
+    pub files: Vec<GeneratedFile>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedFile {
+    pub name: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyReport {
+    pub written: Vec<String>,
+    pub skipped: Vec<SkippedFile>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Suggestion {
+    pub stack: Stack,
+    pub evidence: String,
+    pub scripts: Vec<String>,
+    pub package_manager: Option<PackageManager>,
+    pub python_framework: Option<PythonFramework>,
+}
+
+// ---------------------------------------------------------------- detection
+
+fn root_of(path: &str) -> Result<PathBuf, String> {
+    let root = Path::new(path)
+        .canonicalize()
+        .map_err(|e| format!("{path}: {e}"))?;
+    if !root.is_dir() {
+        return Err(format!("Não é diretório: {}", root.display()));
+    }
+    Ok(root)
+}
+
+fn regular_file(root: &Path, name: &str) -> bool {
+    fs::symlink_metadata(root.join(name))
+        .map(|m| m.is_file() && !m.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
+fn present(root: &Path, name: &str) -> bool {
+    fs::symlink_metadata(root.join(name)).is_ok()
+}
+
+fn read_manifest(root: &Path, name: &str) -> Option<String> {
+    if !regular_file(root, name) {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(root.join(name))
+        .ok()?
+        .take(MAX_MANIFEST_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_MANIFEST_BYTES {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// Suggests stacks from top-level manifests only. Reads manifests as data; never
+/// executes anything and never reads `.env` files.
+pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
+    let root = root_of(path)?;
+    let mut found = Vec::new();
+    if let Some(text) = read_manifest(&root, "package.json") {
+        let scripts = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("scripts").and_then(|s| s.as_object().cloned()))
+            .map(|s| s.keys().filter(|k| valid_script(k)).cloned().collect())
+            .unwrap_or_default();
+        let package_manager = if regular_file(&root, "pnpm-lock.yaml") {
+            Some(PackageManager::Pnpm)
+        } else if regular_file(&root, "yarn.lock") {
+            Some(PackageManager::Yarn)
+        } else {
+            Some(PackageManager::Npm)
+        };
+        found.push(Suggestion {
+            stack: Stack::Nodejs,
+            evidence: "package.json".into(),
+            scripts,
+            package_manager,
+            python_framework: None,
+        });
+    }
+    if let Some(text) = read_manifest(&root, "pom.xml") {
+        if text.contains("org.springframework.boot") {
+            found.push(Suggestion {
+                stack: Stack::SpringBoot,
+                evidence: "pom.xml (referência a org.springframework.boot)".into(),
+                scripts: vec![],
+                package_manager: None,
+                python_framework: None,
+            });
+        }
+    }
+    for name in ["requirements.txt", "pyproject.toml"] {
+        if let Some(text) = read_manifest(&root, name) {
+            let lower = text.to_ascii_lowercase();
+            let framework = if lower.contains("fastapi") {
+                Some(PythonFramework::Fastapi)
+            } else if lower.contains("django") {
+                Some(PythonFramework::Django)
+            } else if lower.contains("flask") {
+                Some(PythonFramework::Flask)
+            } else {
+                None
+            };
+            found.push(Suggestion {
+                stack: Stack::Python,
+                evidence: name.into(),
+                scripts: vec![],
+                package_manager: None,
+                python_framework: framework,
+            });
+            break;
+        }
+    }
+    if let Some(text) = read_manifest(&root, "composer.json") {
+        if text.contains("laravel/framework") {
+            found.push(Suggestion {
+                stack: Stack::Laravel,
+                evidence: "composer.json (laravel/framework)".into(),
+                scripts: vec![],
+                package_manager: None,
+                python_framework: None,
+            });
+        }
+    }
+    Ok(found)
+}
+
+// --------------------------------------------------------------- validation
+
+fn valid_script(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && !value.starts_with('-')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b":_.-".contains(&b))
+}
+
+fn valid_module(value: &str) -> bool {
+    let mut parts = value.splitn(2, ':');
+    let ok = |part: &str| {
+        !part.is_empty()
+            && part.len() <= 64
+            && part
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_.".contains(&b))
+    };
+    ok(parts.next().unwrap_or("")) && parts.next().map(ok).unwrap_or(true)
+}
+
+fn runtime_version(stack: Stack, requested: &Option<String>) -> Result<String, String> {
+    let (allowed, default): (&[&str], &str) = match stack {
+        Stack::Nodejs => (&["24", "22", "20"], "22"),
+        Stack::SpringBoot => (&["21", "17"], "21"),
+        Stack::Python => (&["3.13", "3.12", "3.11"], "3.12"),
+        Stack::Laravel => (&["8.4", "8.3", "8.2"], "8.3"),
+    };
+    let version = requested.as_deref().unwrap_or(default);
+    if allowed.contains(&version) {
+        Ok(version.to_string())
+    } else {
+        Err(format!(
+            "Versão não suportada: {version}. Use: {}.",
+            allowed.join(", ")
+        ))
+    }
+}
+
+const SERVICE_ORDER: [Service; 7] = [
+    Service::Postgres,
+    Service::Mysql,
+    Service::Mongodb,
+    Service::Redis,
+    Service::Rabbitmq,
+    Service::Adminer,
+    Service::Mailhog,
+];
+
+fn host_ports(service: Service) -> &'static [u16] {
+    match service {
+        Service::Postgres => &[5432],
+        Service::Mysql => &[3306],
+        Service::Mongodb => &[27017],
+        Service::Redis => &[6379],
+        Service::Rabbitmq => &[5672, 15672],
+        Service::Adminer => &[8088],
+        Service::Mailhog => &[8025],
+    }
+}
+
+fn name_of(service: Service) -> &'static str {
+    match service {
+        Service::Postgres => "postgres",
+        Service::Mysql => "mysql",
+        Service::Mongodb => "mongodb",
+        Service::Redis => "redis",
+        Service::Rabbitmq => "rabbitmq",
+        Service::Adminer => "adminer",
+        Service::Mailhog => "mailhog",
+    }
+}
+
+// --------------------------------------------------------------- generation
+
+struct Resolved {
+    stack: Stack,
+    port: u16,
+    version: String,
+    package_manager: PackageManager,
+    start_script: String,
+    framework: PythonFramework,
+    module: String,
+    services: Vec<Service>,
+    python_uses_pyproject: bool,
+}
+
+fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
+    if request.port == 0 {
+        return Err("Porta inválida.".into());
+    }
+    let version = runtime_version(request.stack, &request.runtime_version)?;
+    let services: Vec<Service> = SERVICE_ORDER
+        .iter()
+        .copied()
+        .filter(|s| request.services.contains(s))
+        .collect();
+    let mut used = vec![request.port];
+    for service in &services {
+        for port in host_ports(*service) {
+            if used.contains(port) {
+                return Err(format!(
+                    "A porta {port} já está em uso por outro item do plano. Escolha outra porta para a aplicação."
+                ));
+            }
+            used.push(*port);
+        }
+    }
+    let start_script = match &request.start_script {
+        Some(script) if !valid_script(script) => {
+            return Err("Nome de script inválido.".into());
+        }
+        Some(script) => script.clone(),
+        None => "start".into(),
+    };
+    let framework = request.python_framework.unwrap_or(PythonFramework::Fastapi);
+    let module = match (&request.python_module, framework) {
+        (Some(module), _) if !valid_module(module) => {
+            return Err("Módulo Python inválido (use formato modulo:objeto).".into());
+        }
+        (Some(module), _) => module.clone(),
+        (None, PythonFramework::Fastapi) => "main:app".into(),
+        (None, _) => "app".into(),
+    };
+    let mut python_uses_pyproject = false;
+    match request.stack {
+        Stack::Nodejs if !regular_file(root, "package.json") => {
+            return Err("package.json não encontrado na raiz do projeto.".into());
+        }
+        Stack::SpringBoot if !regular_file(root, "pom.xml") => {
+            return Err("pom.xml não encontrado na raiz. Gradle ainda não é suportado.".into());
+        }
+        Stack::Python => {
+            if regular_file(root, "requirements.txt") {
+            } else if regular_file(root, "pyproject.toml") {
+                python_uses_pyproject = true;
+            } else {
+                return Err("requirements.txt ou pyproject.toml não encontrado na raiz.".into());
+            }
+        }
+        Stack::Laravel if !regular_file(root, "composer.json") => {
+            return Err("composer.json não encontrado na raiz do projeto.".into());
+        }
+        _ => {}
+    }
+    Ok(Resolved {
+        stack: request.stack,
+        port: request.port,
+        version,
+        package_manager: request.package_manager.unwrap_or(PackageManager::Npm),
+        start_script,
+        framework,
+        module,
+        services,
+        python_uses_pyproject,
+    })
+}
+
+fn json_array(items: &[String]) -> String {
+    let quoted: Vec<String> = items.iter().map(|i| format!("\"{i}\"")).collect();
+    format!("[{}]", quoted.join(", "))
+}
+
+fn dockerfile(r: &Resolved) -> String {
+    let port = r.port;
+    let v = &r.version;
+    match r.stack {
+        Stack::Nodejs => {
+            let (setup, copy, install, run) = match r.package_manager {
+                PackageManager::Npm => (
+                    "",
+                    "COPY package.json package-lock.json* ./",
+                    "RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi",
+                    "npm",
+                ),
+                PackageManager::Pnpm => (
+                    "RUN corepack enable\n",
+                    "COPY package.json pnpm-lock.yaml* ./",
+                    "RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi",
+                    "pnpm",
+                ),
+                PackageManager::Yarn => (
+                    "RUN corepack enable\n",
+                    "COPY package.json yarn.lock* ./",
+                    "RUN yarn install",
+                    "yarn",
+                ),
+            };
+            let cmd = json_array(&[run.into(), "run".into(), r.start_script.clone()]);
+            format!(
+                "# Gerado pelo AutoDock. Ambiente de desenvolvimento.\n\
+FROM node:{v}-alpine\n\
+{setup}WORKDIR /app\n\
+{copy}\n\
+{install}\n\
+COPY . .\n\
+EXPOSE {port}\n\
+CMD {cmd}\n"
+            )
+        }
+        Stack::SpringBoot => format!(
+            "# Gerado pelo AutoDock. Build em duas etapas (Maven).\n\
+FROM maven:3.9-eclipse-temurin-{v} AS build\n\
+WORKDIR /workspace\n\
+COPY pom.xml ./\n\
+RUN mvn -B -q dependency:go-offline\n\
+COPY src ./src\n\
+RUN mvn -B -q -DskipTests package\n\
+\n\
+FROM eclipse-temurin:{v}-jre\n\
+RUN useradd --system --create-home app\n\
+WORKDIR /app\n\
+COPY --from=build /workspace/target/*.jar app.jar\n\
+USER app\n\
+EXPOSE {port}\n\
+ENTRYPOINT [\"java\", \"-jar\", \"/app/app.jar\"]\n"
+        ),
+        Stack::Python => {
+            let (copy, install) = if r.python_uses_pyproject {
+                ("COPY . .", "RUN pip install --no-cache-dir .")
+            } else {
+                (
+                    "COPY requirements.txt ./\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . .",
+                    "",
+                )
+            };
+            let cmd = match r.framework {
+                PythonFramework::Fastapi => json_array(&[
+                    "uvicorn".into(),
+                    r.module.clone(),
+                    "--host".into(),
+                    "0.0.0.0".into(),
+                    "--port".into(),
+                    port.to_string(),
+                ]),
+                PythonFramework::Django => json_array(&[
+                    "python".into(),
+                    "manage.py".into(),
+                    "runserver".into(),
+                    format!("0.0.0.0:{port}"),
+                ]),
+                PythonFramework::Flask => json_array(&[
+                    "flask".into(),
+                    "--app".into(),
+                    r.module.clone(),
+                    "run".into(),
+                    "--host".into(),
+                    "0.0.0.0".into(),
+                    "--port".into(),
+                    port.to_string(),
+                ]),
+            };
+            let install_block = if install.is_empty() {
+                String::new()
+            } else {
+                format!("{install}\n")
+            };
+            format!(
+                "# Gerado pelo AutoDock. Ambiente de desenvolvimento.\n\
+FROM python:{v}-slim\n\
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n\
+WORKDIR /app\n\
+{copy}\n\
+{install_block}\
+RUN useradd --system --create-home app && chown -R app /app\n\
+USER app\n\
+EXPOSE {port}\n\
+CMD {cmd}\n"
+            )
+        }
+        Stack::Laravel => {
+            let mut packages = vec!["git", "unzip", "libzip-dev"];
+            let mut extensions = vec!["zip"];
+            if r.services.contains(&Service::Postgres) {
+                packages.push("libpq-dev");
+                extensions.push("pdo_pgsql");
+            }
+            if r.services.contains(&Service::Mysql) {
+                extensions.push("pdo_mysql");
+            }
+            let redis = if r.services.contains(&Service::Redis) {
+                "RUN pecl install redis && docker-php-ext-enable redis\n"
+            } else {
+                ""
+            };
+            let packages = packages.join(" ");
+            let extensions = extensions.join(" ");
+            format!(
+                "# Gerado pelo AutoDock. Ambiente de desenvolvimento.\n\
+FROM php:{v}-cli\n\
+RUN apt-get update \\\n    && apt-get install -y --no-install-recommends {packages} \\\n    && docker-php-ext-install {extensions} \\\n    && rm -rf /var/lib/apt/lists/*\n\
+{redis}\
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer\n\
+WORKDIR /var/www/html\n\
+COPY composer.json composer.lock* ./\n\
+RUN composer install --no-interaction --no-scripts --prefer-dist\n\
+COPY . .\n\
+RUN composer dump-autoload --optimize\n\
+EXPOSE {port}\n\
+CMD [\"php\", \"artisan\", \"serve\", \"--host=0.0.0.0\", \"--port={port}\"]\n"
+            )
+        }
+    }
+}
+
+fn dockerignore(stack: Stack) -> String {
+    let mut lines = vec![
+        ".git",
+        ".idea",
+        ".vscode",
+        "*.log",
+        ".env",
+        ".env.*",
+        "!.env.example",
+        "Dockerfile",
+        "docker-compose*.yml",
+        "compose*.y*ml",
+    ];
+    lines.extend(match stack {
+        Stack::Nodejs => vec!["node_modules", "dist", "coverage"],
+        Stack::SpringBoot => vec!["target", "build", ".gradle"],
+        Stack::Python => vec!["__pycache__", "*.pyc", ".venv", ".pytest_cache"],
+        Stack::Laravel => vec!["vendor", "node_modules", "storage/logs"],
+    });
+    format!("# Gerado pelo AutoDock.\n{}\n", lines.join("\n"))
+}
+
+/// (key, default) pairs used as `${KEY:-default}` in compose and listed in the example file.
+fn secrets(services: &[Service]) -> Vec<(&'static str, &'static str)> {
+    let mut vars = vec![];
+    for service in services {
+        match service {
+            Service::Postgres => vars.push(("POSTGRES_PASSWORD", "autodock")),
+            Service::Mysql => vars.push(("MYSQL_PASSWORD", "autodock")),
+            Service::Mongodb => vars.push(("MONGODB_PASSWORD", "autodock")),
+            Service::Rabbitmq => vars.push(("RABBITMQ_PASSWORD", "autodock")),
+            _ => {}
+        }
+    }
+    vars
+}
+
+fn app_environment(r: &Resolved) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = vec![("PORT".into(), r.port.to_string())];
+    let mut add = |k: &str, v: &str| env.push((k.into(), v.into()));
+    match r.stack {
+        Stack::Nodejs => add("HOST", "0.0.0.0"),
+        Stack::SpringBoot => add("SERVER_PORT", &r.port.to_string()),
+        _ => {}
+    }
+    let has = |s: Service| r.services.contains(&s);
+    // The first SQL service is the application's primary database.
+    let primary = [Service::Postgres, Service::Mysql]
+        .into_iter()
+        .find(|s| has(*s));
+    for sql in [Service::Postgres, Service::Mysql] {
+        if !has(sql) {
+            continue;
+        }
+        let (scheme, jdbc, host, db_port, pass) = match sql {
+            Service::Postgres => (
+                "postgresql",
+                "postgresql",
+                "postgres",
+                5432,
+                "${POSTGRES_PASSWORD:-autodock}",
+            ),
+            _ => (
+                "mysql",
+                "mysql",
+                "mysql",
+                3306,
+                "${MYSQL_PASSWORD:-autodock}",
+            ),
+        };
+        if Some(sql) != primary {
+            let key = format!("{}_URL", host.to_ascii_uppercase());
+            add(&key, &format!("{scheme}://app:{pass}@{host}:{db_port}/app"));
+            continue;
+        }
+        add(
+            "DATABASE_URL",
+            &format!("{scheme}://app:{pass}@{host}:{db_port}/app"),
+        );
+        match r.stack {
+            Stack::SpringBoot => {
+                add(
+                    "SPRING_DATASOURCE_URL",
+                    &format!("jdbc:{jdbc}://{host}:{db_port}/app"),
+                );
+                add("SPRING_DATASOURCE_USERNAME", "app");
+                add("SPRING_DATASOURCE_PASSWORD", pass);
+            }
+            Stack::Laravel => {
+                add(
+                    "DB_CONNECTION",
+                    if sql == Service::Postgres {
+                        "pgsql"
+                    } else {
+                        "mysql"
+                    },
+                );
+                add("DB_HOST", host);
+                add("DB_PORT", &db_port.to_string());
+                add("DB_DATABASE", "app");
+                add("DB_USERNAME", "app");
+                add("DB_PASSWORD", pass);
+            }
+            _ => {}
+        }
+    }
+    if has(Service::Mongodb) {
+        add(
+            "MONGODB_URI",
+            "mongodb://app:${MONGODB_PASSWORD:-autodock}@mongodb:27017/app?authSource=admin",
+        );
+    }
+    if has(Service::Redis) {
+        add("REDIS_URL", "redis://redis:6379");
+        match r.stack {
+            Stack::SpringBoot => add("SPRING_DATA_REDIS_HOST", "redis"),
+            Stack::Laravel => add("REDIS_HOST", "redis"),
+            _ => {}
+        }
+    }
+    if has(Service::Rabbitmq) {
+        add(
+            "AMQP_URL",
+            "amqp://app:${RABBITMQ_PASSWORD:-autodock}@rabbitmq:5672",
+        );
+        if r.stack == Stack::SpringBoot {
+            add("SPRING_RABBITMQ_HOST", "rabbitmq");
+            add("SPRING_RABBITMQ_USERNAME", "app");
+            add("SPRING_RABBITMQ_PASSWORD", "${RABBITMQ_PASSWORD:-autodock}");
+        }
+    }
+    if has(Service::Mailhog) {
+        add("SMTP_HOST", "mailhog");
+        add("SMTP_PORT", "1025");
+        match r.stack {
+            Stack::Laravel => {
+                add("MAIL_HOST", "mailhog");
+                add("MAIL_PORT", "1025");
+            }
+            Stack::SpringBoot => {
+                add("SPRING_MAIL_HOST", "mailhog");
+                add("SPRING_MAIL_PORT", "1025");
+            }
+            _ => {}
+        }
+    }
+    env
+}
+
+fn compose(r: &Resolved) -> String {
+    let mut out = String::from(
+        "# Gerado pelo AutoDock. Revise antes de usar.\nservices:\n  app:\n    build: .\n",
+    );
+    out.push_str(&format!("    ports:\n      - \"{0}:{0}\"\n", r.port));
+    out.push_str("    environment:\n");
+    for (key, value) in app_environment(r) {
+        out.push_str(&format!("      {key}: \"{value}\"\n"));
+    }
+    match r.stack {
+        Stack::Nodejs => out.push_str("    volumes:\n      - .:/app\n      - /app/node_modules\n"),
+        Stack::Python => out.push_str("    volumes:\n      - .:/app\n"),
+        Stack::Laravel => {
+            out.push_str("    volumes:\n      - .:/var/www/html\n      - /var/www/html/vendor\n")
+        }
+        Stack::SpringBoot => {}
+    }
+    let waits: Vec<Service> = r
+        .services
+        .iter()
+        .copied()
+        .filter(|s| !matches!(s, Service::Adminer | Service::Mailhog))
+        .collect();
+    if !waits.is_empty() || r.services.contains(&Service::Mailhog) {
+        out.push_str("    depends_on:\n");
+        for service in &r.services {
+            match service {
+                Service::Adminer => {}
+                Service::Mailhog => {
+                    out.push_str("      mailhog:\n        condition: service_started\n")
+                }
+                other => out.push_str(&format!(
+                    "      {}:\n        condition: service_healthy\n",
+                    name_of(*other)
+                )),
+            }
+        }
+    }
+    let mut volumes: Vec<&str> = vec![];
+    for service in &r.services {
+        out.push('\n');
+        out.push_str(match service {
+            Service::Postgres => "  postgres:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_USER: app\n      POSTGRES_DB: app\n      POSTGRES_PASSWORD: \"${POSTGRES_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:5432:5432\"\n    volumes:\n      - postgres_data:/var/lib/postgresql/data\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U app -d app\"]\n      interval: 5s\n      timeout: 5s\n      retries: 10\n",
+            Service::Mysql => "  mysql:\n    image: mysql:8.4\n    environment:\n      MYSQL_DATABASE: app\n      MYSQL_USER: app\n      MYSQL_PASSWORD: \"${MYSQL_PASSWORD:-autodock}\"\n      MYSQL_ROOT_PASSWORD: \"${MYSQL_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:3306:3306\"\n    volumes:\n      - mysql_data:/var/lib/mysql\n    healthcheck:\n      test: [\"CMD-SHELL\", \"mysqladmin ping -h 127.0.0.1 -uroot -p\\\"$$MYSQL_ROOT_PASSWORD\\\"\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\n",
+            Service::Mongodb => "  mongodb:\n    image: mongo:7\n    environment:\n      MONGO_INITDB_ROOT_USERNAME: app\n      MONGO_INITDB_ROOT_PASSWORD: \"${MONGODB_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:27017:27017\"\n    volumes:\n      - mongodb_data:/data/db\n    healthcheck:\n      test: [\"CMD\", \"mongosh\", \"--quiet\", \"--eval\", \"db.adminCommand('ping')\"]\n      interval: 5s\n      timeout: 5s\n      retries: 10\n",
+            Service::Redis => "  redis:\n    image: redis:7-alpine\n    ports:\n      - \"127.0.0.1:6379:6379\"\n    volumes:\n      - redis_data:/data\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"ping\"]\n      interval: 5s\n      timeout: 3s\n      retries: 10\n",
+            Service::Rabbitmq => "  rabbitmq:\n    image: rabbitmq:3-management-alpine\n    environment:\n      RABBITMQ_DEFAULT_USER: app\n      RABBITMQ_DEFAULT_PASS: \"${RABBITMQ_PASSWORD:-autodock}\"\n    ports:\n      - \"127.0.0.1:5672:5672\"\n      - \"127.0.0.1:15672:15672\"\n    volumes:\n      - rabbitmq_data:/var/lib/rabbitmq\n    healthcheck:\n      test: [\"CMD\", \"rabbitmq-diagnostics\", \"-q\", \"ping\"]\n      interval: 10s\n      timeout: 10s\n      retries: 10\n",
+            Service::Adminer => "  adminer:\n    image: adminer:4\n    ports:\n      - \"127.0.0.1:8088:8080\"\n",
+            Service::Mailhog => "  mailhog:\n    image: mailhog/mailhog:v1.0.1\n    ports:\n      - \"127.0.0.1:8025:8025\"\n",
+        });
+        match service {
+            Service::Postgres => volumes.push("postgres_data"),
+            Service::Mysql => volumes.push("mysql_data"),
+            Service::Mongodb => volumes.push("mongodb_data"),
+            Service::Redis => volumes.push("redis_data"),
+            Service::Rabbitmq => volumes.push("rabbitmq_data"),
+            _ => {}
+        }
+    }
+    if !volumes.is_empty() {
+        out.push_str("\nvolumes:\n");
+        for volume in volumes {
+            out.push_str(&format!("  {volume}:\n"));
+        }
+    }
+    out
+}
+
+fn env_example(r: &Resolved) -> String {
+    let mut out = String::from(
+        "# Gerado pelo AutoDock. Copie para .env e troque os valores.\n# Os padrões do compose servem apenas para desenvolvimento local.\n",
+    );
+    for (key, default) in secrets(&r.services) {
+        out.push_str(&format!("{key}={default}\n"));
+    }
+    out
+}
+
+fn notes(r: &Resolved) -> Vec<String> {
+    let mut notes = vec![
+        "Nada foi gravado ainda. Revise os arquivos antes de confirmar.".to_string(),
+        "Os serviços auxiliares publicam portas apenas em 127.0.0.1.".to_string(),
+    ];
+    match r.stack {
+        Stack::Nodejs => notes.push(format!(
+            "A aplicação precisa escutar em 0.0.0.0 e na porta da variável PORT ({}), senão não ficará acessível fora do container.",
+            r.port
+        )),
+        Stack::SpringBoot => notes.push(
+            "O build usa Maven e espera um único JAR executável em target/. Projetos multimódulo podem exigir ajuste.".into(),
+        ),
+        Stack::Python => {
+            if r.framework == PythonFramework::Fastapi {
+                notes.push("FastAPI usa uvicorn: confirme que ele está nas dependências.".into());
+            }
+        }
+        Stack::Laravel => notes.push(
+            "Crie o .env do Laravel (copie .env.example) e rode php artisan key:generate dentro do container.".into(),
+        ),
+    }
+    if r.services.contains(&Service::Adminer)
+        && !r.services.contains(&Service::Postgres)
+        && !r.services.contains(&Service::Mysql)
+    {
+        notes.push("Adminer foi incluído sem banco SQL no plano.".into());
+    }
+    if r.services.contains(&Service::Postgres) && r.services.contains(&Service::Mysql) {
+        notes.push(
+            "Com Postgres e MySQL, DATABASE_URL aponta para o Postgres; o MySQL fica em MYSQL_URL."
+                .into(),
+        );
+    }
+    if !secrets(&r.services).is_empty() {
+        notes.push(format!(
+            "Senhas padrão de desenvolvimento ('autodock') podem ser trocadas via {ENV_EXAMPLE}."
+        ));
+    }
+    notes
+}
+
+/// Builds the plan. Pure with respect to the file system except for existence checks.
+pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
+    let root = root_of(&request.path)?;
+    let resolved = resolve(request, &root)?;
+    let compose_exists = COMPOSE_NAMES.iter().any(|name| present(&root, name));
+    let mut files = vec![
+        GeneratedFile {
+            name: DOCKERFILE.into(),
+            description: "Como a imagem da aplicação é construída.".into(),
+            content: dockerfile(&resolved),
+            exists: present(&root, DOCKERFILE),
+        },
+        GeneratedFile {
+            name: COMPOSE_FILE.into(),
+            description: "Orquestra a aplicação e os serviços escolhidos.".into(),
+            content: compose(&resolved),
+            exists: compose_exists,
+        },
+        GeneratedFile {
+            name: DOCKERIGNORE.into(),
+            description: "Evita copiar arquivos desnecessários ou sensíveis para a imagem.".into(),
+            content: dockerignore(resolved.stack),
+            exists: present(&root, DOCKERIGNORE),
+        },
+    ];
+    if !secrets(&resolved.services).is_empty() {
+        files.push(GeneratedFile {
+            name: ENV_EXAMPLE.into(),
+            description: "Exemplo de variáveis para senhas de desenvolvimento.".into(),
+            content: env_example(&resolved),
+            exists: present(&root, ENV_EXAMPLE),
+        });
+    }
+    Ok(GeneratePlan {
+        schema_version: 1,
+        project: root.display().to_string(),
+        files,
+        notes: notes(&resolved),
+    })
+}
+
+fn create_new(path: &Path, content: &str) -> std::io::Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o644).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(content.as_bytes())?;
+    file.sync_all()
+}
+
+/// Writes only the selected files of a freshly generated plan. Existing files are
+/// skipped, never overwritten.
+pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyReport, String> {
+    if selected.is_empty() {
+        return Err("Nenhum arquivo selecionado.".into());
+    }
+    let plan = preview(request)?;
+    let root = root_of(&request.path)?;
+    for name in selected {
+        if !plan.files.iter().any(|f| &f.name == name) {
+            return Err(format!("Arquivo fora do plano: {name}"));
+        }
+    }
+    let mut report = ApplyReport {
+        written: vec![],
+        skipped: vec![],
+    };
+    for file in &plan.files {
+        if !selected.contains(&file.name) {
+            continue;
+        }
+        if file.exists {
+            report.skipped.push(SkippedFile {
+                name: file.name.clone(),
+                reason: "Já existe; não foi sobrescrito.".into(),
+            });
+            continue;
+        }
+        match create_new(&root.join(&file.name), &file.content) {
+            Ok(()) => report.written.push(file.name.clone()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                report.skipped.push(SkippedFile {
+                    name: file.name.clone(),
+                    reason: "Já existe; não foi sobrescrito.".into(),
+                })
+            }
+            Err(e) => report.skipped.push(SkippedFile {
+                name: file.name.clone(),
+                reason: format!("Falha ao gravar: {e}"),
+            }),
+        }
+    }
+    Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, content) in files {
+            fs::write(dir.path().join(name), content).unwrap();
+        }
+        dir
+    }
+
+    fn request(dir: &tempfile::TempDir, stack: Stack) -> GenerateRequest {
+        GenerateRequest {
+            path: dir.path().to_string_lossy().into(),
+            stack,
+            port: 3000,
+            runtime_version: None,
+            package_manager: None,
+            start_script: None,
+            python_framework: None,
+            python_module: None,
+            services: vec![],
+        }
+    }
+
+    fn file<'a>(plan: &'a GeneratePlan, name: &str) -> &'a GeneratedFile {
+        plan.files.iter().find(|f| f.name == name).unwrap()
+    }
+
+    #[test]
+    fn node_plan_has_expected_files_and_no_writes() {
+        let dir = project(&[("package.json", r#"{"scripts":{"dev":"vite"}}"#)]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.start_script = Some("dev".into());
+        req.services = vec![Service::Postgres, Service::Redis];
+        let plan = preview(&req).unwrap();
+        let dockerfile = &file(&plan, DOCKERFILE).content;
+        assert!(dockerfile.contains("FROM node:22-alpine"));
+        assert!(dockerfile.contains(r#"CMD ["npm", "run", "dev"]"#));
+        let compose = &file(&plan, COMPOSE_FILE).content;
+        assert!(compose.contains("\"3000:3000\""));
+        assert!(compose.contains("condition: service_healthy"));
+        assert!(compose.contains("127.0.0.1:5432:5432"));
+        assert!(compose.contains("DATABASE_URL"));
+        assert!(!compose.contains("version:"));
+        assert!(plan.files.iter().any(|f| f.name == ENV_EXAMPLE));
+        // preview must not create anything
+        assert!(!dir.path().join(DOCKERFILE).exists());
+    }
+
+    #[test]
+    fn spring_laravel_and_python_templates() {
+        let dir = project(&[
+            ("pom.xml", "<project/>"),
+            ("composer.json", "{}"),
+            ("requirements.txt", "fastapi\n"),
+        ]);
+        let mut spring = request(&dir, Stack::SpringBoot);
+        spring.port = 8081;
+        spring.services = vec![Service::Postgres, Service::Rabbitmq];
+        let plan = preview(&spring).unwrap();
+        assert!(file(&plan, DOCKERFILE)
+            .content
+            .contains("maven:3.9-eclipse-temurin-21"));
+        assert!(file(&plan, COMPOSE_FILE)
+            .content
+            .contains("SPRING_DATASOURCE_URL: \"jdbc:postgresql://postgres:5432/app\""));
+
+        let mut laravel = request(&dir, Stack::Laravel);
+        laravel.services = vec![Service::Mysql, Service::Redis];
+        let plan = preview(&laravel).unwrap();
+        let dockerfile = &file(&plan, DOCKERFILE).content;
+        assert!(dockerfile.contains("pdo_mysql") && dockerfile.contains("pecl install redis"));
+        assert!(file(&plan, COMPOSE_FILE)
+            .content
+            .contains("DB_CONNECTION: \"mysql\""));
+
+        let mut python = request(&dir, Stack::Python);
+        python.port = 8000;
+        let plan = preview(&python).unwrap();
+        assert!(file(&plan, DOCKERFILE)
+            .content
+            .contains(r#"CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]"#));
+    }
+
+    #[test]
+    fn rejects_injection_and_invalid_input() {
+        let dir = project(&[("package.json", "{}"), ("requirements.txt", "")]);
+        for script in ["dev\"; rm -rf /", "-x", "a b", "", "x\nRUN evil"] {
+            let mut req = request(&dir, Stack::Nodejs);
+            req.start_script = Some(script.into());
+            assert!(preview(&req).is_err(), "{script:?}");
+        }
+        for module in ["main:app\"]; RUN x", "a b", ":app", "a:b:c;", "../x"] {
+            let mut req = request(&dir, Stack::Python);
+            req.python_module = Some(module.into());
+            assert!(preview(&req).is_err(), "{module:?}");
+        }
+        let mut req = request(&dir, Stack::Nodejs);
+        req.runtime_version = Some("22\nRUN evil".into());
+        assert!(preview(&req).is_err());
+        let mut req = request(&dir, Stack::Nodejs);
+        req.port = 0;
+        assert!(preview(&req).is_err());
+        // port collision with a service published on the host
+        let mut req = request(&dir, Stack::Nodejs);
+        req.port = 5432;
+        req.services = vec![Service::Postgres];
+        assert!(preview(&req).is_err());
+        // unknown request fields are rejected at the boundary
+        assert!(serde_json::from_str::<GenerateRequest>(
+            r#"{"path":".","stack":"nodejs","port":1,"content":"x"}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn requires_manifest_for_selected_stack() {
+        let dir = project(&[]);
+        for stack in [
+            Stack::Nodejs,
+            Stack::SpringBoot,
+            Stack::Python,
+            Stack::Laravel,
+        ] {
+            assert!(preview(&request(&dir, stack)).is_err());
+        }
+    }
+
+    #[test]
+    fn apply_writes_selected_files_and_never_overwrites() {
+        let dir = project(&[("package.json", "{}"), ("Dockerfile", "ORIGINAL")]);
+        let req = request(&dir, Stack::Nodejs);
+        let plan = preview(&req).unwrap();
+        assert!(file(&plan, DOCKERFILE).exists);
+        assert!(!file(&plan, COMPOSE_FILE).exists);
+        let report = apply(&req, &[DOCKERFILE.into(), COMPOSE_FILE.into()]).unwrap();
+        assert_eq!(report.written, vec![COMPOSE_FILE.to_string()]);
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join(DOCKERFILE)).unwrap(),
+            "ORIGINAL"
+        );
+        assert!(!dir.path().join(DOCKERIGNORE).exists());
+        // second run: nothing left to write
+        let report = apply(&req, &[COMPOSE_FILE.into()]).unwrap();
+        assert!(report.written.is_empty());
+    }
+
+    #[test]
+    fn existing_compose_variants_block_the_compose_file() {
+        for name in COMPOSE_NAMES {
+            let dir = project(&[("package.json", "{}"), (name, "services: {}")]);
+            let plan = preview(&request(&dir, Stack::Nodejs)).unwrap();
+            assert!(file(&plan, COMPOSE_FILE).exists, "{name}");
+        }
+    }
+
+    #[test]
+    fn apply_rejects_names_outside_the_plan_and_empty_selection() {
+        let dir = project(&[("package.json", "{}")]);
+        let req = request(&dir, Stack::Nodejs);
+        assert!(apply(&req, &[]).is_err());
+        for name in ["../evil", "/etc/passwd", ".env", "Dockerfile/../x"] {
+            assert!(apply(&req, &[name.into()]).is_err(), "{name}");
+        }
+        assert!(fs::read_dir(dir.path()).unwrap().count() == 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_does_not_follow_symlinks() {
+        let dir = project(&[("package.json", "{}")]);
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("victim");
+        fs::write(&target, "SAFE").unwrap();
+        std::os::unix::fs::symlink(&target, dir.path().join(DOCKERFILE)).unwrap();
+        let report = apply(&request(&dir, Stack::Nodejs), &[DOCKERFILE.into()]).unwrap();
+        assert!(report.written.is_empty());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "SAFE");
+    }
+
+    #[test]
+    fn never_reads_env_files_and_detects_stacks_without_executing() {
+        let dir = project(&[
+            ("package.json", r#"{"scripts":{"dev":"x","bad name":"y"}}"#),
+            ("pnpm-lock.yaml", ""),
+            (".env", "SECRET=1"),
+        ]);
+        let found = detect_stacks(&dir.path().to_string_lossy()).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].stack, Stack::Nodejs);
+        assert_eq!(found[0].package_manager, Some(PackageManager::Pnpm));
+        assert_eq!(found[0].scripts, vec!["dev".to_string()]);
+        let plan = preview(&request(&dir, Stack::Nodejs)).unwrap();
+        assert!(plan.files.iter().all(|f| !f.content.contains("SECRET")));
+    }
+}

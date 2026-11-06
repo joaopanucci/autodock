@@ -20,6 +20,29 @@ async fn list_docker_containers() -> Result<autodock_core::DockerContainersRepor
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn detect_stacks(path: String) -> Result<Vec<autodock_core::generate::Suggestion>, String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::detect_stacks(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn preview_docker_setup(
+    request: autodock_core::generate::GenerateRequest,
+) -> Result<autodock_core::generate::GeneratePlan, String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::preview(&request))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn apply_docker_setup(
+    request: autodock_core::generate::GenerateRequest,
+    files: Vec<String>,
+) -> Result<autodock_core::generate::ApplyReport, String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::apply(&request, &files))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn scan_project(path: String) -> Result<autodock_core::ScanReport, String> {
     tauri::async_runtime::spawn_blocking(move || autodock_core::scan(std::path::Path::new(&path)))
         .await
@@ -47,6 +70,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             scan_project,
+            detect_stacks,
+            preview_docker_setup,
+            apply_docker_setup,
             doctor_environment,
             list_docker_containers,
             collect_container_metrics,
