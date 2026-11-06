@@ -16,8 +16,12 @@ pub(crate) type Seed = [u8; SEED_BYTES];
 /// A fresh seed from the OS CSPRNG.
 pub(crate) fn new_seed() -> Result<Seed, String> {
     let mut seed = [0u8; SEED_BYTES];
-    getrandom::fill(&mut seed)
-        .map_err(|e| format!("Não foi possível gerar números aleatórios seguros: {e}"))?;
+    getrandom::fill(&mut seed).map_err(|e| {
+        tr!(
+            "Não foi possível gerar números aleatórios seguros: {e}",
+            "Could not generate secure random numbers: {e}"
+        )
+    })?;
     Ok(seed)
 }
 
@@ -27,12 +31,15 @@ pub(crate) fn seed_to_hex(seed: &Seed) -> String {
 
 pub(crate) fn seed_from_hex(value: &str) -> Result<Seed, String> {
     if value.len() != SEED_BYTES * 2 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("Semente de senhas inválida. Gere o preview novamente.".into());
+        return Err(tr!(
+            "Semente de senhas inválida. Gere o preview novamente.",
+            "Invalid password seed. Generate the preview again."
+        ));
     }
     let mut seed = [0u8; SEED_BYTES];
     for (index, byte) in seed.iter_mut().enumerate() {
         *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
-            .map_err(|_| "Semente de senhas inválida.".to_string())?;
+            .map_err(|_| tr!("Semente de senhas inválida.", "Invalid password seed."))?;
     }
     Ok(seed)
 }

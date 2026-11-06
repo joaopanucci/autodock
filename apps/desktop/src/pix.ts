@@ -19,7 +19,7 @@ function clean(value: string, max: number) {
 }
 
 function field(id: string, value: string) {
-  if (value.length > 99) throw new Error("Campo PIX excede o tamanho permitido.");
+  if (value.length > 99) throw new Error("PIX field exceeds the allowed length.");
   return `${id}${String(value.length).padStart(2, "0")}${value}`;
 }
 
@@ -36,12 +36,12 @@ export function crc16(text: string) {
 
 export function pixPayload({ key, name, city, amount, txid }: PixInput) {
   const pixKey = key.trim();
-  if (!pixKey || /[^\x21-\x7e]/.test(pixKey)) throw new Error("Chave PIX inválida.");
+  if (!pixKey || /[^\x21-\x7e]/.test(pixKey)) throw new Error("Invalid PIX key.");
   const receiver = clean(name, 25);
   const town = clean(city, 15);
-  if (!receiver || !town) throw new Error("Nome e cidade do recebedor são obrigatórios.");
+  if (!receiver || !town) throw new Error("Recipient name and city are required.");
   if (amount !== undefined && !(amount > 0 && amount < 1_000_000)) {
-    throw new Error("Valor inválido.");
+    throw new Error("Invalid amount.");
   }
   const reference = clean(txid ?? "", 25).replace(/[^A-Z0-9]/g, "") || "***";
   const body =

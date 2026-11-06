@@ -18,10 +18,13 @@ impl LogsRequest {
         if !(12..=64).contains(&self.container_id.len())
             || !self.container_id.bytes().all(|b| b.is_ascii_hexdigit())
         {
-            return Err("Identificador inválido: selecione um container com ID hexadecimal de 12 a 64 caracteres.".into());
+            return Err(tr!("Identificador inválido: selecione um container com ID hexadecimal de 12 a 64 caracteres.", "Invalid identifier: pick a container with a hexadecimal ID of 12 to 64 characters."));
         }
         if ![100, 300, 500].contains(&self.tail) {
-            return Err("Limite inválido: escolha 100, 300 ou 500 linhas.".into());
+            return Err(tr!(
+                "Limite inválido: escolha 100, 300 ou 500 linhas.",
+                "Invalid limit: choose 100, 300 or 500 lines."
+            ));
         }
         Ok(vec![
             "logs".into(),

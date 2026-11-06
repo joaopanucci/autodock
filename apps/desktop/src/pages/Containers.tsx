@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../ipc";
 import {
   Boxes,
   RefreshCw,
@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import type { DockerContainer, DockerContainersReport } from "../types";
 import { Badge, Panel } from "../components/ui";
+import { useI18n } from "../i18n";
+import type { Translate } from "../i18n";
 
 type Filter = "all" | "running" | "exited";
 
@@ -20,19 +22,20 @@ function statusTone(container: DockerContainer) {
   return "neutral" as const;
 }
 
-function statusLabel(container: DockerContainer) {
-  if (container.health === "unhealthy") return "Não saudável";
-  if (container.health === "healthy") return "Saudável";
-  if (container.state === "running") return "Em execução";
-  if (container.state === "exited") return "Parado";
-  return container.state || "Desconhecido";
+function statusLabel(container: DockerContainer, t: Translate) {
+  if (container.health === "unhealthy") return t("containers.status.unhealthy");
+  if (container.health === "healthy") return t("containers.status.healthy");
+  if (container.state === "running") return t("containers.status.running");
+  if (container.state === "exited") return t("containers.status.exited");
+  return container.state || t("containers.status.unknown");
 }
 
-function groupName(container: DockerContainer) {
-  return container.project || "Containers independentes";
+function groupName(container: DockerContainer, t: Translate) {
+  return container.project || t("containers.group.standalone");
 }
 
 export function Containers() {
+  const { t, tn, locale } = useI18n();
   const [report, setReport] = useState<DockerContainersReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +52,7 @@ export function Containers() {
     setError("");
 
     try {
-      const result = await invoke<DockerContainersReport>(
+      const result = await call<DockerContainersReport>(
         "list_docker_containers",
       );
       if (!mounted.current) return;
@@ -110,14 +113,14 @@ export function Containers() {
     const grouped = new Map<string, DockerContainer[]>();
 
     for (const container of filtered) {
-      const name = groupName(container);
+      const name = groupName(container, t);
       const current = grouped.get(name) ?? [];
       current.push(container);
       grouped.set(name, current);
     }
 
     return [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [containers, filter, search]);
+  }, [containers, filter, search, t]);
 
   const filterButton = (value: Filter, label: string) => (
     <button
@@ -143,13 +146,15 @@ export function Containers() {
         }}
       >
         <div>
-          <p className="eyebrow">DOCKER ENGINE LOCAL</p>
+          <p className="eyebrow">{t("containers.eyebrow")}</p>
           <p className="section-description">
-            Containers reais encontrados no ambiente Docker.
+            {t("containers.intro")}
           </p>
           {updatedAt && (
             <small>
-              Última consulta: {updatedAt.toLocaleTimeString("pt-BR")}
+              {t("containers.lastQuery", {
+                time: updatedAt.toLocaleTimeString(locale),
+              })}
             </small>
           )}
         </div>
@@ -161,7 +166,7 @@ export function Containers() {
           onClick={() => void refresh()}
         >
           <RefreshCw size={17} aria-hidden="true" />
-          {loading ? "Consultando..." : "Atualizar"}
+          {loading ? t("containers.querying") : t("containers.refresh")}
         </button>
       </div>
 
@@ -169,7 +174,7 @@ export function Containers() {
         <div className="feedback error" role="alert">
           <AlertCircle size={20} aria-hidden="true" />
           <div>
-            <strong>Não foi possível consultar o Docker</strong>
+            <strong>{t("containers.error.title")}</strong>
             <p>{error}</p>
           </div>
         </div>
@@ -183,10 +188,10 @@ export function Containers() {
         }}
       >
         {[
-          { label: "Total", value: containers.length, icon: Boxes },
-          { label: "Executando", value: running, icon: Activity },
-          { label: "Parados", value: stopped, icon: Server },
-          { label: "Não saudáveis", value: unhealthy, icon: AlertCircle },
+          { label: t("containers.metric.total"), value: containers.length, icon: Boxes },
+          { label: t("containers.metric.running"), value: running, icon: Activity },
+          { label: t("containers.metric.stopped"), value: stopped, icon: Server },
+          { label: t("containers.metric.unhealthy"), value: unhealthy, icon: AlertCircle },
         ].map(({ label, value, icon: Icon }) => (
           <div className="metric" key={label}>
             <div className="metric-label">
@@ -194,12 +199,12 @@ export function Containers() {
               <Icon size={18} aria-hidden="true" />
             </div>
             <strong>{report ? value : "—"}</strong>
-            <p>Docker Engine</p>
+            <p>{t("containers.metric.engine")}</p>
           </div>
         ))}
       </div>
 
-      <Panel title="Explorar containers" eyebrow="INVENTÁRIO LOCAL">
+      <Panel title={t("containers.explore.title")} eyebrow={t("containers.explore.eyebrow")}>
         <div
           style={{
             display: "flex",
@@ -222,10 +227,10 @@ export function Containers() {
               }}
             />
             <input
-              aria-label="Pesquisar containers"
+              aria-label={t("containers.search.label")}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Pesquisar nome, imagem ou projeto"
+              placeholder={t("containers.search.placeholder")}
               style={{
                 width: "100%",
                 padding: "11px 12px 11px 38px",
@@ -237,21 +242,21 @@ export function Containers() {
               }}
             />
           </div>
-          {filterButton("all", "Todos")}
-          {filterButton("running", "Executando")}
-          {filterButton("exited", "Parados")}
+          {filterButton("all", t("containers.filter.all"))}
+          {filterButton("running", t("containers.filter.running"))}
+          {filterButton("exited", t("containers.filter.exited"))}
         </div>
 
         {loading && !report && (
-          <p role="status">Consultando Docker Engine...</p>
+          <p role="status">{t("containers.loading")}</p>
         )}
 
         {!loading && !error && report && containers.length === 0 && (
-          <p>Nenhum container encontrado neste Docker Engine.</p>
+          <p>{t("containers.none")}</p>
         )}
 
         {report && groups.length === 0 && containers.length > 0 && (
-          <p>Nenhum container corresponde aos filtros.</p>
+          <p>{t("containers.noMatch")}</p>
         )}
 
         <div style={{ display: "grid", gap: 20 }}>
@@ -289,7 +294,7 @@ export function Containers() {
                   </strong>
                 </div>
                 <Badge tone="blue">
-                  {items.length} container{items.length !== 1 ? "s" : ""}
+                  {tn("containers.count", items.length)}
                 </Badge>
               </div>
 
@@ -317,7 +322,7 @@ export function Containers() {
                         {container.name}
                       </strong>
                       <Badge tone={statusTone(container)}>
-                        {statusLabel(container)}
+                        {statusLabel(container, t)}
                       </Badge>
                     </div>
 
@@ -331,25 +336,28 @@ export function Containers() {
                       }}
                     >
                       <div>
-                        <span style={{ opacity: 0.6 }}>Imagem</span>
+                        <span style={{ opacity: 0.6 }}>{t("containers.image")}</span>
                         <div style={{ overflowWrap: "anywhere" }}>
                           {container.image}
                         </div>
                       </div>
                       <div>
-                        <span style={{ opacity: 0.6 }}>Serviço</span>
-                        <div>{container.service || "Independente"}</div>
+                        <span style={{ opacity: 0.6 }}>{t("containers.service")}</span>
+                        <div>{container.service || t("containers.standalone")}</div>
                       </div>
                       <div>
-                        <span style={{ opacity: 0.6 }}>Portas</span>
+                        <span style={{ opacity: 0.6 }}>{t("containers.ports")}</span>
                         <div style={{ overflowWrap: "anywhere" }}>
-                          {container.ports || "Nenhuma publicada"}
+                          {container.ports || t("containers.noPorts")}
                         </div>
                       </div>
                     </div>
 
                     <small style={{ opacity: 0.65 }}>
-                      {container.status} · ID: {container.id.slice(0, 12)}
+                      {t("containers.idLine", {
+                        status: container.status,
+                        id: container.id.slice(0, 12),
+                      })}
                     </small>
                   </div>
                 ))}
@@ -362,8 +370,7 @@ export function Containers() {
       <div className="notice">
         <Server size={18} aria-hidden="true" />
         <p>
-          Consulta somente leitura. Nenhum container será iniciado,
-          interrompido, reiniciado ou removido pelo AutoDock.
+          {t("containers.readonly")}
         </p>
       </div>
     </div>

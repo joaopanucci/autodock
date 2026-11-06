@@ -16,6 +16,7 @@ import {
   technologyNames,
 } from "../model";
 import { Badge, EmptyState, Panel } from "../components/ui";
+import { useI18n } from "../i18n";
 
 export function Projects({
   path,
@@ -38,10 +39,11 @@ export function Projects({
   inspect: (project: SessionProject) => void;
   prepareDocker: () => void;
 }) {
+  const { t, tn } = useI18n();
   const modules = scan ? groupModules(scan) : [];
   return (
     <>
-      <Panel title="Importar um projeto" eyebrow="DIRETÓRIO LOCAL">
+      <Panel title={t("projects.import.title")} eyebrow={t("projects.import.eyebrow")}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -49,7 +51,7 @@ export function Projects({
           }}
         >
           <label className="field-label" htmlFor="project-path">
-            Caminho do projeto
+            {t("projects.path.label")}
           </label>
           <div className="path-control">
             <FolderOpen size={18} aria-hidden="true" />
@@ -58,7 +60,7 @@ export function Projects({
               value={path}
               disabled={busy}
               onChange={(event) => setPath(event.target.value)}
-              placeholder="Selecione uma pasta ou informe o caminho absoluto"
+              placeholder={t("projects.path.placeholder")}
             />
             <button
               type="button"
@@ -66,7 +68,7 @@ export function Projects({
               disabled={busy}
               onClick={select}
             >
-              Selecionar pasta
+              {t("projects.selectFolder")}
             </button>
             <button
               type="submit"
@@ -74,17 +76,16 @@ export function Projects({
               disabled={busy || !path.trim()}
             >
               <ScanLine size={16} aria-hidden="true" />
-              Analisar projeto
+              {t("projects.analyze")}
             </button>
           </div>
           <p className="field-hint">
-            Análise somente leitura. Diretórios de dependências, cache e backups
-            locais são ignorados.
+            {t("projects.hint")}
           </p>
         </form>
       </Panel>
       {projects.length > 0 && (
-        <div className="project-tabs" aria-label="Projetos desta sessão">
+        <div className="project-tabs" aria-label={t("projects.tabs.aria")}>
           {projects.map((p) => (
             <button
               key={p.scan.project}
@@ -99,37 +100,34 @@ export function Projects({
         </div>
       )}
       {!scan ? (
-        <Panel title="Estrutura do projeto">
+        <Panel title={t("projects.structure.title")}>
           <EmptyState
             icon={Layers3}
-            title="O próximo passo é analisar"
-            description="Escolha um diretório e inicie a análise. As tecnologias serão agrupadas por módulo, com suas evidências de origem."
+            title={t("projects.empty.title")}
+            description={t("projects.empty.description")}
           />
         </Panel>
       ) : (
         <>
           <div className="results-heading">
             <div>
-              <p className="eyebrow">ANÁLISE CONCLUÍDA</p>
+              <p className="eyebrow">{t("projects.done.eyebrow")}</p>
               <h2>{projectName(scan.project)}</h2>
               <p className="mono path-text">{displayPath(scan.project)}</p>
             </div>
             <button className="button primary" onClick={prepareDocker} disabled={busy}>
               <WandSparkles size={16} aria-hidden="true" />
-              Preparar Docker deste projeto
+              {t("projects.prepareDocker")}
             </button>
             <Badge tone={scan.warnings.length ? "amber" : "green"}>
-              {modules.length}{" "}
-              {modules.length === 1
-                ? "módulo identificado"
-                : "módulos identificados"}
+              {tn("projects.modules", modules.length)}
             </Badge>
           </div>
           {!!scan.warnings.length && (
-            <section className="notice warning" aria-label="Avisos da análise">
+            <section className="notice warning" aria-label={t("projects.warnings.aria")}>
               <AlertTriangle size={20} aria-hidden="true" />
               <div>
-                <h3>Análise com avisos</h3>
+                <h3>{t("projects.warnings.title")}</h3>
                 <ul>
                   {scan.warnings.map((w, i) => (
                     <li key={i}>{w}</li>
@@ -139,11 +137,11 @@ export function Projects({
             </section>
           )}
           {!modules.length && (
-            <Panel title="Resultado">
+            <Panel title={t("projects.result.title")}>
               <EmptyState
                 icon={FileCode2}
-                title="Nenhum módulo reconhecido"
-                description="A análise terminou, mas não encontrou os manifests suportados. Isso não significa que o diretório não contenha um projeto."
+                title={t("projects.noModules.title")}
+                description={t("projects.noModules.description")}
               />
             </Panel>
           )}
@@ -158,18 +156,20 @@ export function Projects({
               return (
                 <Panel
                   key={module.path}
-                  title={module.path === "." ? "Módulo raiz" : module.path}
-                  eyebrow="MÓDULO"
+                  title={module.path === "." ? t("projects.module.root") : module.path}
+                  eyebrow={t("projects.module.eyebrow")}
                   action={<Layers3 size={18} aria-hidden="true" />}
                 >
                   <div className="technology-list">
-                    {module.technologies.map((t) => (
-                      <Badge key={t} tone="blue">
-                        {technologyNames[t] ?? t} · Detectado
+                    {module.technologies.map((tech) => (
+                      <Badge key={tech} tone="blue">
+                        {t("projects.detected", {
+                          name: technologyNames[tech] ?? tech,
+                        })}
                       </Badge>
                     ))}
                     {!module.technologies.length && (
-                      <Badge>Configuração encontrada</Badge>
+                      <Badge>{t("projects.configFound")}</Badge>
                     )}
                   </div>
                   <div className="evidence-list">
@@ -192,16 +192,15 @@ export function Projects({
                               }
                             >
                               {f.status === "declared"
-                                ? "Declarado pelo projeto"
-                                : "Detectado"}
+                                ? t("projects.finding.declared")
+                                : t("projects.finding.detected")}
                             </Badge>
                           </div>
                           {f.value && <code>{f.value}</code>}
                           <small>{f.source}</small>
                           {f.kind === "container_config" && (
                             <small>
-                              Presença do arquivo; conteúdo e execução não
-                              verificados.
+                              {t("projects.finding.containerNote")}
                             </small>
                           )}
                         </div>
@@ -211,14 +210,14 @@ export function Projects({
                   {!!dependencies.length && (
                     <details className="details">
                       <summary>
-                        Dependências declaradas ({dependencies.length})
+                        {t("projects.deps", { count: dependencies.length })}
                       </summary>
                       <div className="finding-list">
                         {dependencies.map((f, i) => (
                           <div className="finding" key={i}>
                             <strong>{f.name}</strong>
                             <code>
-                              {f.value ?? "Versão não declarada diretamente"}
+                              {f.value ?? t("projects.noDepVersion")}
                             </code>
                             <small>{f.source}</small>
                           </div>
@@ -233,11 +232,9 @@ export function Projects({
           <section className="notice">
             <Info size={18} aria-hidden="true" />
             <div>
-              <h3>O que esta análise confirma</h3>
+              <h3>{t("projects.confirms.title")}</h3>
               <p>
-                As evidências vêm dos arquivos locais. Versões declaradas não
-                comprovam instalação. Herança Maven, ranges de versão e
-                configuração de serviços Docker não são resolvidos nesta etapa.
+                {t("projects.confirms.body")}
               </p>
             </div>
           </section>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../ipc";
 import {
   AlertTriangle,
   Copy,
@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Badge, EmptyState, Panel } from "../components/ui";
+import { useI18n } from "../i18n";
 import { logsCopy, logText } from "../logs-format";
 import type {
   DockerContainer,
@@ -18,6 +19,7 @@ import type {
 } from "../types";
 
 export function ContainerLogs() {
+  const { t } = useI18n();
   const [containers, setContainers] = useState<DockerContainer[] | null>(null);
   const [id, setId] = useState("");
   const [tail, setTail] = useState<100 | 300 | 500>(100);
@@ -74,7 +76,7 @@ export function ContainerLogs() {
   }
   function refreshContainers() {
     void run("list", async (isCurrent) => {
-      const report = await invoke<DockerContainersReport>(
+      const report = await call<DockerContainersReport>(
         "list_docker_containers",
       );
       if (!isCurrent()) return;
@@ -91,7 +93,7 @@ export function ContainerLogs() {
     if (!selected) return;
     void run("logs", async (isCurrent) => {
       setResult(null);
-      const report = await invoke<LogsReport>("query_container_logs", {
+      const report = await call<LogsReport>("query_container_logs", {
         request: { containerId: selected.id, tail },
       });
       if (!isCurrent()) return;
@@ -100,27 +102,25 @@ export function ContainerLogs() {
         report.containerId !== selected.id ||
         report.tail !== tail
       )
-        throw new Error("Resposta de logs não corresponde à consulta.");
+        throw new Error(t("logs.error.mismatch"));
       setResult(report);
     });
   }
   async function copy() {
     if (!result) return;
     try {
-      await navigator.clipboard.writeText(logsCopy(result));
+      await navigator.clipboard.writeText(logsCopy(result, t));
       if (mounted.current) setCopied(true);
     } catch {
       if (!mounted.current) return;
-      setError(
-        "Não foi possível copiar. Verifique a permissão da área de transferência.",
-      );
+      setError(t("logs.error.copy"));
     }
   }
   return (
     <div className="container-logs">
       <Panel
-        title="Logs de containers"
-        eyebrow="CONSULTA PONTUAL · SOMENTE LEITURA"
+        title={t("logs.title")}
+        eyebrow={t("logs.eyebrow")}
         action={
           <button
             className="button secondary"
@@ -128,30 +128,28 @@ export function ContainerLogs() {
             onClick={refreshContainers}
           >
             <RefreshCw size={16} aria-hidden="true" />
-            {containers ? "Atualizar lista" : "Carregar containers"}
+            {containers ? t("logs.refreshList") : t("logs.loadContainers")}
           </button>
         }
       >
         <p className="section-description">
-          Selecione um container da lista e consulte os registros existentes.
-          Nenhum comando é executado dentro do container.
+          {t("logs.intro")}
         </p>
         {containers === null ? (
           <EmptyState
             icon={FileText}
-            title="Escolha um container para começar"
-            description="Carregue a lista do Docker. Os logs só serão consultados quando você solicitar."
+            title={t("logs.empty.title")}
+            description={t("logs.empty.description")}
           />
         ) : !containers.length ? (
           <p role="status">
-            Nenhum container encontrado. Atualize a lista para verificar
-            novamente.
+            {t("logs.noContainers")}
           </p>
         ) : (
           <>
             <div className="logs-controls">
               <div className="logs-field">
-                <label htmlFor="logs-container">Container</label>
+                <label htmlFor="logs-container">{t("logs.container")}</label>
                 <select
                   id="logs-container"
                   value={id}
@@ -163,14 +161,14 @@ export function ContainerLogs() {
                 >
                   {containers.map((c) => (
                     <option value={c.id} key={c.id}>
-                      {c.name} · {c.state || "estado desconhecido"} ·{" "}
+                      {c.name} · {c.state || t("logs.stateUnknownLower")} ·{" "}
                       {c.id.slice(0, 12)}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="logs-field">
-                <label htmlFor="logs-tail">Últimas linhas</label>
+                <label htmlFor="logs-tail">{t("logs.lastLines")}</label>
                 <select
                   id="logs-tail"
                   value={tail}
@@ -182,7 +180,7 @@ export function ContainerLogs() {
                 >
                   {[100, 300, 500].map((n) => (
                     <option value={n} key={n}>
-                      {n} linhas
+                      {t("logs.lines", { n })}
                     </option>
                   ))}
                 </select>
@@ -197,7 +195,7 @@ export function ContainerLogs() {
                 ) : (
                   <RefreshCw size={16} aria-hidden="true" />
                 )}
-                {result ? "Atualizar logs" : "Consultar logs"}
+                {result ? t("logs.refreshLogs") : t("logs.queryLogs")}
               </button>
             </div>
             {selected && (
@@ -206,29 +204,27 @@ export function ContainerLogs() {
                 <Badge
                   tone={selected.state === "running" ? "green" : "neutral"}
                 >
-                  {selected.state || "Estado desconhecido"}
+                  {selected.state || t("logs.stateUnknown")}
                 </Badge>
                 <code>{selected.id}</code>
                 <small>
-                  Estado observado na última listagem; o container pode ter
-                  mudado desde então.
+                  {t("logs.stateNote")}
                 </small>
               </div>
             )}
           </>
         )}
         <p className="card-note">
-          Limites: 15 segundos, mais até 2 segundos de limpeza; 128 KiB e até a
-          quantidade escolhida de linhas por fluxo. Sem acompanhamento contínuo.
+          {t("logs.limits")}
         </p>
       </Panel>
       <div role="status" aria-live="polite">
         {busy ? (
           <p>
-            {busy === "list" ? "Carregando containers…" : "Consultando logs…"}
+            {busy === "list" ? t("logs.loadingList") : t("logs.loadingLogs")}
           </p>
         ) : copied ? (
-          <p>Resultado copiado.</p>
+          <p>{t("logs.copiedStatus")}</p>
         ) : null}
       </div>
       {error && (
@@ -239,17 +235,17 @@ export function ContainerLogs() {
       )}
       {result && (
         <Panel
-          title="Resultado da consulta"
-          eyebrow="SOMENTE NA MEMÓRIA DESTA JANELA"
+          title={t("logs.result.title")}
+          eyebrow={t("logs.result.eyebrow")}
           action={
             <div className="logs-actions">
               <button className="button secondary" onClick={() => void copy()}>
                 <Copy size={15} aria-hidden="true" />
-                {copied ? "Copiado" : "Copiar resultado"}
+                {copied ? t("logs.copied") : t("logs.copy")}
               </button>
               <button className="button secondary" onClick={clearResult}>
                 <Trash2 size={15} aria-hidden="true" />
-                Limpar logs
+                {t("logs.clear")}
               </button>
             </div>
           }
@@ -257,63 +253,58 @@ export function ContainerLogs() {
           <div className="console-result-meta">
             <Badge tone={result.status === "available" ? "green" : "amber"}>
               {result.status === "available"
-                ? "Consulta concluída"
+                ? t("logs.status.done")
                 : result.status === "timeout"
-                  ? "Tempo esgotado"
+                  ? t("logs.status.timeout")
                   : result.status === "missing"
-                    ? "Docker não encontrado"
+                    ? t("logs.status.missing")
                     : result.truncated
-                      ? "Saída truncada"
-                      : "Erro de execução"}
+                      ? t("logs.status.truncated")
+                      : t("logs.status.error")}
             </Badge>
             <span>{result.durationMs} ms</span>
-            <span>Código de saída: {result.exitCode ?? "—"}</span>
-            <span>Últimas {result.tail} linhas solicitadas</span>
+            <span>{t("logs.exitCode", { code: result.exitCode ?? "—" })}</span>
+            <span>{t("logs.tailRequested", { tail: result.tail })}</span>
           </div>
           {(result.detail || result.truncated) && (
             <div className="notice warning" role="status">
               <AlertTriangle size={17} aria-hidden="true" />
-              <p>{result.detail || "Saída truncada pelo limite de captura."}</p>
+              <p>{result.detail || t("logs.truncatedLimit")}</p>
             </div>
           )}
           {result.status !== "available" && (
             <p className="card-note">
-              A consulta não foi concluída integralmente. O conteúdo exibido
-              pode ser parcial; atualize a lista ou tente novamente.
+              {t("logs.incomplete")}
             </p>
           )}
           <div className="logs-streams">
-            <section aria-label="Saída padrão dos logs">
+            <section aria-label={t("logs.stdoutLabel")}>
               <h3>stdout</h3>
               <pre tabIndex={0}>
-                {logText(result.stdout) || "(sem saída padrão)"}
+                {logText(result.stdout) || t("logs.noStdout")}
               </pre>
             </section>
-            <section aria-label="Saída de erro dos logs">
+            <section aria-label={t("logs.stderrLabel")}>
               <h3>stderr</h3>
               <pre tabIndex={0}>
-                {logText(result.stderr) || "(sem saída de erro)"}
+                {logText(result.stderr) || t("logs.noStderr")}
               </pre>
             </section>
           </div>
           {!result.stdout &&
             !result.stderr &&
             result.status === "available" && (
-              <p role="status">O Docker não retornou logs nesta consulta.</p>
+              <p role="status">{t("logs.noLogs")}</p>
             )}
           <p className="card-note">
-            Controles de terminal são omitidos. Em containers TTY, Docker pode
-            reunir os fluxos em stdout; a ordem relativa entre os dois fluxos
-            não é reconstruída.
+            {t("logs.terminalNote")}
           </p>
         </Panel>
       )}
       <div className="notice">
         <ShieldCheck size={18} aria-hidden="true" />
         <p>
-          Os logs não são gravados em arquivos, histórico do Console ou
-          relatórios. Podem conter informações sensíveis: revise antes de
-          copiar. Fechar a janela encerra a sessão.
+          {t("logs.privacy")}
         </p>
       </div>
     </div>

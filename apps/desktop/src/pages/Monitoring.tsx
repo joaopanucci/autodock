@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../ipc";
 import {
   Activity,
   Cpu,
@@ -9,6 +9,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Badge, Panel } from "../components/ui";
+import { useI18n } from "../i18n";
 import type { ContainerMetrics, MonitoringReport } from "../types";
 
 type Sample = {
@@ -29,9 +30,9 @@ type Snapshot = {
 
 const MAX_SAMPLES = 40;
 
-function bytes(value: number | null): string {
+function formatBytes(value: number | null, unavailable: string): string {
   if (value === null || !Number.isFinite(value) || value < 0) {
-    return "Indisponível";
+    return unavailable;
   }
 
   if (value < 1024) return `${value.toFixed(0)} B`;
@@ -48,9 +49,9 @@ function bytes(value: number | null): string {
   return `${result.toFixed(result >= 100 ? 0 : 1)} ${units[index]}`;
 }
 
-function percent(value: number | null): string {
+function formatPercent(value: number | null, unavailable: string): string {
   return value === null || !Number.isFinite(value)
-    ? "Indisponível"
+    ? unavailable
     : `${value.toFixed(2)}%`;
 }
 
@@ -91,6 +92,7 @@ function Trend({
   field: "cpu" | "memory";
   color: string;
 }) {
+  const { t, locale } = useI18n();
   const valid = samples.filter(
     (sample) =>
       sample[field] !== null &&
@@ -101,7 +103,7 @@ function Trend({
   if (valid.length < 2) {
     return (
       <div className="ad-monitor-empty">
-        Aguardando pelo menos duas amostras válidas.
+        {t("monitor.waitingSamples")}
       </div>
     );
   }
@@ -152,7 +154,7 @@ function Trend({
   if (current.length >= 2) segments.push(current);
 
   const timeLabel = (time: number) =>
-    new Date(time).toLocaleTimeString("pt-BR", {
+    new Date(time).toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -164,7 +166,10 @@ function Trend({
         className="ad-monitor-chart"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Histórico de ${field === "cpu" ? "CPU" : "memória"} com ${valid.length} amostras válidas`}
+        aria-label={t("monitor.chartAria", {
+          metric: field === "cpu" ? t("monitor.metric.cpu") : t("monitor.metric.memory"),
+          count: valid.length,
+        })}
         preserveAspectRatio="xMidYMid meet"
       >
         {[0, 0.5, 1].map((fraction) => {
@@ -227,6 +232,9 @@ function Trend({
 }
 
 export function Monitoring() {
+  const { t, locale } = useI18n();
+  const bytes = (value: number | null) => formatBytes(value, t("monitor.unavailable"));
+  const percent = (value: number | null) => formatPercent(value, t("monitor.unavailable"));
   const [report, setReport] = useState<MonitoringReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -249,20 +257,20 @@ export function Monitoring() {
     setLoading(true);
 
     try {
-      const result = await invoke<MonitoringReport>(
+      const result = await call<MonitoringReport>(
         "collect_container_metrics",
       );
 
       if (!mounted.current) return;
 
       if (result.schemaVersion !== 1 || !Array.isArray(result.containers)) {
-        throw new Error("Formato de monitoramento não reconhecido.");
+        throw new Error(t("monitor.error.format"));
       }
 
       const now = result.collectedAtUnixMs;
 
       if (!Number.isSafeInteger(now) || now <= 0 || now > Date.now() + 60_000) {
-        throw new Error("Timestamp de coleta inválido.");
+        throw new Error(t("monitor.error.timestamp"));
       }
       const nextRates: Record<string, NetworkRate> = {};
       const nextSnapshots = new Map<string, Snapshot>();
@@ -358,17 +366,19 @@ export function Monitoring() {
     <div className="ad-monitor">
       <div className="ad-monitor-toolbar">
         <div>
-          <p className="eyebrow">DOCKER ENGINE · SOMENTE LEITURA</p>
+          <p className="eyebrow">{t("monitor.eyebrow")}</p>
           <p className="section-description">
-            Monitoramento dos containers em execução.
+            {t("monitor.intro")}
           </p>
           <small>
             {updatedAt
-              ? `Última amostra: ${new Date(updatedAt).toLocaleTimeString("pt-BR")}`
-              : "Nenhuma amostra coletada"}
-            {loading && " · Coletando agora"}
-            {!loading && error && " · Dados anteriores"}
-            {!loading && !error && lastFailureAt && " · Verificar coleta"}
+              ? t("monitor.lastSample", {
+                  time: new Date(updatedAt).toLocaleTimeString(locale),
+                })
+              : t("monitor.noSample")}
+            {loading && ` · ${t("monitor.collectingNow")}`}
+            {!loading && error && ` · ${t("monitor.previousData")}`}
+            {!loading && !error && lastFailureAt && ` · ${t("monitor.checkCollection")}`}
           </small>
         </div>
 
@@ -379,18 +389,18 @@ export function Monitoring() {
               checked={automatic}
               onChange={(event) => setAutomatic(event.target.checked)}
             />
-            Atualização automática
+            {t("monitor.autoRefresh")}
           </label>
 
           <select
-            aria-label="Intervalo de atualização"
+            aria-label={t("monitor.intervalLabel")}
             value={intervalSeconds}
             onChange={(event) => setIntervalSeconds(Number(event.target.value))}
             disabled={!automatic}
           >
-            <option value={5}>5 segundos</option>
-            <option value={10}>10 segundos</option>
-            <option value={30}>30 segundos</option>
+            <option value={5}>{t("monitor.seconds", { n: 5 })}</option>
+            <option value={10}>{t("monitor.seconds", { n: 10 })}</option>
+            <option value={30}>{t("monitor.seconds", { n: 30 })}</option>
           </select>
 
           <button
@@ -400,7 +410,7 @@ export function Monitoring() {
             disabled={loading}
           >
             <RefreshCw size={16} aria-hidden="true" />
-            {loading ? "Consultando..." : "Atualizar"}
+            {loading ? t("containers.querying") : t("containers.refresh")}
           </button>
         </div>
       </div>
@@ -409,10 +419,10 @@ export function Monitoring() {
         <div className="ad-monitor-error" role="alert">
           <AlertCircle size={19} aria-hidden="true" />
           <div>
-            <strong>Falha na coleta de métricas</strong>
+            <strong>{t("monitor.failure.title")}</strong>
             <p>{error}</p>
             {report && (
-              <p>Os dados abaixo pertencem à última consulta bem-sucedida.</p>
+              <p>{t("monitor.failure.note")}</p>
             )}
           </div>
         </div>
@@ -421,67 +431,73 @@ export function Monitoring() {
       <div className="ad-monitor-summary">
         <div className="metric">
           <div className="metric-label">
-            <span>Containers monitorados</span>
+            <span>{t("monitor.summary.monitored")}</span>
             <Activity size={18} aria-hidden="true" />
           </div>
           <strong>{report ? containers.length : "—"}</strong>
-          <p>Em execução na última coleta</p>
+          <p>{t("monitor.summary.runningLast")}</p>
         </div>
 
         <div className="metric">
           <div className="metric-label">
-            <span>Memória utilizada</span>
+            <span>{t("monitor.summary.memory")}</span>
             <HardDrive size={18} aria-hidden="true" />
           </div>
           <strong>{report && knownMemory ? bytes(totalMemory) : "—"}</strong>
-          <p>Soma dos valores disponíveis</p>
+          <p>{t("monitor.summary.memorySum")}</p>
         </div>
 
         <div className="metric">
           <div className="metric-label">
-            <span>Coleta</span>
+            <span>{t("monitor.summary.collection")}</span>
             <Cpu size={18} aria-hidden="true" />
           </div>
           <strong>
-            {loading ? "Em andamento" : automatic ? "Automática" : "Manual"}
+            {loading
+              ? t("monitor.summary.inProgress")
+              : automatic
+                ? t("monitor.summary.automatic")
+                : t("monitor.summary.manual")}
           </strong>
           <p>
-            {automatic ? `Intervalo de ${intervalSeconds}s` : "Sob demanda"}
+            {automatic
+              ? t("monitor.summary.interval", { n: intervalSeconds })
+              : t("monitor.summary.onDemand")}
           </p>
         </div>
       </div>
 
       <Panel
-        title="Desempenho por container"
-        eyebrow="MÉTRICAS REAIS"
+        title={t("monitor.perf.title")}
+        eyebrow={t("monitor.perf.eyebrow")}
         action={
           <Badge tone={error ? "amber" : report ? "green" : "neutral"}>
             {error
               ? report
-                ? "Dados anteriores"
-                : "Falha na coleta"
+                ? t("monitor.previousData")
+                : t("monitor.badge.failure")
               : report
-                ? "Consulta concluída"
-                : "Aguardando"}
+                ? t("logs.status.done")
+                : t("monitor.badge.waiting")}
           </Badge>
         }
       >
         {!report && !error && (
           <p className="section-description" role="status">
-            Consultando métricas do Docker...
+            {t("monitor.perf.loading")}
           </p>
         )}
 
         {report && containers.length === 0 && (
           <p className="section-description">
-            Nenhum container em execução retornou métricas.
+            {t("monitor.perf.none")}
           </p>
         )}
 
         {containers.length > 0 && (
           <>
             <div className="ad-monitor-picker">
-              <label htmlFor="ad-monitor-select">Container</label>
+              <label htmlFor="ad-monitor-select">{t("logs.container")}</label>
               <select
                 id="ad-monitor-select"
                 value={selected}
@@ -503,7 +519,7 @@ export function Monitoring() {
                     <strong>{percent(current.cpuPercent)}</strong>
                   </div>
                   <div>
-                    <span>Memória</span>
+                    <span>{t("monitor.memory")}</span>
                     <strong>{percent(current.memoryPercent)}</strong>
                     <small>
                       {bytes(current.memoryUsageBytes)} /{" "}
@@ -511,29 +527,29 @@ export function Monitoring() {
                     </small>
                   </div>
                   <div>
-                    <span>Recebimento</span>
+                    <span>{t("monitor.receiving")}</span>
                     <strong>
                       {currentRates.rx === null
-                        ? "Aguardando amostras"
+                        ? t("monitor.waitingForSamples")
                         : `${bytes(currentRates.rx)}/s`}
                     </strong>
-                    <small>Total: {bytes(current.networkRxBytes)}</small>
+                    <small>{t("monitor.total", { value: bytes(current.networkRxBytes) })}</small>
                   </div>
                   <div>
-                    <span>Envio</span>
+                    <span>{t("monitor.sending")}</span>
                     <strong>
                       {currentRates.tx === null
-                        ? "Aguardando amostras"
+                        ? t("monitor.waitingForSamples")
                         : `${bytes(currentRates.tx)}/s`}
                     </strong>
-                    <small>Total: {bytes(current.networkTxBytes)}</small>
+                    <small>{t("monitor.total", { value: bytes(current.networkTxBytes) })}</small>
                   </div>
                 </div>
 
                 <div className="ad-monitor-graphs">
                   <div>
                     <div className="ad-monitor-graph-heading">
-                      <strong>Histórico de CPU</strong>
+                      <strong>{t("monitor.history.cpu")}</strong>
                       <Badge tone="blue">{percent(current.cpuPercent)}</Badge>
                     </div>
                     <Trend
@@ -544,7 +560,7 @@ export function Monitoring() {
                   </div>
                   <div>
                     <div className="ad-monitor-graph-heading">
-                      <strong>Histórico de memória</strong>
+                      <strong>{t("monitor.history.memory")}</strong>
                       <Badge tone="green">
                         {percent(current.memoryPercent)}
                       </Badge>
@@ -562,7 +578,7 @@ export function Monitoring() {
         )}
       </Panel>
 
-      <Panel title="Todos os containers" eyebrow="ÚLTIMA AMOSTRA">
+      <Panel title={t("monitor.all.title")} eyebrow={t("monitor.all.eyebrow")}>
         <div className="ad-monitor-list">
           {containers.map((metric) => (
             <div className="ad-monitor-list-item" key={metric.id}>
@@ -575,22 +591,22 @@ export function Monitoring() {
                 <strong>{percent(metric.cpuPercent)}</strong>
               </div>
               <div>
-                <span>Memória</span>
+                <span>{t("monitor.memory")}</span>
                 <strong>{bytes(metric.memoryUsageBytes)}</strong>
               </div>
               <div>
-                <span>Rede recebida</span>
+                <span>{t("monitor.networkReceived")}</span>
                 <strong>{bytes(metric.networkRxBytes)}</strong>
               </div>
               <div>
-                <span>Rede enviada</span>
+                <span>{t("monitor.networkSent")}</span>
                 <strong>{bytes(metric.networkTxBytes)}</strong>
               </div>
             </div>
           ))}
           {containers.length === 0 && (
             <p className="section-description">
-              Sem métricas disponíveis para exibição.
+              {t("monitor.noMetrics")}
             </p>
           )}
         </div>
@@ -599,9 +615,7 @@ export function Monitoring() {
       <div className="notice">
         <Network size={18} aria-hidden="true" />
         <p>
-          As taxas de rede são estimadas pela diferença entre amostras. Os
-          totais de rede são acumulados pelo Docker. O histórico é temporário e
-          não modifica os containers.
+          {t("monitor.note")}
         </p>
       </div>
     </div>

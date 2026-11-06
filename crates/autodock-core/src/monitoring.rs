@@ -102,8 +102,9 @@ fn parse_stats(output: &str) -> Result<MonitoringReport, String> {
             || text(&item, "Name").trim().is_empty()
             || !identities.insert(text(&item, "ID"))
         {
-            return Err(format!(
+            return Err(tr!(
                 "Métrica sem identidade válida ou duplicada na linha {}",
+                "Metric without a valid or unique identity at line {}",
                 index + 1
             ));
         }

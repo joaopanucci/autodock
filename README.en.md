@@ -13,11 +13,11 @@ Answer a few questions. AutoDock writes the `Dockerfile`, the `docker-compose.ym
 
 [Português](README.md)
 
-<img src="docs/screenshots/06-assistente-revisao.png" alt="AutoDock Docker assistant previewing a docker-compose.yml" width="920" />
+<img src="docs/screenshots/en/06-assistente-revisao.png" alt="AutoDock Docker assistant previewing a docker-compose.yml" width="920" />
 
 </div>
 
-> The app interface is currently in Brazilian Portuguese. English UI is on the roadmap.
+> The interface and messages are available in **English and Portuguese** (Brazil). They follow your system language and can be switched in **Settings**.
 
 ## What it does
 
@@ -29,6 +29,24 @@ Answer a few questions. AutoDock writes the `Dockerfile`, the `docker-compose.ym
 - **Open in your IDE:** VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed or Sublime, whichever is installed.
 
 Supported stacks: **Node.js** (npm/pnpm/yarn, Vite), **Java/Spring Boot** (Maven), **Python** (FastAPI, Django, Flask) and **PHP/Laravel**.
+
+## How it works
+
+1. **Pick the project folder.** AutoDock only reads configuration files (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`) to suggest the technology. Nothing of your code runs. *Empty folder? It offers to create a new project: clean, or with the official framework installer.*
+
+<img src="docs/screenshots/en/03-assistente-projeto.png" alt="Step 1: choose the folder" width="820" />
+
+2. **Choose the services** you need. Each one becomes a container next to your app, already connected.
+
+<img src="docs/screenshots/en/05-assistente-servicos.png" alt="Step 3: services" width="820" />
+
+3. **Review before anything is written.** Strong passwords go to a private `.env.docker`, busy ports are replaced by free ones, and existing files are never overwritten.
+
+<img src="docs/screenshots/en/06-assistente-revisao.png" alt="Step 4: review" width="820" />
+
+4. **Open it in your IDE** and run `docker compose up --build`.
+
+<img src="docs/screenshots/en/07-assistente-pronto.png" alt="Step 5: done" width="820" />
 
 ## Download
 

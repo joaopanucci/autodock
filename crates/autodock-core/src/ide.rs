@@ -153,7 +153,11 @@ fn project_dir(path: &str) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("{path}: {e}"))?;
     if !canonical.is_dir() {
-        return Err(format!("Não é diretório: {}", canonical.display()));
+        return Err(tr!(
+            "Não é diretório: {}",
+            "Not a directory: {}",
+            canonical.display()
+        ));
     }
     Ok(strip_verbatim(canonical))
 }
@@ -180,9 +184,12 @@ fn spawn_detached(command: &mut Command) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x0800_0000);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Não foi possível abrir o programa: {e}"))?;
+    let mut child = command.spawn().map_err(|e| {
+        tr!(
+            "Não foi possível abrir o programa: {e}",
+            "Could not open the program: {e}"
+        )
+    })?;
     // Reap the child without blocking the caller.
     std::thread::spawn(move || {
         let _ = child.wait();
@@ -197,9 +204,13 @@ pub fn open_in_ide(id: &str, path: &str) -> Result<(), String> {
         .find(|ide| ide.id == id)
         .ok_or_else(|| format!("Editor desconhecido: {id}"))?;
     let directory = project_dir(path)?;
-    match launcher(ide)
-        .ok_or_else(|| format!("{} não foi encontrado neste computador.", ide.label))?
-    {
+    match launcher(ide).ok_or_else(|| {
+        tr!(
+            "{} não foi encontrado neste computador.",
+            "{} was not found on this computer.",
+            ide.label
+        )
+    })? {
         Launcher::MacApp(app) => {
             spawn_detached(Command::new("open").arg("-a").arg(app).arg(&directory))
         }

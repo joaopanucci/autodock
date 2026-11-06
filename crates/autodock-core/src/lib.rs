@@ -1,3 +1,5 @@
+#[macro_use]
+pub mod i18n;
 pub mod container_lifecycle;
 pub mod docker;
 pub mod lifecycle_journal;
