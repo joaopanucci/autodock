@@ -28,6 +28,19 @@ pub(crate) fn has_relative_navigation(path: &Path) -> bool {
     })
 }
 
+/// Test helper: append components verbatim. `Path::join`/`push` silently resolve
+/// `..` lexically on Windows verbatim (`\\?\`) bases, so it cannot build the
+/// unsafe inputs a caller-supplied string could contain.
+#[cfg(test)]
+pub(crate) fn raw_join(base: &Path, parts: &[&str]) -> PathBuf {
+    let mut raw = base.as_os_str().to_owned();
+    for part in parts {
+        raw.push(std::path::MAIN_SEPARATOR_STR);
+        raw.push(part);
+    }
+    PathBuf::from(raw)
+}
+
 fn name(name: &std::ffi::OsStr) -> io::Result<()> {
     let mut parts = Path::new(name).components();
     if !matches!(parts.next(), Some(Component::Normal(_))) || parts.next().is_some() {
@@ -514,7 +527,7 @@ mod tests {
             assert!(has_relative_navigation(Path::new(r"\\?\C:\a\.\b")));
             assert!(!has_relative_navigation(Path::new(r"\\?\C:\a\..b\c")));
             let dir = tempdir();
-            assert!(Directory::open(&dir.path().join("sub").join("..").join("p")).is_err());
+            assert!(Directory::open(&raw_join(dir.path(), &["sub", "..", "p"])).is_err());
         }
     }
     #[test]
