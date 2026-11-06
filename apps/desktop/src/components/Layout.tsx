@@ -8,6 +8,7 @@ import {
   TerminalSquare,
   Settings2,
   ShieldCheck,
+  WandSparkles,
   ChevronRight,
   ArrowUpRight,
   type LucideIcon,
@@ -23,6 +24,7 @@ export const navigation: {
 }[] = [
   { id: "overview", label: "Visão geral", icon: LayoutDashboard },
   { id: "projects", label: "Projetos", icon: FolderGit2 },
+  { id: "setup", label: "Assistente Docker", icon: WandSparkles },
   { id: "environment", label: "Ambiente", icon: SlidersHorizontal },
   { id: "containers", label: "Containers", icon: Boxes },
   { id: "monitoring", label: "Monitoramento", icon: Activity },
@@ -62,7 +64,7 @@ export function Layout({
         </div>
         <nav aria-label="Navegação principal">
           <p className="nav-label">WORKSPACE</p>
-          {navigation.slice(0, 3).map((item) => (
+          {navigation.slice(0, 4).map((item) => (
             <button
               key={item.id}
               aria-current={page === item.id ? "page" : undefined}
@@ -76,7 +78,7 @@ export function Layout({
             </button>
           ))}
           <p className="nav-label secondary-label">OPERAÇÕES</p>
-          {navigation.slice(3, 6).map((item) => (
+          {navigation.slice(4, 7).map((item) => (
             <button
               key={item.id}
               aria-current={page === item.id ? "page" : undefined}
@@ -106,7 +108,7 @@ export function Layout({
           <div>
             <strong>Você está no controle</strong>
             <p>
-              Análises somente leitura.
+              Nada é gravado sem a sua confirmação.
               <br />
               Seu ambiente é preservado.
             </p>
@@ -127,7 +129,7 @@ export function Layout({
             <strong>{navigation.find((n) => n.id === page)?.label}</strong>
           </div>
           <span className="local-label">
-            <ShieldCheck size={14} aria-hidden="true" /> Somente leitura
+            <ShieldCheck size={14} aria-hidden="true" /> Você confirma cada alteração
           </span>
         </header>
         <main id="content" tabIndex={-1}>

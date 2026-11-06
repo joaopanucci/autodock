@@ -22,6 +22,7 @@ import { Environment } from "./pages/Environment";
 import { Containers } from "./pages/Containers";
 import { Monitoring } from "./pages/Monitoring";
 import { Console } from "./pages/Console";
+import { Assistant } from "./pages/Assistant";
 
 const headings: Record<Page, { title: string; description: string }> = {
   overview: {
@@ -33,6 +34,11 @@ const headings: Record<Page, { title: string; description: string }> = {
     title: "Projetos",
     description:
       "Do diretório às evidências: uma visão clara da estrutura do seu código.",
+  },
+  setup: {
+    title: "Assistente Docker",
+    description:
+      "Responda algumas perguntas e o AutoDock prepara o Docker do seu projeto. Você revisa tudo antes de gravar.",
   },
   environment: {
     title: "Ambiente",
@@ -249,6 +255,9 @@ export default function App() {
             inspect={inspect}
           />
         )}
+        <div hidden={page !== "setup"}>
+          <Assistant path={path} setPath={setPath} />
+        </div>
         {page === "environment" && (
           <Environment
             doctor={doctor}
