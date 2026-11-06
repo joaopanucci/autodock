@@ -274,7 +274,7 @@ test("supports narrow layouts, keyboard navigation and reduced motion", async ({
   ).toBeVisible();
 });
 
-test("contribute tab explains the missing PIX setup instead of a broken QR", async ({
+test("contribute tab shows the PIX QR and copy action", async ({
   page,
 }) => {
   await page
@@ -282,8 +282,11 @@ test("contribute tab explains the missing PIX setup instead of a broken QR", asy
     .getByRole("button", { name: "Contribuir", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "Contribuir", level: 1 })).toBeVisible();
-  await expect(page.getByText("Contribuição ainda não configurada")).toBeVisible();
-  await expect(page.getByRole("img", { name: /QR Code PIX/ })).toHaveCount(0);
+  await expect(page.getByText("Contribuição ainda não configurada")).toHaveCount(0);
+  await expect(page.getByRole("img", { name: /QR Code PIX/ })).toBeVisible();
+  await page.getByRole("button", { name: "R$ 25", exact: true }).click();
+  await expect(page.getByRole("img", { name: /valor R\$ 25\.00/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Copiar PIX copia e cola/ })).toBeVisible();
 });
 
 test("docker assistant is reachable and starts at the project step", async ({
