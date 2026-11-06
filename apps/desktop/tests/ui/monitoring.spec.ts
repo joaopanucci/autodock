@@ -54,5 +54,4 @@ test("monitoring shows four charts with stats and a hover tooltip", async ({ pag
   await charts.nth(2).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.locator(".ad-monitor-tooltip")).toBeVisible();
-  await page.screenshot({ path: "test-results/monitoring.png", fullPage: true });
 });
