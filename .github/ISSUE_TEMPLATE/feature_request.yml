@@ -1,20 +1,20 @@
-name: 💡 Sugerir uma ideia
-description: Uma melhoria, tecnologia ou serviço novo
+name: 💡 Suggest an idea
+description: A new improvement, technology or service
 labels: [enhancement]
 body:
   - type: textarea
-    id: problema
+    id: problem
     attributes:
-      label: Qual problema isso resolve?
+      label: What problem does this solve?
     validations:
       required: true
   - type: textarea
-    id: proposta
+    id: proposal
     attributes:
-      label: Como você imagina a solução?
+      label: How do you imagine the solution?
     validations:
       required: true
   - type: textarea
-    id: alternativas
+    id: alternatives
     attributes:
-      label: Alternativas consideradas
+      label: Alternatives considered

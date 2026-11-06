@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 🔒 Relatar uma vulnerabilidade
+  - name: 🔒 Report a vulnerability
     url: https://github.com/joaopanucci/autodock/security/advisories/new
-    about: Não abra issue pública para falhas de segurança. Use o relato privado.
+    about: Do not open a public issue for security flaws. Use private reporting.

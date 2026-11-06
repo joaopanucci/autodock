@@ -1,21 +1,23 @@
-# Código de Conduta
+🌐 **English** · [Português (Brasil)](CODE_OF_CONDUCT.pt-BR.md)
 
-Queremos uma comunidade acolhedora, respeitosa e útil para todas as pessoas, independentemente de experiência, identidade, aparência, origem, religião ou nacionalidade. Este texto se inspira no [Contributor Covenant](https://www.contributor-covenant.org/pt-br/version/2/1/code_of_conduct/).
+# Code of Conduct
 
-## O que esperamos
+We want a welcoming, respectful and helpful community for everyone, regardless of experience, identity, appearance, background, religion or nationality. This text is inspired by the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
-- Ser respeitoso e gentil, inclusive ao discordar.
-- Dar e receber feedback com educação e foco no trabalho, não na pessoa.
-- Assumir boa-fé, ajudar quem está começando e admitir erros.
+## What we expect
 
-## O que não é aceito
+- Be respectful and kind, including when you disagree.
+- Give and receive feedback politely and about the work, not the person.
+- Assume good faith, help people who are starting out and admit mistakes.
 
-- Assédio, discriminação, insultos, ataques pessoais ou linguagem ofensiva.
-- Publicar informações privadas de outras pessoas sem consentimento.
-- Spam, autopromoção fora de contexto e qualquer conduta que seria considerada inadequada num ambiente profissional.
+## What is not accepted
 
-## Aplicação
+- Harassment, discrimination, insults, personal attacks or offensive language.
+- Publishing other people's private information without consent.
+- Spam, off-topic self-promotion and any conduct that would be inappropriate in a professional setting.
 
-Quem mantém o projeto pode editar ou remover comentários, issues e pull requests que violem este código, e restringir a participação de quem o descumprir de forma repetida ou grave.
+## Enforcement
 
-Para relatar um problema de conduta, use o [relato privado de segurança do GitHub](https://github.com/joaopanucci/autodock/security/advisories/new) (a mensagem chega só a quem mantém o projeto) ou entre em contato com [@joaopanucci](https://github.com/joaopanucci). Todos os relatos serão tratados com confidencialidade.
+Maintainers may edit or remove comments, issues and pull requests that violate this code, and restrict participation by people who break it repeatedly or seriously.
+
+To report a conduct problem, use GitHub's [private reporting](https://github.com/joaopanucci/autodock/security/advisories/new) (the message reaches only the maintainers) or contact [@joaopanucci](https://github.com/joaopanucci). All reports are handled confidentially.

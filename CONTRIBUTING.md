@@ -1,34 +1,37 @@
-# Contribuindo com o AutoDock
+🌐 **English** · [Português (Brasil)](CONTRIBUTING.pt-BR.md)
 
-Obrigado por querer ajudar! O AutoDock é open source ([Apache-2.0](LICENSE)) e toda contribuição conta: código, testes, documentação, relatos de bugs e testes em outros sistemas.
+# Contributing to AutoDock
 
-## Formas de ajudar
+Thanks for wanting to help! AutoDock is open source ([Apache-2.0](LICENSE)) and every contribution counts: code, tests, documentation, bug reports and testing on other systems.
 
-- 🐛 **Relate um problema** ou 💡 **sugira uma ideia** abrindo uma [issue](https://github.com/joaopanucci/autodock/issues/new/choose).
-- 🧪 **Teste no Windows e no Linux** e conte como foi (o app completo foi testado principalmente no macOS).
-- 🔧 **Envie um pull request** (veja o fluxo abaixo).
-- 📝 **Melhore a documentação** ou as traduções.
+## Ways to help
 
-## Fluxo de contribuição
+- 🐛 **Report a problem** or 💡 **suggest an idea** by opening an [issue](https://github.com/joaopanucci/autodock/issues/new/choose).
+- 🧪 **Test on Windows and Linux** and tell us how it went (the complete app was mostly tested on macOS).
+- 🔧 **Send a pull request** (workflow below).
+- 📝 **Improve the documentation** or the translations.
 
-1. Faça um **fork** e crie uma branch a partir da `main` (`feat/minha-ideia`, `fix/meu-bug`).
-2. Faça mudanças **pequenas e focadas**, com testes.
-3. Rode as verificações abaixo.
-4. Abra um **pull request** para a `main` descrevendo *o quê* e *por quê*. A CI roda em Linux, Windows e macOS.
-5. A pessoa mantenedora revisa. Só quem mantém o repositório faz o merge.
+## Contribution workflow
 
-> Mensagens de commit seguem o estilo [Conventional Commits](https://www.conventionalcommits.org/pt-br/) (`feat:`, `fix:`, `docs:`, `test:`, `ci:`).
+1. Open (or pick) an **issue** that describes the work. Issues, pull requests and commit messages are written in **English**.
+2. **Fork** the repository and create a branch from `main` (`feat/my-idea`, `fix/my-bug`).
+3. Keep changes **small and focused**, with tests.
+4. Run the checks below.
+5. Open a **pull request** to `main` that says *what* and *why* (`Closes #123`). CI runs on Linux, Windows and macOS.
+6. A maintainer reviews it. Only maintainers merge.
 
-## Rodando localmente
+> Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `test:`, `ci:`).
 
-Pré-requisitos e comandos completos estão no [guia de desenvolvimento](docs/DEVELOPMENT.md). Resumo:
+## Running locally
+
+Prerequisites and the full command list are in the [development guide](docs/DEVELOPMENT.md). In short:
 
 ```bash
 npm --prefix apps/desktop ci
-npm --prefix apps/desktop run tauri dev      # abre o app
+npm --prefix apps/desktop run tauri dev      # opens the app
 ```
 
-### Verificações antes de abrir o PR
+### Checks before opening the PR
 
 ```bash
 cargo fmt --all -- --check
@@ -36,56 +39,60 @@ cargo check --workspace --locked
 cargo test -p autodock-core -p autodock-cli --locked
 npm --prefix apps/desktop run typecheck
 npm --prefix apps/desktop test
-npm --prefix apps/desktop run test:ui        # precisa de um navegador Chromium/Chrome/Edge
+npm --prefix apps/desktop run test:ui        # needs a Chromium/Chrome/Edge browser
 ```
 
-Se algo não puder ser testado no seu sistema, **diga isso no PR** em vez de afirmar que funciona.
+If something cannot be tested on your system, **say so in the PR** instead of claiming it works.
 
-## Princípios que todo PR deve respeitar
+## Principles every PR must respect
 
-O AutoDock altera arquivos do usuário, então a confiança vem primeiro (veja também [`docs/SECURITY.md`](docs/SECURITY.md)):
+AutoDock changes users' files, so trust comes first (see also [`docs/SECURITY.md`](docs/SECURITY.md)):
 
-- **O `autodock-core` não depende de Tauri.** Toda a lógica fica no core; a interface só chama comandos.
-- **Preview antes de gravar.** Nada é escrito sem confirmação, e o conteúdo é gerado no backend, nunca enviado pela interface.
-- **Nunca sobrescrever** arquivos existentes e nunca seguir symlinks ao gravar.
-- **Entradas por lista permitida.** Valores que entram em Dockerfile, YAML ou linha de comando (portas, versões, nomes, scripts) precisam ser validados. Sem montar comandos por texto e sem shell no host.
-- **Nunca ler `.env`** nem executar scripts dos projetos analisados.
-- **Portas de serviços auxiliares só em `127.0.0.1`.**
-- **Multiplataforma.** Evite suposições de macOS/Linux em testes (nomes de arquivo, permissões, caminhos `\\?\` no Windows).
+- **`autodock-core` does not depend on Tauri.** All logic lives in the core; the UI only calls commands.
+- **Preview before writing.** Nothing is written without confirmation, and content is generated in the backend, never sent by the interface.
+- **Never overwrite** existing files and never follow symlinks when writing.
+- **Allowlisted inputs.** Values that end up in a Dockerfile, YAML or command line (ports, versions, names, scripts) must be validated. No building commands from text and no host shell.
+- **Never read `.env`** or run scripts of the analyzed projects.
+- **Auxiliary service ports on `127.0.0.1` only.**
+- **Cross-platform.** Avoid macOS/Linux assumptions in tests (file names, permissions, `\\?\` paths on Windows).
 
-## Onde mexer
+## Where to change things
 
-| Quero… | Arquivo |
+| I want to… | File |
 |---|---|
-| Adicionar um serviço (ex.: MariaDB) ou ajustar um modelo de Dockerfile/compose | `crates/autodock-core/src/generate.rs` |
-| Adicionar um instalador oficial de framework | `crates/autodock-core/src/scaffold.rs` |
-| Adicionar uma IDE | `crates/autodock-core/src/ide.rs` |
-| Mudar uma tela | `apps/desktop/src/pages/` |
+| Add a service (for example MariaDB) or adjust a Dockerfile/compose template | `crates/autodock-core/src/generate.rs` |
+| Add an official framework installer | `crates/autodock-core/src/scaffold.rs` |
+| Add an IDE | `crates/autodock-core/src/ide.rs` |
+| Change a screen | `apps/desktop/src/pages/` |
 
-Cada mudança no core deve vir com testes. Para validar de verdade, gere o projeto e suba com `docker compose up --build` (a CLI ajuda: `autodock generate … --write`).
+Every core change needs tests. To really validate, generate the project and bring it up with `docker compose up --build` (the CLI helps: `autodock generate … --write`).
 
-## Traduções (EN / PT-BR)
+## Translations (EN / PT-BR)
 
-O app é bilíngue (inglês e português do Brasil). **Todo texto visível precisa existir nos dois idiomas.**
+The app is bilingual (English and Brazilian Portuguese). **Every visible text must exist in both languages.**
 
-- **Interface (React):** os textos ficam em `apps/desktop/src/i18n/pt.ts` e `en.ts`. Use `const { t } = useI18n()` e `t("chave", { param })`; plurais usam o par `chave.one` / `chave.other` com `tn("chave", n)`. O TypeScript falha se uma chave existir só em um idioma, e `npm test` confere também os parâmetros `{x}`.
-- **Núcleo (Rust):** mensagens usam `tr!("texto em português", "english text")`, com os dois textos lado a lado, então não compila sem a tradução. O idioma vem do comando (`lang`) e do `--lang` da CLI.
-- **Novo idioma:** copie `en.ts` para `<idioma>.ts`, registre em `i18n/core.ts` (`LANGUAGES`) e abra uma PR. Para o Rust, estenda `Lang` em `crates/autodock-core/src/i18n.rs`.
-- Ao mexer em textos, rode `npm --prefix apps/desktop test` e o teste de UI em inglês (`tests/ui/i18n.spec.ts`).
+- **Interface (React):** texts live in `apps/desktop/src/i18n/pt.ts` and `en.ts`. Use `const { t } = useI18n()` and `t("key", { param })`; plurals use the `key.one` / `key.other` pair with `tn("key", n)`. TypeScript fails if a key exists in only one language, and `npm test` also checks the `{x}` parameters.
+- **Core (Rust):** messages use `tr!("texto em português", "english text")`, with both texts side by side, so it does not compile without the translation. The language comes from the command (`lang`) and from the CLI's `--lang`.
+- **New language:** copy `en.ts` to `<language>.ts`, register it in `i18n/core.ts` (`LANGUAGES`) and open a PR. For Rust, extend `Lang` in `crates/autodock-core/src/i18n.rs`.
+- When you change texts, run `npm --prefix apps/desktop test` and the English UI test (`tests/ui/i18n.spec.ts`).
 
-## Atualizando os screenshots do README
+## Documentation in both languages
+
+Repository documents exist in **English** (the main file, which GitHub shows) and **Portuguese** (`*.pt-BR.md`), each with a language switcher at the top. When you change one, update the other in the same PR: `README`, `CONTRIBUTING`, `SECURITY`, `CODE_OF_CONDUCT` and `docs/DEVELOPMENT`.
+
+## Updating the README screenshots
 
 ```bash
 cargo build -p autodock-cli
 npm --prefix apps/desktop run dev &
-node scripts/screenshots.mjs                 # português -> docs/screenshots
-AUTODOCK_LANG=en node scripts/screenshots.mjs  # inglês -> docs/screenshots/en
+node scripts/screenshots.mjs                 # Portuguese -> docs/screenshots
+AUTODOCK_LANG=en node scripts/screenshots.mjs  # English -> docs/screenshots/en
 ```
 
-## Código de conduta
+## Code of conduct
 
-Ao participar, você concorda em seguir o [Código de Conduta](CODE_OF_CONDUCT.md).
+By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Licença
+## License
 
-Ao contribuir, você concorda que sua contribuição será licenciada sob a [Apache-2.0](LICENSE).
+By contributing, you agree that your contribution is licensed under [Apache-2.0](LICENSE).

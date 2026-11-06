@@ -1,79 +1,81 @@
 <div align="center">
 
+**🌐 English · [Português (Brasil)](README.pt-BR.md)**
+
 <img src="apps/desktop/src-tauri/icons/128x128@2x.png" alt="AutoDock" width="128" height="128" />
 
 # AutoDock
 
-**Coloque qualquer projeto no Docker em poucos cliques.**<br/>
-Responda algumas perguntas. O AutoDock cria o `Dockerfile`, o `docker-compose.yml` e até o projeto, se você ainda não tiver um. Você revisa tudo antes de gravar.
+**Put any project in Docker in a few clicks.**<br/>
+Answer a few questions. AutoDock writes the `Dockerfile`, the `docker-compose.yml` and even the project itself if you don't have one yet. You review everything before anything is written.
 
 [![CI](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml/badge.svg?branch=main)](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml)
-[![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=709fe5&label=vers%C3%A3o)](https://github.com/joaopanucci/autodock/releases/latest)
-[![Licença](https://img.shields.io/badge/licen%C3%A7a-Apache--2.0-7bc6a8)](LICENSE)
-![Plataformas](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-4d6fa8)
+[![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=709fe5&label=release)](https://github.com/joaopanucci/autodock/releases/latest)
+[![License](https://img.shields.io/badge/license-Apache--2.0-7bc6a8)](LICENSE)
+![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-4d6fa8)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-core-CE422B?logo=rust&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
-[![PRs bem-vindos](https://img.shields.io/badge/PRs-bem--vindos-7bc6a8)](CONTRIBUTING.md)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-7bc6a8)](CONTRIBUTING.md)
 
-[**Baixar**](#-baixar) · [**Passo a passo**](#-passo-a-passo) · [**CLI**](#-linha-de-comando) · [**Contribuir**](#-contribuir) · [English](README.en.md)
+[**Download**](#-download) · [**Step by step**](#-step-by-step) · [**CLI**](#-command-line) · [**Contribute**](#-contributing)
 
 <br/>
 
-<img src="docs/screenshots/06-assistente-revisao.png" alt="Assistente Docker do AutoDock mostrando o preview do docker-compose.yml" width="920" />
+<img src="docs/screenshots/en/06-assistente-revisao.png" alt="AutoDock's Docker assistant previewing a docker-compose.yml" width="920" />
 
 </div>
 
 <br/>
 
-## ✨ Por que o AutoDock?
+## ✨ Why AutoDock?
 
-Configurar Docker para um projeto local é repetitivo: qual imagem base, qual porta, como ligar o banco, o que ignorar na imagem. O AutoDock transforma isso em uma conversa.
+Setting up Docker for a local project is repetitive: which base image, which port, how to wire the database, what to leave out of the image. AutoDock turns that into a conversation.
 
-- 🧭 **Guiado.** Pergunta o que importa (tecnologia, porta, versão, bancos, cache) e cuida do resto.
-- 👀 **Transparente.** Mostra cada arquivo e cada comando **antes** de qualquer alteração.
-- 🛡️ **Seguro por padrão.** Nunca sobrescreve arquivos, nunca lê o seu `.env`, nunca executa scripts do seu projeto.
-- 🔐 **Senhas fortes de verdade.** Cada serviço ganha uma senha aleatória de 32 caracteres (gerador criptográfico do sistema), guardada em `.env.docker`. O `docker-compose.yml` não contém nenhuma senha.
-- 🔌 **Sem conflito de portas.** O AutoDock testa quais portas estão livres e lembra as de outros projetos, então 10 projetos não disputam a 5432.
-- 🧰 **Sem instalar nada além do Docker.** Os instaladores oficiais dos frameworks rodam *dentro* de containers.
-- 🖥️ **Local e open source.** Seu código não sai do seu computador. Licença Apache-2.0.
-- 🌍 **Português e inglês.** A interface e as mensagens seguem o idioma do sistema e podem ser trocadas em Configurações.
+- 🧭 **Guided.** It asks what matters (technology, port, version, databases, cache) and handles the rest.
+- 👀 **Transparent.** It shows every file and every command **before** anything changes.
+- 🛡️ **Safe by default.** It never overwrites files, never reads your `.env`, never runs your project's scripts.
+- 🔐 **Really strong passwords.** Every service gets a random 32-character password (from the operating system's cryptographic generator), kept in `.env.docker`. `docker-compose.yml` contains no passwords.
+- 🔌 **No port clashes.** AutoDock checks which ports are free and remembers the ones used by your other projects, so ten projects never fight over 5432.
+- 🧰 **Nothing to install except Docker.** The frameworks' official installers run *inside* containers.
+- 🖥️ **Local and open source.** Your code never leaves your computer. Apache-2.0 license.
+- 🌍 **English and Portuguese.** The interface and messages follow your system language and can be switched in Settings.
 
-## 🚀 O que ele faz
+## 🚀 What it does
 
 | | |
 |---|---|
-| **Projeto existente** | Detecta a tecnologia lendo os manifests e gera `Dockerfile`, `docker-compose.yml`, `.dockerignore` e `.env.docker.example`. |
-| **Projeto novo, em pasta vazia** | Cria um projeto *limpo* ou usa o **instalador oficial** do framework, tudo dentro do Docker. |
-| **Serviços prontos** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog, já conectados ao app por variáveis de ambiente, com healthchecks, **senhas fortes geradas** e **portas livres escolhidas automaticamente**. |
-| **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
-| **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
+| **Existing project** | Detects the technology from its manifests and generates `Dockerfile`, `docker-compose.yml`, `.dockerignore` and `.env.docker.example`. |
+| **New project in an empty folder** | Creates a *clean* project, or uses the framework's **official installer**, all inside Docker. |
+| **Ready-made services** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer and MailHog, already wired to your app through environment variables, with healthchecks, **generated strong passwords** and **automatically chosen free ports**. |
+| **Open in your IDE** | After creating, opens the project in whichever of VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed or Sublime you have installed. |
+| **Environment view** | Analyzes projects, diagnoses your environment, lists containers, shows metrics and logs, all read-only. |
 
-### Tecnologias
+### Technologies
 
-| Tecnologia | Projeto existente | Projeto novo (limpo) | Projeto novo (framework oficial) |
+| Technology | Existing project | New project (clean) | New project (official framework) |
 |---|:---:|:---:|:---:|
 | **Node.js** | ✅ npm · pnpm · yarn, Vite | ✅ Express | ✅ Vite + React · Vite + Vue (TypeScript) |
 | **Java / Spring Boot** | ✅ Maven | ✅ Spring Boot + Maven | 🔜 Spring Initializr |
 | **Python** | ✅ FastAPI · Django · Flask | ✅ FastAPI · Flask | ✅ Django |
 | **PHP / Laravel** | ✅ Composer | — | ✅ Laravel |
 
-## 📦 Baixar
+## 📦 Download
 
-Pegue o instalador da sua plataforma na [página de releases](https://github.com/joaopanucci/autodock/releases/latest):
+Get the installer for your platform from the [releases page](https://github.com/joaopanucci/autodock/releases/latest):
 
-| Sistema | Arquivo | Como instalar |
+| System | File | How to install |
 |---|---|---|
-| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.1.2_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
-| 🪟 **Windows** (64 bits) | [`AutoDock_0.1.2_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_x64-setup.exe) | Execute o instalador. |
+| 🍎 **macOS** (Intel and Apple Silicon) | [`AutoDock_0.1.2_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_universal.dmg) | Open the DMG and drag the app to *Applications*. |
+| 🪟 **Windows** (64-bit) | [`AutoDock_0.1.2_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_x64-setup.exe) | Run the installer. |
 | 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.1.2_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_amd64.deb) | `sudo apt install ./AutoDock_0.1.2_amd64.deb` |
-| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.1.2_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🐧 **Linux** (any distro) | [`AutoDock_0.1.2_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
-> **Requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução para criar e rodar os ambientes.
+> **Requirement:** [Docker](https://docs.docker.com/get-docker/) installed and running, to create and run the environments.
 
-### ⚡ Instalação rápida, sem aviso de segurança
+### ⚡ Quick install, no security warning
 
-Um comando baixa a última versão, **confere o SHA-256** e instala:
+One command downloads the latest release, **verifies its SHA-256** and installs it:
 
 ```bash
 # macOS
@@ -85,140 +87,140 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.1.2`.
+Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh) and [`install.ps1`](scripts/install.ps1). To pin a version: `AUTODOCK_VERSION=v0.1.2`.
 
 <details>
-<summary><b>⚠️ Baixou pelo navegador e apareceu "desenvolvedor não identificado"? É esperado</b></summary>
+<summary><b>⚠️ Downloaded with a browser and got "unidentified developer"? That is expected</b></summary>
 
 <br/>
 
-O AutoDock é um projeto open source e os instaladores **ainda não são assinados** (assinar exige contas pagas na Apple e na Microsoft). Por isso o sistema mostra um aviso na primeira abertura. O código é público e cada release traz um `SHA256SUMS.txt` para você conferir o arquivo baixado.
+AutoDock is open source and the installers are **not code-signed yet** (signing requires paid Apple and Microsoft programs). That is why your system shows a warning on first launch. The code is public and every release ships a `SHA256SUMS.txt` so you can verify the file you downloaded.
 
-- **macOS:** abra o app uma vez, depois vá em **Ajustes do Sistema → Privacidade e Segurança** e clique em **Abrir mesmo assim**. Alternativa no terminal: `xattr -dr com.apple.quarantine /Applications/AutoDock.app`.
-- **Windows:** na tela do SmartScreen, clique em **Mais informações** e depois em **Executar assim mesmo**.
-- **Linux:** não há aviso.
+- **macOS:** open the app once, then go to **System Settings → Privacy & Security** and click **Open Anyway**. Terminal alternative: `xattr -dr com.apple.quarantine /Applications/AutoDock.app`.
+- **Windows:** on the SmartScreen screen, click **More info** and then **Run anyway**.
+- **Linux:** there is no warning.
 
-Conferir a integridade do arquivo:
+Verify the file's integrity:
 
 ```bash
-shasum -a 256 AutoDock_0.1.2_universal.dmg   # compare com o SHA256SUMS.txt
+shasum -a 256 AutoDock_0.1.2_universal.dmg   # compare with SHA256SUMS.txt
 ```
 
 </details>
 
-> 🧪 **Status das plataformas:** a CI compila e testa o núcleo em macOS, Windows e Linux, e gera os três instaladores a cada versão. Os testes manuais do aplicativo completo foram feitos no macOS; relatos de Windows e Linux são muito bem-vindos.
+> 🧪 **Platform status:** CI builds and tests the core on macOS, Windows and Linux, and builds the three installers for every release. The complete app was tested manually on macOS; reports from Windows and Linux are very welcome.
 
-## 🎬 Passo a passo
+## 🎬 Step by step
 
-### 1. Escolha a pasta do projeto
+### 1. Pick the project folder
 
-Selecione a pasta. O AutoDock lê **apenas** os arquivos de configuração (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`) para sugerir a tecnologia. Nenhum código seu é executado.
+Select the folder. AutoDock reads **only** configuration files (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`) to suggest the technology. None of your code is run.
 
-<img src="docs/screenshots/03-assistente-projeto.png" alt="Passo 1: escolher a pasta e detectar a tecnologia" width="820" />
+<img src="docs/screenshots/en/03-assistente-projeto.png" alt="Step 1: choose the folder and detect the technology" width="820" />
 
-> 💡 **Pasta vazia?** O assistente oferece **Criar projeto novo**: você escolhe a tecnologia, define o nome e decide entre um projeto **limpo** ou o **instalador oficial** do framework (Laravel, Django, Vite + React/Vue). Antes de rodar, ele mostra o comando exato.
+> 💡 **Empty folder?** The assistant offers **Create new project**: you pick the technology, name it and choose between a **clean** project or the framework's **official installer** (Laravel, Django, Vite + React/Vue). Before running it, it shows the exact command.
 
-### 2. Confirme a tecnologia e responda o essencial
+### 2. Confirm the technology and answer the essentials
 
-Porta, versão do runtime, gerenciador de pacotes, script de início. Tudo com valores padrão sensatos.
+Port, runtime version, package manager, start script. All with sensible defaults.
 
-<img src="docs/screenshots/04-assistente-tecnologia.png" alt="Passo 2: tecnologia, porta e versão" width="820" />
+<img src="docs/screenshots/en/04-assistente-tecnologia.png" alt="Step 2: technology, port and version" width="820" />
 
-### 3. Escolha os serviços
+### 3. Choose the services
 
-Marque o que o projeto precisa. Cada item vira um container ao lado do seu app, já conectado.
+Tick what the project needs. Each item becomes a container next to your app, already connected.
 
-<img src="docs/screenshots/05-assistente-servicos.png" alt="Passo 3: serviços como PostgreSQL, Redis e Adminer" width="820" />
+<img src="docs/screenshots/en/05-assistente-servicos.png" alt="Step 3: services such as PostgreSQL, Redis and Adminer" width="820" />
 
-### 4. Revise antes de criar
+### 4. Review before creating
 
-Veja o conteúdo de cada arquivo. Nada foi gravado ainda. Arquivos que já existem **nunca** são sobrescritos.
+See the content of every file. Nothing has been written yet. Files that already exist are **never** overwritten.
 
-<img src="docs/screenshots/06-assistente-revisao.png" alt="Passo 4: revisão dos arquivos gerados" width="820" />
+<img src="docs/screenshots/en/06-assistente-revisao.png" alt="Step 4: review of the generated files" width="820" />
 
-### 5. Pronto: abra na sua IDE e suba o ambiente
+### 5. Done: open it in your IDE and start the environment
 
-Um clique abre o projeto no editor que você tem instalado. Depois, é só rodar:
+One click opens the project in the editor you have installed. Then just run:
 
 ```bash
 docker compose up --build
 ```
 
-<img src="docs/screenshots/07-assistente-pronto.png" alt="Passo 5: projeto criado, botões para abrir na IDE" width="820" />
+<img src="docs/screenshots/en/07-assistente-pronto.png" alt="Step 5: project created, buttons to open it in an IDE" width="820" />
 
-### Além do assistente
+### Beyond the assistant
 
 <table>
 <tr>
-<td width="50%"><b>Analise um projeto</b><br/>Tecnologias, módulos e evidências, com a origem de cada informação.<br/><img src="docs/screenshots/02-analise.png" alt="Análise de projeto" /></td>
-<td width="50%"><b>Veja seus containers</b><br/>Inventário do Docker local, agrupado por projeto, com estado e saúde.<br/><img src="docs/screenshots/08-containers.png" alt="Lista de containers" /></td>
+<td width="50%"><b>Analyze a project</b><br/>Technologies, modules and evidence, with the source of every piece of information.<br/><img src="docs/screenshots/en/02-analise.png" alt="Project analysis" /></td>
+<td width="50%"><b>See your containers</b><br/>Inventory of your local Docker, grouped by project, with state and health.<br/><img src="docs/screenshots/en/08-containers.png" alt="Container list" /></td>
 </tr>
 <tr>
-<td width="50%"><b>Diagnostique o ambiente</b><br/>Node, Git, Docker, Compose e Engine, sem supor nada.<br/><img src="docs/screenshots/09-ambiente.png" alt="Diagnóstico do ambiente" /></td>
-<td width="50%"><b>Visão geral</b><br/>Seus projetos e o estado do ambiente em um só lugar.<br/><img src="docs/screenshots/01-visao-geral.png" alt="Visão geral" /></td>
+<td width="50%"><b>Diagnose the environment</b><br/>Node, Git, Docker, Compose and Engine, without assuming anything.<br/><img src="docs/screenshots/en/09-ambiente.png" alt="Environment diagnostics" /></td>
+<td width="50%"><b>Overview</b><br/>Your projects and the state of your environment in one place.<br/><img src="docs/screenshots/en/01-visao-geral.png" alt="Overview" /></td>
 </tr>
 </table>
 
-## 🔄 Como funciona
+## 🔄 How it works
 
 ```mermaid
 flowchart LR
-  A[Pasta do projeto] --> B{O que há nela?}
-  B -->|Projeto existente| C[Detecta a tecnologia<br/>lendo só manifests]
-  B -->|Pasta vazia| D[Projeto novo<br/>limpo ou framework oficial<br/>dentro do Docker]
-  C --> E[Perguntas: porta, versão, serviços]
+  A[Project folder] --> B{What is in it?}
+  B -->|Existing project| C[Detects the technology<br/>reading manifests only]
+  B -->|Empty folder| D[New project<br/>clean or official framework<br/>inside Docker]
+  C --> E[Questions: port, version, services]
   D --> E
-  E --> F[Preview de cada arquivo]
-  F -->|você confirma| G[Dockerfile · docker-compose.yml<br/>.dockerignore · .env.docker.example]
-  G --> H[Abrir na IDE<br/>docker compose up]
+  E --> F[Preview of every file]
+  F -->|you confirm| G[Dockerfile · docker-compose.yml<br/>.dockerignore · .env.docker.example]
+  G --> H[Open in your IDE<br/>docker compose up]
 ```
 
-## 🛡️ Princípios de segurança
+## 🛡️ Security principles
 
-O AutoDock mexe nos seus arquivos, então a confiança vem primeiro:
+AutoDock touches your files, so trust comes first:
 
-- **Preview antes de gravar.** O conteúdo é gerado no backend a partir de opções validadas; a interface nunca envia o conteúdo dos arquivos.
-- **Nunca sobrescreve.** Criação exclusiva de arquivos; symlinks não são seguidos.
-- **Senhas fora do compose.** Senhas de 32 caracteres (CSPRNG do sistema) ficam em `.env.docker`, com permissão restrita, e a pré-visualização mostra exatamente o que será gravado. O arquivo `.env.docker.example` traz só os nomes das variáveis.
-- **Entradas por lista permitida.** Portas, versões, nomes e scripts são validados, então não há injeção em Dockerfile, YAML ou linha de comando.
-- **Sem shell.** Editores e instaladores são iniciados com argumentos fixos, nunca por texto montado.
-- **Instaladores de framework isolados.** Rodam em um container descartável com **apenas** a pasta vazia montada.
-- **Portas dos serviços só em `127.0.0.1`.** Bancos e filas não ficam expostos na sua rede.
-- **Nunca lê `.env`** nem executa scripts dos projetos analisados.
+- **Preview before writing.** The content is generated in the backend from validated options; the interface never sends file contents.
+- **Never overwrites.** Files are created exclusively; symlinks are not followed.
+- **Passwords outside the compose file.** 32-character passwords (system CSPRNG) go to `.env.docker`, with restricted permissions, and the preview shows exactly what will be written. `.env.docker.example` only lists variable names.
+- **Allowlisted inputs.** Ports, versions, names and scripts are validated, so there is no injection into Dockerfiles, YAML or command lines.
+- **No shell.** Editors and installers are started with fixed arguments, never with assembled text.
+- **Isolated framework installers.** They run in a throwaway container with **only** the empty folder mounted.
+- **Service ports on `127.0.0.1` only.** Databases and queues are not exposed to your network.
+- **Never reads `.env`** nor runs scripts of the analyzed projects.
 
-Detalhes em [`docs/SECURITY.md`](docs/SECURITY.md).
+Details in [`docs/SECURITY.md`](docs/SECURITY.md).
 
-## ⌨️ Linha de comando
+## ⌨️ Command line
 
-Tudo que o assistente faz também está disponível no terminal (`cargo run -p autodock-cli -- …`):
+Everything the assistant does is also available in the terminal (`cargo run -p autodock-cli -- …`):
 
 ```bash
-# a CLI segue o idioma do sistema; force com --lang pt ou --lang en
-# analisa um projeto e diagnostica o ambiente
-autodock scan ./meu-projeto
+# the CLI follows your system language; force it with --lang pt or --lang en
+# analyze a project and diagnose the environment
+autodock scan ./my-project
 autodock doctor
 
-# mostra o preview (nada é gravado)...
-autodock generate ./meu-projeto --stack nodejs --port 3000 --service postgres --service redis
-# ...e grava só os arquivos novos
-autodock generate ./meu-projeto --stack nodejs --port 3000 --service postgres --write
+# show the preview (nothing is written)...
+autodock generate ./my-project --stack nodejs --port 3000 --service postgres --service redis
+# ...and write only the new files
+autodock generate ./my-project --stack nodejs --port 3000 --service postgres --write
 
-# projeto novo em pasta vazia
-autodock generate ./novo --new --stack python --port 8000 --write
-autodock scaffold ./novo --framework laravel --name loja          # só mostra o comando
-autodock scaffold ./novo --framework laravel --name loja --run    # executa
+# new project in an empty folder
+autodock generate ./new --new --stack python --port 8000 --write
+autodock scaffold ./new --framework laravel --name shop          # only shows the command
+autodock scaffold ./new --framework laravel --name shop --run    # runs it
 ```
 
-## 🧱 Arquitetura
+## 🧱 Architecture
 
 ```
-crates/autodock-core   Núcleo em Rust: scanner, gerador, instaladores, IDEs, Docker (sem UI)
-crates/autodock-cli    Linha de comando (Clap)
-apps/desktop           Interface React + Vite, empacotada com Tauri 2
-docs/                  Arquitetura, segurança, roadmap e guia de desenvolvimento
+crates/autodock-core   Rust core: scanner, generator, installers, IDEs, Docker (no UI)
+crates/autodock-cli    Command line (Clap)
+apps/desktop           React + Vite interface, packaged with Tauri 2
+docs/                  Architecture, security, roadmap and development guide
 ```
 
-Rodar a partir do código-fonte: veja o [guia de desenvolvimento](docs/DEVELOPMENT.md).
+To run from source, see the [development guide](docs/DEVELOPMENT.md).
 
 ```bash
 npm --prefix apps/desktop ci
@@ -227,29 +229,29 @@ npm --prefix apps/desktop run tauri dev
 
 ## 🗺️ Roadmap
 
-- [x] Assistente Docker para projetos existentes (Node.js, Spring Boot, Python, Laravel)
-- [x] Serviços: PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer, MailHog
-- [x] Projeto novo: limpo ou com instalador oficial (Laravel, Django, Vite)
-- [x] Abrir o projeto na IDE instalada
-- [x] Instaladores para macOS, Windows e Linux
-- [ ] Spring Initializr (escolher dependências)
-- [ ] Gradle e mais frameworks (Next.js, NestJS, Rails…)
-- [ ] Dockerfiles de produção (multi-stage)
-- [ ] Assinatura e notarização dos instaladores
-- [x] Interface em inglês e português
+- [x] Docker assistant for existing projects (Node.js, Spring Boot, Python, Laravel)
+- [x] Services: PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer, MailHog
+- [x] New project: clean or with the official installer (Laravel, Django, Vite)
+- [x] Open the project in the installed IDE
+- [x] Installers for macOS, Windows and Linux
+- [x] Interface in English and Portuguese
+- [ ] Spring Initializr (choose dependencies)
+- [ ] Gradle and more frameworks (Next.js, NestJS, Rails…)
+- [ ] Production Dockerfiles (multi-stage)
+- [ ] Code signing and notarization of the installers
 
-## 🤝 Contribuir
+## 🤝 Contributing
 
-O AutoDock é feito de forma aberta e toda ajuda conta:
+AutoDock is built in the open and every bit of help counts:
 
-- ⭐ **Dê uma estrela** para ajudar outras pessoas a encontrarem o projeto.
-- 🐛 **Relate problemas** e 💡 **sugira ideias** nas [issues](https://github.com/joaopanucci/autodock/issues).
-- 🔧 **Envie um pull request.** Leia o [CONTRIBUTING](CONTRIBUTING.md) e o [guia de desenvolvimento](docs/DEVELOPMENT.md).
-- 🧪 **Teste no Windows e no Linux** e conte como foi.
-- 💙 **Apoie com um PIX.** O app tem uma aba **Contribuir** com um QR Code. É voluntário e nenhum recurso depende dele.
+- ⭐ **Star the repository** to help other people find the project.
+- 🐛 **Report problems** and 💡 **suggest ideas** in the [issues](https://github.com/joaopanucci/autodock/issues).
+- 🔧 **Send a pull request.** Read [CONTRIBUTING](CONTRIBUTING.md) and the [development guide](docs/DEVELOPMENT.md).
+- 🧪 **Test on Windows and Linux** and tell us how it went.
+- 💙 **Support with a PIX.** The app has a **Contribute** tab with a QR code (PIX is a Brazilian instant payment system). It is voluntary and no feature depends on it.
 
-## 📄 Licença
+## 📄 License
 
 [Apache-2.0](LICENSE) © AutoDock contributors.
 
-<div align="center"><sub>Feito com 🦀 Rust, ⚛️ React e 🐳 Docker.</sub></div>
+<div align="center"><sub>Made with 🦀 Rust, ⚛️ React and 🐳 Docker.</sub></div>

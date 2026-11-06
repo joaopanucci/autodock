@@ -1,45 +1,45 @@
-name: 🐛 Relatar um problema
-description: Algo não funcionou como esperado
+name: 🐛 Report a problem
+description: Something did not work as expected
 labels: [bug]
 body:
   - type: textarea
-    id: o-que-aconteceu
+    id: what-happened
     attributes:
-      label: O que aconteceu?
-      description: Descreva o problema e o que você esperava que acontecesse.
+      label: What happened?
+      description: Describe the problem and what you expected to happen.
     validations:
       required: true
   - type: textarea
-    id: como-reproduzir
+    id: how-to-reproduce
     attributes:
-      label: Como reproduzir
+      label: How to reproduce
       placeholder: |
-        1. Abri o Assistente Docker
-        2. Escolhi a pasta ...
+        1. Opened the Docker assistant
+        2. Chose the folder ...
         3. ...
     validations:
       required: true
   - type: dropdown
-    id: sistema
+    id: os
     attributes:
-      label: Sistema operacional
+      label: Operating system
       options: [macOS, Windows, Linux]
     validations:
       required: true
   - type: input
-    id: versao
+    id: version
     attributes:
-      label: Versão do AutoDock
+      label: AutoDock version
       placeholder: v0.1.2
     validations:
       required: true
   - type: input
     id: docker
     attributes:
-      label: Versão do Docker
-      placeholder: "Saída de `docker --version`"
+      label: Docker version
+      placeholder: "Output of `docker --version`"
   - type: textarea
     id: logs
     attributes:
-      label: Mensagens de erro ou capturas de tela
-      description: Cole o texto do erro ou arraste uma imagem. **Não inclua senhas ou chaves.**
+      label: Error messages or screenshots
+      description: Paste the error text or drag in an image. **Do not include passwords or keys.**
