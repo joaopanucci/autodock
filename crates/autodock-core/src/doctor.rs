@@ -61,6 +61,17 @@ pub(crate) fn resolve(program: &str) -> Option<PathBuf> {
                 .join("bin")
                 .join(format!("{program}{}", std::env::consts::EXE_SUFFIX));
             path.is_file().then_some(path)
+        } else if program == "docker" && !cfg!(windows) {
+            // GUI apps (Finder, desktop launchers) do not inherit the shell PATH.
+            [
+                "/usr/local/bin/docker",
+                "/opt/homebrew/bin/docker",
+                "/Applications/Docker.app/Contents/Resources/bin/docker",
+                "/usr/bin/docker",
+            ]
+            .iter()
+            .map(PathBuf::from)
+            .find(|path| path.is_file())
         } else if cfg!(windows) && program.eq_ignore_ascii_case("MSBuild.exe") {
             let vswhere = PathBuf::from(std::env::var_os("ProgramFiles(x86)")?)
                 .join("Microsoft Visual Studio/Installer/vswhere.exe");
