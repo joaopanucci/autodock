@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["crates/autodock-core", "crates/autodock-cli", "apps/desktop/src-tauri"]
+default-members = ["crates/autodock-core", "crates/autodock-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
