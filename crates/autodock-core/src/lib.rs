@@ -16,3 +16,5 @@ mod scan;
 pub use doctor::{doctor, DoctorReport, ToolStatus};
 pub use scan::{scan, Component, ScanReport};
 pub mod lifecycle_lock;
+
+mod lifecycle_fs;
