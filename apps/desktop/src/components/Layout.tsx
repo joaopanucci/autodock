@@ -148,7 +148,7 @@ export function Layout({
         </main>
         <footer className="workspace-footer">
           <span>{t("layout.footer.local")}</span>
-          <span>AutoDock v0.1.0 · Open source</span>
+          <span>AutoDock v{__APP_VERSION__} · Open source</span>
         </footer>
       </div>
     </div>
