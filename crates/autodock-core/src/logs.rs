@@ -205,11 +205,24 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn timeout_terminates_descendant_without_disk_pid_file() {
-        let result = shell("$p = Start-Process powershell.exe -ArgumentList '-NoProfile -NonInteractive -Command Start-Sleep -Seconds 30' -WindowStyle Hidden -PassThru; [Console]::WriteLine($p.Id); Start-Sleep -Seconds 30", 1800, 100);
-        assert_eq!(result.status, ToolStatus::Timeout);
-        let pid = result.stdout.trim().parse::<u32>().expect("test child PID");
-        let check = shell(&format!("if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ exit 1 }} else {{ exit 0 }}"), 8000, 100);
-        assert_eq!(check.exit_code, Some(0));
+        // The deadline must comfortably exceed cold start of two PowerShell
+        // processes on a loaded runner (1.8s was not enough: the PID line was
+        // never printed). The parent sleeps far longer, so Timeout is certain.
+        let result = shell("$p = Start-Process powershell.exe -ArgumentList '-NoProfile -NonInteractive -Command Start-Sleep -Seconds 60' -WindowStyle Hidden -PassThru; [Console]::WriteLine($p.Id); [Console]::Out.Flush(); Start-Sleep -Seconds 60", 12000, 100);
+        assert_eq!(result.status, ToolStatus::Timeout, "{}", result.detail);
+        let pid = result.stdout.trim().parse::<u32>().unwrap_or_else(|e| {
+            panic!(
+                "test child PID not captured ({e}); stdout={:?} stderr={:?} detail={}",
+                result.stdout, result.stderr, result.detail
+            )
+        });
+        // Termination is asynchronous; poll briefly, but a survivor still fails.
+        let check = shell(&format!("for ($i = 0; $i -lt 30; $i++) {{ if (-not (Get-Process -Id {pid} -ErrorAction SilentlyContinue)) {{ exit 0 }}; Start-Sleep -Milliseconds 100 }}; exit 1"), 15000, 100);
+        assert_eq!(
+            check.exit_code,
+            Some(0),
+            "descendant {pid} survived timeout"
+        );
     }
 
     #[test]

@@ -1,50 +1,10 @@
 use fs4::TryLockError;
+#[cfg(windows)]
+use std::fs::OpenOptions;
 use std::{
-    fs::{self, File, OpenOptions},
-    io,
+    fs::{self, File},
     path::{Path, PathBuf},
 };
-
-#[cfg(windows)]
-fn open_lock_file(path: &Path) -> Result<File, String> {
-    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-
-    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
-
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create(true);
-
-    options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-
-    let file = options
-        .open(path)
-        .map_err(|e| format!("Nao foi possivel abrir bloqueio: {e}"))?;
-
-    let metadata = file
-        .metadata()
-        .map_err(|e| format!("Metadados do bloqueio indisponiveis: {e}"))?;
-
-    if !metadata.is_file() {
-        return Err("Bloqueio nao corresponde a arquivo regular.".into());
-    }
-
-    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err("Arquivo de bloqueio e um reparse point.".into());
-    }
-
-    Ok(file)
-}
-
-#[cfg(not(windows))]
-fn open_lock_file(path: &Path) -> Result<File, String> {
-    OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(path)
-        .map_err(|e| format!("Nao foi possivel abrir bloqueio: {e}"))
-}
 
 #[cfg(windows)]
 fn windows_file_identity(file: &File) -> Result<(u64, [u8; 16]), String> {
@@ -132,6 +92,7 @@ fn verify_lock_identity(file: &File, path: &Path) -> Result<(), String> {
 }
 pub struct LifecycleFileLock {
     _file: File,
+    pub(crate) parent: crate::lifecycle_fs::Directory,
 }
 
 impl LifecycleFileLock {
@@ -140,29 +101,18 @@ impl LifecycleFileLock {
             .parent()
             .ok_or_else(|| "Caminho de bloqueio sem diretorio pai.".to_string())?;
 
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Diretorio de bloqueio indisponivel: {e}"))?;
-
-        match fs::symlink_metadata(path) {
-            Ok(metadata) if !metadata.file_type().is_file() => {
-                return Err("Caminho de bloqueio nao e arquivo regular.".into());
-            }
-            Ok(_) => {}
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => {
-                return Err(format!("Falha ao validar arquivo de bloqueio: {e}"));
-            }
-        }
-
-        let file = open_lock_file(path)?;
-
-        if !file
-            .metadata()
-            .map_err(|e| format!("Metadados indisponiveis: {e}"))?
-            .is_file()
-        {
-            return Err("Bloqueio nao corresponde a arquivo regular.".into());
-        }
+        let parent = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+        let parent = crate::lifecycle_fs::Directory::open(parent)
+            .map_err(|e| format!("Diretorio de bloqueio inseguro: {e}"))?;
+        parent.ensure_private().map_err(|e| e.to_string())?;
+        let name = path.file_name().ok_or("Nome de bloqueio ausente")?;
+        let file = parent
+            .open_file(name, true, false)
+            .map_err(|e| format!("Bloqueio inseguro: {e}"))?;
 
         fs4::FileExt::try_lock(&file).map_err(|e| match e {
             TryLockError::WouldBlock => "Journal ocupado por outro processo.".to_string(),
@@ -171,7 +121,18 @@ impl LifecycleFileLock {
 
         verify_lock_identity(&file, path)?;
 
-        Ok(Self { _file: file })
+        Ok(Self {
+            _file: file,
+            parent,
+        })
+    }
+}
+
+impl Drop for LifecycleFileLock {
+    fn drop(&mut self) {
+        // Explicit unlock also releases transient fork-inherited descriptions
+        // before another thread's subprocess reaches exec/close-on-exec.
+        let _ = fs4::FileExt::unlock(&self._file);
     }
 }
 
@@ -196,9 +157,13 @@ pub fn lock_path_for(journal_directory: &Path) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
+    fn secure_test_tempdir() -> tempfile::TempDir {
+        tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
+    }
+
     #[test]
     fn exclusive_lock_blocks_second_acquisition() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let path = dir.path().join("pending.lock");
 
         let first = LifecycleFileLock::try_acquire(&path).unwrap();
@@ -210,7 +175,7 @@ mod tests {
 
     #[test]
     fn lock_can_be_reacquired_after_release() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let path = dir.path().join("pending.lock");
 
         {
@@ -222,7 +187,7 @@ mod tests {
 
     #[test]
     fn rejects_directory_as_lock_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let path = dir.path().join("pending.lock");
 
         fs::create_dir(&path).unwrap();
@@ -233,7 +198,7 @@ mod tests {
 
     #[test]
     fn lock_file_persists_after_guard_drop() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let path = dir.path().join("pending.lock");
 
         {
@@ -259,7 +224,7 @@ mod tests {
     fn rejects_symlink_as_lock_file_unix() {
         use std::os::unix::fs::symlink;
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let target = dir.path().join("target");
         let link = dir.path().join("pending.lock");
 
@@ -275,7 +240,7 @@ mod tests {
     fn rejects_symlink_as_lock_file_windows_when_supported() {
         use std::os::windows::fs::symlink_file;
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let target = dir.path().join("target");
         let link = dir.path().join("pending.lock");
 
@@ -292,7 +257,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn same_file_handles_have_same_identity() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let path = dir.path().join("pending.lock");
 
         fs::write(&path, b"original").unwrap();
@@ -309,7 +274,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn hardlink_preserves_identity_but_distinct_file_does_not() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let original = dir.path().join("original.lock");
         let hardlink = dir.path().join("alias.lock");
         let distinct = dir.path().join("distinct.lock");
@@ -336,7 +301,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn detects_replaced_lock_path() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let path = dir.path().join("pending.lock");
         let old_path = dir.path().join("old.lock");
 
@@ -365,7 +330,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn active_lock_replacement_is_rejected_or_blocked_by_windows() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let path = dir.path().join("pending.lock");
         let moved = dir.path().join("moved.lock");
 
@@ -392,7 +357,7 @@ mod tests {
     }
     #[test]
     fn lock_file_is_outside_pending_directory() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = secure_test_tempdir();
         let pending = dir.path().join("pending");
         let lock_path = lock_path_for(&pending).unwrap();
 
