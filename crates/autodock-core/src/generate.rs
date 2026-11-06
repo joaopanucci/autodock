@@ -1440,7 +1440,8 @@ mod tests {
         for (folder, expected) in [
             ("Meu App!", "meu-app"),
             ("123abc", "app-123abc"),
-            ("a\"b", "a-b"),
+            // `"` is not a legal file name character on Windows, so use a portable separator.
+            ("a.b", "a-b"),
             ("___", "app"),
         ] {
             let parent = tempfile::tempdir().unwrap();
