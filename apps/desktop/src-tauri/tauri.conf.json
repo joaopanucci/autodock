@@ -24,13 +24,19 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Configure projetos locais com Docker de forma guiada",
+    "longDescription": "AutoDock analisa projetos locais e gera Dockerfile e docker-compose.yml com um assistente guiado, sem instalar nada além do Docker.",
+    "copyright": "Copyright 2026 AutoDock contributors. Apache-2.0",
+    "publisher": "AutoDock"
   }
 }
