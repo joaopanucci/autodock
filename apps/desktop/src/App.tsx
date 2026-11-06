@@ -22,6 +22,7 @@ import { Monitoring } from "./pages/Monitoring";
 import { Console } from "./pages/Console";
 import { Assistant } from "./pages/Assistant";
 import { Contribute } from "./pages/Contribute";
+import { Learn } from "./pages/Learn";
 import { LANGUAGES, useI18n, type Lang, type TranslationKey } from "./i18n";
 
 const headings: Record<
@@ -35,6 +36,7 @@ const headings: Record<
   containers: { title: "page.containers.title", description: "page.containers.description" },
   monitoring: { title: "page.monitoring.title", description: "page.monitoring.description" },
   console: { title: "page.console.title", description: "page.console.description" },
+  learn: { title: "page.learn.title", description: "page.learn.description" },
   contribute: { title: "page.contribute.title", description: "page.contribute.description" },
   settings: { title: "page.settings.title", description: "page.settings.description" },
 };
@@ -234,6 +236,7 @@ export default function App() {
         <div hidden={page !== "setup"}>
           <Assistant path={path} setPath={setPath} />
         </div>
+        {page === "learn" && <Learn navigate={setPage} />}
         {page === "contribute" && <Contribute />}
         {page === "environment" && (
           <Environment

@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   WandSparkles,
   HeartHandshake,
+  GraduationCap,
   ChevronRight,
   ArrowUpRight,
   type LucideIcon,
@@ -31,6 +32,7 @@ export const navigation: {
   { id: "containers", labelKey: "nav.containers", icon: Boxes },
   { id: "monitoring", labelKey: "nav.monitoring", icon: Activity },
   { id: "console", labelKey: "nav.console", icon: TerminalSquare },
+  { id: "learn", labelKey: "nav.learn", icon: GraduationCap },
   { id: "settings", labelKey: "nav.settings", icon: Settings2 },
   { id: "contribute", labelKey: "nav.contribute", icon: HeartHandshake },
 ];
@@ -98,6 +100,13 @@ export function Layout({
             </button>
           ))}
           <div className="nav-settings">
+            <button
+              aria-current={page === "learn" ? "page" : undefined}
+              onClick={() => navigate("learn")}
+            >
+              <GraduationCap size={19} aria-hidden="true" />
+              <span>{t("nav.learn")}</span>
+            </button>
             <button
               aria-current={page === "settings" ? "page" : undefined}
               onClick={() => navigate("settings")}

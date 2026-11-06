@@ -51,6 +51,8 @@ test("monitoring shows four charts with stats and a hover tooltip", async ({ pag
   await charts.first().hover({ position: { x: 200, y: 80 } });
   await expect(page.locator(".ad-monitor-tooltip")).toBeVisible();
 
+  await page.mouse.move(0, 0);
+  await expect(page.locator(".ad-monitor-tooltip")).toHaveCount(0);
   await charts.nth(2).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.locator(".ad-monitor-tooltip")).toBeVisible();

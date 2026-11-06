@@ -2280,3 +2280,34 @@ main:focus {
 }
 .ad-monitor-tooltip small { opacity: .65; font-size: 11px; }
 .ad-monitor-caption { margin: 8px 0 0; font-size: 11px; opacity: .6; }
+
+/* Learn area (issue #15) */
+.learn { display: grid; gap: 18px; }
+.learn-progress { height: 8px; border-radius: 99px; background: rgba(145, 163, 190, .16); overflow: hidden; margin: 14px 0 8px; }
+.learn-progress span { display: block; height: 100%; background: var(--green); border-radius: 99px; transition: width .25s; }
+.learn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.learn-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 14px; background: rgba(145, 163, 190, .05); border: 1px solid rgba(145, 163, 190, .15); }
+.learn-card.is-done { border-color: rgba(123, 198, 168, .45); }
+.learn-card h3 { margin: 0; font-size: 16px; }
+.learn-card p { margin: 0; font-size: 13px; opacity: .75; flex: 1; }
+.learn-card .button { align-self: flex-start; }
+.learn-card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.learn-number { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; background: rgba(138, 182, 250, .18); color: var(--blue); }
+.learn-card.is-done .learn-number { background: rgba(123, 198, 168, .2); color: var(--green); }
+.learn-minutes { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; opacity: .65; margin-left: auto; }
+.learn-body { display: grid; gap: 14px; margin: 18px 0; max-width: 760px; line-height: 1.6; }
+.learn-body p { margin: 0; }
+.learn-callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+.learn-callout p { margin: 0; }
+.learn-tip { background: rgba(138, 182, 250, .1); border: 1px solid rgba(138, 182, 250, .3); }
+.learn-warn { background: rgba(223, 187, 120, .1); border: 1px solid rgba(223, 187, 120, .35); }
+.learn-code { margin: 0; border: 1px solid rgba(145, 163, 190, .18); border-radius: 10px; overflow: hidden; background: #0d1320; }
+.learn-code figcaption { padding: 8px 14px; font-size: 12px; opacity: .65; border-bottom: 1px solid rgba(145, 163, 190, .12); }
+.learn-code pre { margin: 0; padding: 14px; overflow-x: auto; font-size: 13px; }
+.learn-code .link-button { margin: 0 10px 10px; }
+.learn-subtitle { margin: 22px 0 8px; font-size: 14px; }
+.learn-links { list-style: none; padding: 0; margin: 0 0 20px; display: grid; gap: 10px; }
+.learn-links li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.learn-links code { overflow-wrap: anywhere; font-size: 12px; opacity: .8; }
+.learn-note { font-size: 12px; opacity: .6; margin: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

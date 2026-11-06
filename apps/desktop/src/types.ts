@@ -44,6 +44,7 @@ export type Page =
   | "containers"
   | "monitoring"
   | "console"
+  | "learn"
   | "settings";
 
 export type DockerContainer = {
