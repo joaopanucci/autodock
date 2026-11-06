@@ -2,12 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  ArrowRight,
   CheckCircle2,
   FolderPlus,
   Info,
   LoaderCircle,
-  LockKeyhole,
   ShieldCheck,
   X,
   AlertTriangle,
@@ -15,7 +13,7 @@ import {
 import type { Doctor, Page, Scan, SessionProject } from "./types";
 import { displayPath, rememberProject } from "./model";
 import { Layout, navigation } from "./components/Layout";
-import { Badge, EmptyState, Panel } from "./components/ui";
+import { Badge, Panel } from "./components/ui";
 import { Overview } from "./pages/Overview";
 import { Projects } from "./pages/Projects";
 import { Environment } from "./pages/Environment";
@@ -23,6 +21,7 @@ import { Containers } from "./pages/Containers";
 import { Monitoring } from "./pages/Monitoring";
 import { Console } from "./pages/Console";
 import { Assistant } from "./pages/Assistant";
+import { Contribute } from "./pages/Contribute";
 
 const headings: Record<Page, { title: string; description: string }> = {
   overview: {
@@ -57,6 +56,11 @@ const headings: Record<Page, { title: string; description: string }> = {
   console: {
     title: "Console",
     description: "Execute consultas Docker autorizadas e acompanhe os resultados.",
+  },
+  contribute: {
+    title: "Contribuir",
+    description:
+      "O AutoDock é livre e gratuito. Veja como ajudar o projeto a continuar evoluindo.",
   },
   settings: {
     title: "Configurações",
@@ -253,11 +257,13 @@ export default function App() {
             select={selectProject}
             analyze={analyze}
             inspect={inspect}
+            prepareDocker={() => setPage("setup")}
           />
         )}
         <div hidden={page !== "setup"}>
           <Assistant path={path} setPath={setPath} />
         </div>
+        {page === "contribute" && <Contribute />}
         {page === "environment" && (
           <Environment
             doctor={doctor}
@@ -270,33 +276,6 @@ export default function App() {
         {page === "containers" && <Containers />}
         {page === "monitoring" && <Monitoring />}
         <div hidden={page !== "console"}><Console /></div>
-        {nav.planned && page !== "containers" && page !== "monitoring" && page !== "console" && (
-          <Panel
-            title={nav.label}
-            action={<Badge tone="amber">Em desenvolvimento</Badge>}
-          >
-            <EmptyState
-              icon={nav.icon}
-              title="O próximo capítulo do seu workspace"
-              description="O console exibirá resultados de operações autorizadas. A execução de comandos e os logs de containers ainda não estão disponíveis."
-              action={
-                <button
-                  className="button secondary"
-                  onClick={() => setPage("projects")}
-                >
-                  Explorar projetos <ArrowRight size={16} aria-hidden="true" />
-                </button>
-              }
-            />
-            <div className="notice">
-              <LockKeyhole size={18} aria-hidden="true" />
-              <p>
-                Futuras operações apresentarão os comandos e arquivos afetados
-                antes de pedir sua autorização.
-              </p>
-            </div>
-          </Panel>
-        )}
         {page === "settings" && (
           <>
             <div className="requirements-grid">
@@ -340,9 +319,9 @@ export default function App() {
               <div className="notice">
                 <Info size={20} aria-hidden="true" />
                 <p>
-                  Hoje, o AutoDock analisa projetos e consulta ferramentas em
-                  modo somente leitura. Nenhuma instalação automática está
-                  disponível.
+                  O AutoDock analisa projetos e consulta ferramentas sem alterar
+                  nada. A única escrita é a criação de arquivos Docker pelo
+                  Assistente, sempre depois da sua confirmação.
                 </p>
               </div>
               <ol className="permission-steps">
@@ -371,15 +350,15 @@ export default function App() {
                   <div>
                     <strong>Proteção e registro</strong>
                     <p>
-                      Criar backup antes de sobrescrever e registrar o
-                      resultado, sem credenciais nos logs.
+                      Nunca sobrescrever arquivos existentes e informar o
+                      que foi criado ou ignorado, sem credenciais nos logs.
                     </p>
                   </div>
                 </li>
               </ol>
               <p className="card-note">
-                Diretriz para operações futuras. Nenhum executor de alterações
-                foi implementado nesta etapa.
+                O Assistente Docker cria somente arquivos novos na pasta do
+                projeto. Nenhuma instalação automática é feita.
               </p>
             </Panel>
           </>

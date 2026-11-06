@@ -2096,3 +2096,91 @@ main:focus {
   justify-content: space-between;
   gap: 12px;
 }
+
+/* Contribuir */
+.contribute-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  gap: 20px;
+}
+@media (max-width: 900px) {
+  .contribute-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.pix-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+  margin: 18px 0;
+}
+.qr-wrap {
+  padding: 12px;
+  background: #fff;
+  border-radius: 10px;
+  width: 220px;
+  flex: none;
+}
+.qr {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.pix-side {
+  flex: 1;
+  min-width: 240px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip,
+.chip-input {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid #344157;
+  border-radius: 999px;
+  background: #151c26;
+  color: #dbe5f3;
+  font-size: 12px;
+}
+.chip.selected {
+  border-color: #85acf0;
+  background: #1b2738;
+}
+.chip-input {
+  width: 120px;
+}
+.pix-steps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.help-list {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.help-list li {
+  display: flex;
+  gap: 12px;
+}
+.help-list svg {
+  color: var(--blue);
+  flex: none;
+  margin-top: 2px;
+}
+.help-list p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
