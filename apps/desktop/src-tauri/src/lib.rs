@@ -50,6 +50,22 @@ async fn reveal_folder(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn scaffold_plan(
+    request: autodock_core::scaffold::ScaffoldRequest,
+) -> Result<autodock_core::scaffold::ScaffoldPlan, String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::scaffold::plan(&request))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn scaffold_run(
+    request: autodock_core::scaffold::ScaffoldRequest,
+) -> Result<autodock_core::scaffold::ScaffoldReport, String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::scaffold::run(&request))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn preview_docker_setup(
     request: autodock_core::generate::GenerateRequest,
 ) -> Result<autodock_core::generate::GeneratePlan, String> {
@@ -97,6 +113,8 @@ pub fn run() {
             detect_stacks,
             inspect_folder,
             detect_ides,
+            scaffold_plan,
+            scaffold_run,
             open_in_ide,
             reveal_folder,
             preview_docker_setup,

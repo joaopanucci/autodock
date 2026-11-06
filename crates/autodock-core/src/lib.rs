@@ -13,6 +13,7 @@ pub use docker::{list_docker_containers, DockerContainer, DockerContainersReport
 mod findings;
 pub mod generate;
 pub mod ide;
+pub mod scaffold;
 pub use findings::Finding;
 mod scan;
 pub use doctor::{doctor, DoctorReport, ToolStatus};
