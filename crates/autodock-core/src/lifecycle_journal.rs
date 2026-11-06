@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn rejects_parent_navigation_in_journal_path() {
         let dir = secure_test_tempdir();
-        let path = dir.path().join("subdir").join("..").join("pending");
+        let path = crate::lifecycle_fs::raw_join(dir.path(), &["subdir", "..", "pending"]);
 
         let journal = LifecycleJournal::new(path);
 
@@ -699,8 +699,9 @@ mod tests {
         let dir = secure_test_tempdir();
         let real = journal_dir(&dir);
         // `pending/../pending` resolves to a valid, existing journal; it must
-        // still be refused. canonicalize() yields a verbatim path on Windows.
-        let path = real.join("..").join("pending");
+        // still be refused. Built with raw_join because Path::join would
+        // collapse `..` on Windows verbatim paths before validation.
+        let path = crate::lifecycle_fs::raw_join(&real, &["..", "pending"]);
         let journal = LifecycleJournal::new(path);
         assert!(journal.list().is_err());
         assert!(journal.record(&sample()).is_err());
