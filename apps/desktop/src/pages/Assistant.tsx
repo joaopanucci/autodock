@@ -19,6 +19,9 @@ import type {
   GeneratePlan,
   GenerateRequest,
   IdeInfo,
+  FrameworkId,
+  ScaffoldPlan,
+  ScaffoldReport,
   PackageManager,
   PythonFramework,
   ServiceId,
@@ -65,7 +68,7 @@ const STACKS: {
     title: "PHP / Laravel",
     hint: "Aplicações Laravel com Composer.",
     port: 8000,
-    versions: ["8.3", "8.4", "8.2"],
+    versions: ["8.4", "8.5", "8.3", "8.2"],
     versionLabel: "Versão do PHP",
   },
 ];
@@ -82,6 +85,33 @@ const SERVICES: { id: ServiceId; title: string; hint: string; group: string }[] 
   ];
 
 const STEPS = ["Projeto", "Tecnologia", "Serviços", "Revisar e criar"];
+
+type Starter = "clean" | FrameworkId;
+const STARTERS: Record<StackId, { id: Starter; title: string; hint: string }[]> = {
+  nodejs: [
+    { id: "clean", title: "Projeto limpo", hint: "Servidor Express mínimo, só o essencial." },
+    { id: "vite-react", title: "Vite + React", hint: "Instalador oficial (create-vite), com TypeScript." },
+    { id: "vite-vue", title: "Vite + Vue", hint: "Instalador oficial (create-vite), com TypeScript." },
+  ],
+  "spring-boot": [
+    { id: "clean", title: "Projeto limpo", hint: "Spring Boot com Maven e dois endpoints de exemplo." },
+  ],
+  python: [
+    { id: "clean", title: "Projeto limpo", hint: "FastAPI ou Flask mínimo." },
+    { id: "django", title: "Django", hint: "Instalador oficial (django-admin startproject)." },
+  ],
+  laravel: [
+    { id: "laravel", title: "Laravel", hint: "Instalador oficial (composer create-project)." },
+  ],
+};
+
+function suggestName(path: string) {
+  const last = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  let name = last.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!name || /^[0-9]/.test(name)) name = `app-${name}`.replace(/-$/, "");
+  return name.slice(0, 40).replace(/-$/, "");
+}
+const validName = (value: string) => /^[a-z](?:[a-z0-9]|-(?=[a-z0-9])){0,39}$/.test(value);
 
 function message(error: unknown) {
   return typeof error === "string"
@@ -119,8 +149,15 @@ export function Assistant({
   const [newProject, setNewProject] = useState(false);
   const [ides, setIdes] = useState<IdeInfo[]>([]);
   const [opened, setOpened] = useState("");
+  const [starter, setStarter] = useState<Starter>("clean");
+  const [projectName, setProjectName] = useState("");
+  const [scaffoldPlan, setScaffoldPlan] = useState<ScaffoldPlan | null>(null);
+  const [scaffold, setScaffold] = useState<ScaffoldReport | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
 
   const meta = STACKS.find((s) => s.id === stack);
+  const isFramework = newProject && starter !== "clean";
   const detected = (id: StackId) => suggestions.find((s) => s.stack === id);
   const nodeScripts = detected("nodejs")?.scripts ?? [];
 
@@ -134,12 +171,21 @@ export function Assistant({
       runtimeVersion: version,
       packageManager: stack === "nodejs" ? packageManager : undefined,
       startScript:
-        stack === "nodejs" && !newProject ? startScript.trim() || undefined : undefined,
-      pythonFramework: stack === "python" ? framework : undefined,
+        stack !== "nodejs"
+          ? undefined
+          : starter.startsWith("vite")
+            ? "dev"
+            : newProject
+              ? undefined
+              : startScript.trim() || undefined,
+      pythonFramework:
+        stack === "python" ? (starter === "django" ? "django" : framework) : undefined,
       pythonModule:
         stack === "python" && !newProject && module.trim() ? module.trim() : undefined,
       services,
-      newProject: newProject || undefined,
+      // Com instalador oficial, o projeto já existe quando o Docker é gerado.
+      newProject: newProject && starter === "clean" ? true : undefined,
+      projectName: newProject && starter === "clean" ? projectName : undefined,
     };
   }
 
@@ -171,7 +217,9 @@ export function Assistant({
     const info = STACKS.find((s) => s.id === id)!;
     const hint = list.find((s) => s.stack === id);
     setStack(id);
-    setPort(String(info.port));
+    setStarter(STARTERS[id][0].id);
+    setScaffoldPlan(null);
+    setPort(String(hint?.vite ? 5173 : info.port));
     setVersion(info.versions[0]);
     setPlan(null);
     setResult(null);
@@ -190,6 +238,8 @@ export function Assistant({
         setPath(picked);
         setEmptyFolder(false);
         setNewProject(false);
+        setScaffold(null);
+        setScaffoldPlan(null);
         setPlan(null);
         setResult(null);
         await detect(picked);
@@ -215,6 +265,22 @@ export function Assistant({
     setBusy("preview");
     setError("");
     try {
+      if (isFramework && !scaffold?.success) {
+        setScaffoldPlan(
+          await invoke<ScaffoldPlan>("scaffold_plan", {
+            request: {
+              path: body.path,
+              framework: starter,
+              projectName,
+              runtimeVersion: stack === "laravel" ? undefined : version,
+            },
+          }),
+        );
+        setPlan(null);
+        setResult(null);
+        setStep(3);
+        return;
+      }
       const generated = await invoke<GeneratePlan>("preview_docker_setup", { request: body });
       setPlan(generated);
       setSelected(generated.files.filter((f) => !f.exists).map((f) => f.name));
@@ -228,7 +294,46 @@ export function Assistant({
     }
   }
 
+  async function runScaffold() {
+    const body = request();
+    if (!body || installing) return;
+    setInstalling(true);
+    setElapsed(0);
+    setError("");
+    setScaffold(null);
+    try {
+      const report = await invoke<ScaffoldReport>("scaffold_run", {
+        request: {
+          path: body.path,
+          framework: starter,
+          projectName,
+          runtimeVersion: stack === "laravel" ? undefined : version,
+        },
+      });
+      setScaffold(report);
+      if (report.success) {
+        const generated = await invoke<GeneratePlan>("preview_docker_setup", { request: body });
+        setPlan(generated);
+        setSelected(generated.files.filter((f) => !f.exists).map((f) => f.name));
+        setActive(generated.files[0]?.name ?? "");
+        setResult(null);
+      }
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setInstalling(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!installing) return;
+    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [installing]);
+
   function startNewProject() {
+    setProjectName(suggestName(path));
+    setScaffold(null);
     setNewProject(true);
     setPlan(null);
     setResult(null);
@@ -297,7 +402,9 @@ export function Assistant({
   }, []);
 
   const canContinue =
-    step === 0 ? !!path.trim() && !!stack : step === 1 ? !!stack && !!port : true;
+    step === 0 ? !!path.trim() && !!stack : step === 1
+        ? !!stack && !!port && (!newProject || validName(projectName))
+        : true;
   const activeFile = plan?.files.find((f) => f.name === active);
   const command = "docker compose up --build";
 
@@ -343,6 +450,8 @@ export function Assistant({
                 setSuggestions([]);
                 setEmptyFolder(false);
                 setNewProject(false);
+                setScaffold(null);
+                setScaffoldPlan(null);
                 setPlan(null);
               }}
               placeholder="Selecione uma pasta ou informe o caminho absoluto"
@@ -400,16 +509,55 @@ export function Assistant({
                 role="radio"
                 aria-checked={stack === s.id}
                 className={`choice ${stack === s.id ? "selected" : ""}`}
-                disabled={newProject && s.id === "laravel"}
                 onClick={() => chooseStack(s.id)}
               >
                 <strong>{s.title}</strong>
                 <span>{s.hint}</span>
-                {newProject && s.id === "laravel" && <Badge>Em breve para projeto novo</Badge>}
                 {detected(s.id) && <Badge tone="green">Detectado</Badge>}
               </button>
             ))}
           </div>
+          {newProject && meta && (
+            <>
+              <div className="question-grid">
+                <label className="question">
+                  <span>Nome do projeto</span>
+                  <input
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value.toLowerCase())}
+                    aria-invalid={!validName(projectName)}
+                  />
+                  <small>
+                    {validName(projectName)
+                      ? "Usado nos arquivos do projeto. Os arquivos são criados na pasta escolhida."
+                      : "Use letras minúsculas, números e hífen, começando por uma letra."}
+                  </small>
+                </label>
+              </div>
+              <p className="field-label">Como começar?</p>
+              <div className="choice-grid" role="radiogroup" aria-label="Como começar">
+                {STARTERS[stack!].map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={starter === option.id}
+                    className={`choice ${starter === option.id ? "selected" : ""}`}
+                    onClick={() => {
+                      setStarter(option.id);
+                      setPort(option.id.startsWith("vite") ? "5173" : String(meta.port));
+                      setPlan(null);
+                      setScaffoldPlan(null);
+                    }}
+                  >
+                    <strong>{option.title}</strong>
+                    <span>{option.hint}</span>
+                    {option.id !== "clean" && <Badge tone="blue">Instalador oficial</Badge>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {meta && (
             <div className="question-grid">
               <label className="question">
@@ -465,15 +613,13 @@ export function Assistant({
                   )}
                 </>
               )}
-              {stack === "python" && (
+              {stack === "python" && starter === "clean" && (
                 <>
                   <label className="question">
                     <span>Framework</span>
                     <select value={framework} onChange={(e) => setFramework(e.target.value as PythonFramework)}>
                       <option value="fastapi">FastAPI</option>
-                      <option value="django" disabled={newProject}>
-                        Django{newProject ? " (em breve para projeto novo)" : ""}
-                      </option>
+                      {!newProject && <option value="django">Django</option>}
                       <option value="flask">Flask</option>
                     </select>
                   </label>
@@ -521,8 +667,57 @@ export function Assistant({
         </Panel>
       )}
 
+      {step === 3 && isFramework && !plan && scaffoldPlan && (
+        <Panel title={`Instalar ${scaffoldPlan.title}`} eyebrow="PASSO 4 DE 4">
+          <p className="section-description">
+            O AutoDock vai rodar o instalador oficial dentro de um container Docker, sem instalar
+            nada no seu computador. Este é o comando exato:
+          </p>
+          <pre className="code-preview" aria-label="Comando que será executado">
+            <code>{scaffoldPlan.command}</code>
+          </pre>
+          <div className="notice">
+            <ul>
+              {scaffoldPlan.notes.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          </div>
+          {installing && (
+            <div className="feedback loading" role="status">
+              <LoaderCircle className="spin" size={18} aria-hidden="true" />
+              <span>
+                Instalando… {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}. Na
+                primeira vez pode levar alguns minutos (baixa imagens e dependências).
+              </span>
+            </div>
+          )}
+          {scaffold && !scaffold.success && (
+            <div className="feedback error" role="alert">
+              <AlertTriangle size={19} aria-hidden="true" />
+              <div>
+                <strong>{scaffold.detail}</strong>
+                <pre className="code-preview">
+                  <code>{scaffold.output}</code>
+                </pre>
+              </div>
+            </div>
+          )}
+        </Panel>
+      )}
+
       {step === 3 && plan && (
         <Panel title={newProject ? "Revise o projeto novo antes de criar" : "Revise antes de criar"} eyebrow="PASSO 4 DE 4">
+          {scaffold?.success && (
+            <div className="feedback success" role="status">
+              <CheckCircle2 size={18} aria-hidden="true" />
+              <span>
+                Projeto criado com {scaffoldPlan?.title ?? "o instalador oficial"} em{" "}
+                {Math.max(1, Math.round(scaffold.durationMs / 1000))} s. Falta gerar os arquivos
+                Docker.
+              </span>
+            </div>
+          )}
           <p className="section-description">
             Nada foi gravado ainda. Estes arquivos serão criados em{" "}
             <span className="mono">{displayPath(plan.project)}</span>. Arquivos que já existem nunca são sobrescritos.
@@ -630,7 +825,7 @@ export function Assistant({
         <button
           type="button"
           className="button secondary"
-          disabled={step === 0 || !!busy}
+          disabled={step === 0 || !!busy || installing}
           onClick={() => setStep((s) => s - 1)}
         >
           <ArrowLeft size={16} aria-hidden="true" /> Voltar
@@ -648,10 +843,21 @@ export function Assistant({
         {step === 2 && (
           <button type="button" className="button primary" disabled={!!busy} onClick={() => void review()}>
             {busy === "preview" ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : null}
-            Gerar preview <ArrowRight size={16} aria-hidden="true" />
+            Revisar <ArrowRight size={16} aria-hidden="true" />
           </button>
         )}
-        {step === 3 && !result && (
+        {step === 3 && isFramework && !plan && (
+          <button
+            type="button"
+            className="button primary"
+            disabled={installing}
+            onClick={() => void runScaffold()}
+          >
+            {installing ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : null}
+            {scaffold && !scaffold.success ? "Tentar de novo" : "Instalar e continuar"}
+          </button>
+        )}
+        {step === 3 && plan && !result && (
           <button
             type="button"
             className="button primary"

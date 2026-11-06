@@ -81,6 +81,9 @@ pub struct GenerateRequest {
     /// Creates a starter project in an empty folder before the Docker files.
     #[serde(default)]
     pub new_project: bool,
+    /// Name used in the starter manifests; defaults to the folder name.
+    #[serde(default)]
+    pub project_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,11 +127,13 @@ pub struct Suggestion {
     pub scripts: Vec<String>,
     pub package_manager: Option<PackageManager>,
     pub python_framework: Option<PythonFramework>,
+    /// The project uses the Vite dev server (default port 5173).
+    pub vite: bool,
 }
 
 // ---------------------------------------------------------------- detection
 
-fn root_of(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn root_of(path: &str) -> Result<PathBuf, String> {
     let root = Path::new(path)
         .canonicalize()
         .map_err(|e| format!("{path}: {e}"))?;
@@ -191,6 +196,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
             .and_then(|v| v.get("scripts").and_then(|s| s.as_object().cloned()))
             .map(|s| s.keys().filter(|k| valid_script(k)).cloned().collect())
             .unwrap_or_default();
+        let vite = text.contains("\"vite\"");
         let package_manager = if regular_file(&root, "pnpm-lock.yaml") {
             Some(PackageManager::Pnpm)
         } else if regular_file(&root, "yarn.lock") {
@@ -204,6 +210,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
             scripts,
             package_manager,
             python_framework: None,
+            vite,
         });
     }
     if let Some(text) = read_manifest(&root, "pom.xml") {
@@ -214,6 +221,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
                 scripts: vec![],
                 package_manager: None,
                 python_framework: None,
+                vite: false,
             });
         }
     }
@@ -235,6 +243,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
                 scripts: vec![],
                 package_manager: None,
                 python_framework: framework,
+                vite: false,
             });
             break;
         }
@@ -247,6 +256,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
                 scripts: vec![],
                 package_manager: None,
                 python_framework: None,
+                vite: false,
             });
         }
     }
@@ -255,7 +265,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
 
 // --------------------------------------------------------------- validation
 
-fn valid_script(value: &str) -> bool {
+pub(crate) fn valid_script(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
         && !value.starts_with('-')
@@ -281,7 +291,7 @@ fn runtime_version(stack: Stack, requested: &Option<String>) -> Result<String, S
         Stack::Nodejs => (&["24", "22", "20"], "22"),
         Stack::SpringBoot => (&["21", "17"], "21"),
         Stack::Python => (&["3.13", "3.12", "3.11"], "3.12"),
-        Stack::Laravel => (&["8.4", "8.3", "8.2"], "8.3"),
+        Stack::Laravel => (&["8.5", "8.4", "8.3", "8.2"], "8.4"),
     };
     let version = requested.as_deref().unwrap_or(default);
     if allowed.contains(&version) {
@@ -342,13 +352,34 @@ struct Resolved {
     python_uses_pyproject: bool,
     new_project: bool,
     project_name: String,
+    /// The chosen npm script runs the Vite dev server, which must bind 0.0.0.0.
+    vite: bool,
 }
 
 fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
     if request.port == 0 {
         return Err("Porta inválida.".into());
     }
-    let version = runtime_version(request.stack, &request.runtime_version)?;
+    let mut version = runtime_version(request.stack, &request.runtime_version)?;
+    if request.stack == Stack::Laravel {
+        if let Some(min) = laravel_min_php_minor(root) {
+            let chosen: u32 = version
+                .split('.')
+                .nth(1)
+                .and_then(|m| m.parse().ok())
+                .unwrap_or(0);
+            let required = format!("8.{min}");
+            if chosen < min {
+                if request.runtime_version.is_none()
+                    && runtime_version(Stack::Laravel, &Some(required.clone())).is_ok()
+                {
+                    version = required;
+                } else {
+                    return Err(format!("As dependências do projeto exigem PHP {required} ou superior. Escolha uma versão mais nova."));
+                }
+            }
+        }
+    }
     let services: Vec<Service> = SERVICE_ORDER
         .iter()
         .copied()
@@ -425,6 +456,7 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         }
         _ => {}
     }
+    let start_script_value = start_script.clone();
     Ok(Resolved {
         stack: request.stack,
         port: request.port,
@@ -436,8 +468,71 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         services,
         python_uses_pyproject,
         new_project: request.new_project,
-        project_name: project_name(root),
+        vite: request.stack == Stack::Nodejs
+            && !request.new_project
+            && script_runs_vite(root, &start_script_value),
+        project_name: match &request.project_name {
+            Some(name) if !crate::scaffold::valid_project_name(name) => {
+                return Err(
+                    "Nome do projeto inválido (use letras minúsculas, números e hífen).".into(),
+                );
+            }
+            Some(name) => name.clone(),
+            None => project_name(root),
+        },
     })
+}
+
+/// Lowest PHP 8.x minor mentioned by a composer constraint (ignores upper bounds).
+fn lowest_php_minor(constraint: &str) -> Option<u32> {
+    constraint
+        .split(|c: char| c == '|' || c == ',' || c.is_whitespace())
+        .filter(|token| !token.starts_with('<'))
+        .filter_map(|token| {
+            let token = token.trim_start_matches(|c| "^~>=v".contains(c));
+            token
+                .strip_prefix("8.")?
+                .split(['.', '*', '-'])
+                .next()?
+                .parse()
+                .ok()
+        })
+        .min()
+}
+
+/// Highest minimum PHP version required by the locked dependencies.
+fn laravel_min_php_minor(root: &Path) -> Option<u32> {
+    if !regular_file(root, "composer.lock") {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(root.join("composer.lock"))
+        .ok()?
+        .take(8 * 1024 * 1024)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    let lock: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let mut min = 0;
+    for key in ["packages", "packages-dev"] {
+        for package in lock.get(key)?.as_array()? {
+            if let Some(minor) = package
+                .pointer("/require/php")
+                .and_then(|c| c.as_str())
+                .and_then(lowest_php_minor)
+            {
+                min = min.max(minor);
+            }
+        }
+    }
+    (min > 0).then_some(min)
+}
+
+fn script_runs_vite(root: &Path, script: &str) -> bool {
+    read_manifest(root, "package.json")
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|v| v.get("scripts")?.get(script)?.as_str().map(str::to_owned))
+        .map(|command| command.trim_start().starts_with("vite"))
+        .unwrap_or(false)
 }
 
 /// Folder name reduced to a safe lowercase identifier for manifests.
@@ -589,7 +684,19 @@ fn dockerfile(r: &Resolved) -> String {
                     "yarn",
                 ),
             };
-            let cmd = json_array(&[run.into(), "run".into(), r.start_script.clone()]);
+            let mut command = vec![run.to_string(), "run".into(), r.start_script.clone()];
+            if r.vite {
+                if r.package_manager == PackageManager::Npm {
+                    command.push("--".into());
+                }
+                command.extend([
+                    "--host".into(),
+                    "0.0.0.0".into(),
+                    "--port".into(),
+                    port.to_string(),
+                ]);
+            }
+            let cmd = json_array(&command);
             format!(
                 "# Gerado pelo AutoDock. Ambiente de desenvolvimento.\n\
 FROM node:{v}-alpine\n\
@@ -1121,6 +1228,7 @@ mod tests {
             python_module: None,
             services: vec![],
             new_project: false,
+            project_name: None,
         }
     }
 
@@ -1137,7 +1245,9 @@ mod tests {
         let plan = preview(&req).unwrap();
         let dockerfile = &file(&plan, DOCKERFILE).content;
         assert!(dockerfile.contains("FROM node:22-alpine"));
-        assert!(dockerfile.contains(r#"CMD ["npm", "run", "dev"]"#));
+        // vite binds localhost by default: the container needs 0.0.0.0 and the port
+        assert!(dockerfile
+            .contains(r#"CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]"#));
         let compose = &file(&plan, COMPOSE_FILE).content;
         assert!(compose.contains("\"3000:3000\""));
         assert!(compose.contains("condition: service_healthy"));
@@ -1147,6 +1257,62 @@ mod tests {
         assert!(plan.files.iter().any(|f| f.name == ENV_EXAMPLE));
         // preview must not create anything
         assert!(!dir.path().join(DOCKERFILE).exists());
+    }
+
+    #[test]
+    fn vite_host_flags_depend_on_the_package_manager_and_only_apply_to_vite() {
+        let dir = project(&[(
+            "package.json",
+            r#"{"scripts":{"dev":"vite","start":"node x.js"}}"#,
+        )]);
+        let cmd = |pm: PackageManager, script: &str| {
+            let mut req = request(&dir, Stack::Nodejs);
+            req.package_manager = Some(pm);
+            req.start_script = Some(script.into());
+            file(&preview(&req).unwrap(), DOCKERFILE).content.clone()
+        };
+        assert!(cmd(PackageManager::Pnpm, "dev")
+            .contains(r#"CMD ["pnpm", "run", "dev", "--host", "0.0.0.0", "--port", "3000"]"#));
+        assert!(cmd(PackageManager::Yarn, "dev")
+            .contains(r#"CMD ["yarn", "run", "dev", "--host", "0.0.0.0", "--port", "3000"]"#));
+        assert!(cmd(PackageManager::Npm, "start").contains(r#"CMD ["npm", "run", "start"]"#));
+    }
+
+    #[test]
+    fn laravel_php_version_follows_the_locked_dependencies() {
+        let lock = r#"{"packages":[{"require":{"php":"^8.2"}},{"require":{"php":">=8.4.1"}},
+            {"require":{"php":"^7.4|^8.0"}},{"require":{"php":">=7.2 <8.9"}}],"packages-dev":[]}"#;
+        let dir = project(&[("composer.json", "{}"), ("composer.lock", lock)]);
+        // default is raised to the minimum the dependencies need
+        let plan = preview(&request(&dir, Stack::Laravel)).unwrap();
+        assert!(file(&plan, DOCKERFILE).content.contains("FROM php:8.4-cli"));
+        // an explicit older version is refused with a clear message
+        let mut req = request(&dir, Stack::Laravel);
+        req.runtime_version = Some("8.3".into());
+        let error = preview(&req).unwrap_err();
+        assert!(error.contains("PHP 8.4"), "{error}");
+        // without a lock file the default (8.4) applies
+        let dir = project(&[("composer.json", "{}")]);
+        let plan = preview(&request(&dir, Stack::Laravel)).unwrap();
+        assert!(file(&plan, DOCKERFILE).content.contains("FROM php:8.4-cli"));
+        assert_eq!(lowest_php_minor("^8.2|^8.3"), Some(2));
+        assert_eq!(lowest_php_minor("<8.5"), None);
+    }
+
+    #[test]
+    fn project_name_is_validated_and_used_in_starters() {
+        let dir = project(&[]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.new_project = true;
+        req.project_name = Some("loja-online".into());
+        let plan = preview(&req).unwrap();
+        assert!(file(&plan, "package.json")
+            .content
+            .contains("\"name\": \"loja-online\""));
+        for bad in ["Loja", "a b", "x\"y", "$(id)", ""] {
+            req.project_name = Some(bad.into());
+            assert!(preview(&req).is_err(), "{bad:?}");
+        }
     }
 
     #[test]
@@ -1274,7 +1440,8 @@ mod tests {
         for (folder, expected) in [
             ("Meu App!", "meu-app"),
             ("123abc", "app-123abc"),
-            ("a\"b", "a-b"),
+            // `"` is not a legal file name character on Windows, so use a portable separator.
+            ("a.b", "a-b"),
             ("___", "app"),
         ] {
             let parent = tempfile::tempdir().unwrap();

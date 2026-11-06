@@ -123,6 +123,15 @@ test.beforeEach(async ({ page }) => {
             };
           if (command === "apply_docker_setup")
             return { written: ["index.js", "Dockerfile"], skipped: [] };
+          if (command === "scaffold_plan")
+            return {
+              title: "Laravel (instalador oficial)",
+              image: "composer:2",
+              command: "docker run --rm composer:2 create-project laravel/laravel .",
+              notes: ["Pode levar vários minutos."],
+            };
+          if (command === "scaffold_run")
+            return { success: true, durationMs: 4000, output: "ok", detail: "Projeto criado." };
           if (command === "detect_ides") return [{ id: "vscode", label: "VS Code" }];
           if (command === "open_in_ide") return null;
           throw new Error(`Unexpected IPC ${command}`);
@@ -331,11 +340,35 @@ test("empty folder offers a new project and then opens it in the detected IDE", 
   await expect(
     page.getByRole("heading", { name: "Com que tecnologia você quer criar o projeto?" }),
   ).toBeVisible();
-  await expect(page.getByRole("radio", { name: /PHP \/ Laravel/ })).toBeDisabled();
+  await expect(page.getByLabel("Nome do projeto")).toHaveValue("sample-project");
+  await expect(page.getByRole("radio", { name: /Projeto limpo/ })).toBeVisible();
   await page.getByRole("button", { name: /Continuar/ }).click();
-  await page.getByRole("button", { name: /Gerar preview/ }).click();
+  await page.getByRole("button", { name: /Revisar/ }).click();
   await expect(page.getByText("Revise o projeto novo antes de criar")).toBeVisible();
   await page.getByRole("button", { name: /Criar 2 arquivo/ }).click();
   await page.getByRole("button", { name: "VS Code" }).click();
   expect(await page.evaluate(() => (window as any).testCalls)).toContain("open_in_ide");
+});
+
+test("framework starter shows the exact installer command before running it", async ({
+  page,
+}) => {
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Assistente Docker", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Selecionar pasta" }).last().click();
+  await page.getByRole("button", { name: "Criar projeto novo" }).click();
+  await page.getByRole("radio", { name: /PHP \/ Laravel/ }).click();
+  await expect(page.getByRole("radio", { name: /^Laravel/ })).toBeVisible();
+  await page.getByLabel("Nome do projeto").fill("Nome Invalido");
+  await expect(page.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  await page.getByLabel("Nome do projeto").fill("loja");
+  await page.getByRole("button", { name: /Continuar/ }).click();
+  await page.getByRole("button", { name: /Revisar/ }).click();
+  await expect(page.getByLabel("Comando que será executado")).toContainText("composer:2");
+  expect(await page.evaluate(() => (window as any).testCalls)).not.toContain("scaffold_run");
+  await page.getByRole("button", { name: "Instalar e continuar" }).click();
+  await expect(page.getByText(/Projeto criado com Laravel/)).toBeVisible();
+  expect(await page.evaluate(() => (window as any).testCalls)).toContain("scaffold_run");
 });

@@ -21,6 +21,18 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Cria um projeto com o instalador oficial do framework, dentro do Docker.
+    /// Sem --run apenas mostra o comando.
+    Scaffold {
+        path: PathBuf,
+        /// laravel, django, vite-react ou vite-vue
+        #[arg(long)]
+        framework: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        run: bool,
+    },
     /// Gera Dockerfile e docker-compose.yml. Sem --write apenas mostra o preview.
     Generate {
         path: PathBuf,
@@ -112,6 +124,43 @@ fn generate_command(
 }
 fn main() -> ExitCode {
     match Cli::parse().command {
+        Commands::Scaffold {
+            path,
+            framework,
+            name,
+            run,
+        } => {
+            let request = serde_json::from_value::<autodock_core::scaffold::ScaffoldRequest>(
+                serde_json::json!({
+                    "path": path.to_string_lossy(),
+                    "framework": framework,
+                    "projectName": name,
+                }),
+            )
+            .map_err(|e| format!("Opção inválida: {e}"))
+            .and_then(|request| {
+                let plan = autodock_core::scaffold::plan(&request)?;
+                println!("{}\n{}", plan.title, plan.command);
+                for note in &plan.notes {
+                    eprintln!("Nota: {note}");
+                }
+                if !run {
+                    eprintln!("Preview apenas. Use --run para executar.");
+                    return Ok(true);
+                }
+                let report = autodock_core::scaffold::run(&request)?;
+                println!("{}\n{}", report.output, report.detail);
+                Ok(report.success)
+            });
+            match request {
+                Ok(true) => ExitCode::SUCCESS,
+                Ok(false) => ExitCode::FAILURE,
+                Err(error) => {
+                    eprintln!("Erro: {error}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Commands::Generate {
             path,
             stack,

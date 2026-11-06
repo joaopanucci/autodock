@@ -129,6 +129,7 @@ export type StackSuggestion = {
   scripts: string[];
   packageManager: PackageManager | null;
   pythonFramework: PythonFramework | null;
+  vite: boolean;
 };
 
 export type GenerateRequest = {
@@ -142,6 +143,7 @@ export type GenerateRequest = {
   pythonModule?: string;
   services: ServiceId[];
   newProject?: boolean;
+  projectName?: string;
 };
 
 export type GeneratedFile = {
@@ -164,3 +166,17 @@ export type ApplyReport = {
 };
 
 export type IdeInfo = { id: string; label: string };
+
+export type FrameworkId = "laravel" | "django" | "vite-react" | "vite-vue";
+export type ScaffoldPlan = {
+  title: string;
+  image: string;
+  command: string;
+  notes: string[];
+};
+export type ScaffoldReport = {
+  success: boolean;
+  durationMs: number;
+  output: string;
+  detail: string;
+};
