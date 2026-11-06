@@ -8,9 +8,6 @@ on:
       tag:
         description: Release tag whose installers are tested
         default: v0.1.0
-  push:
-    branches: [feature/005-container-lifecycle]
-    paths: ['.github/workflows/smoke.yml']
 
 permissions:
   contents: read

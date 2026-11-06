@@ -7,7 +7,7 @@
 **Coloque qualquer projeto no Docker em poucos cliques.**<br/>
 Responda algumas perguntas. O AutoDock cria o `Dockerfile`, o `docker-compose.yml` e até o projeto, se você ainda não tiver um. Você revisa tudo antes de gravar.
 
-[![CI](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml/badge.svg?branch=feature%2F005-container-lifecycle)](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml)
+[![CI](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml/badge.svg?branch=main)](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml)
 [![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=709fe5&label=vers%C3%A3o)](https://github.com/joaopanucci/autodock/releases/latest)
 [![Licença](https://img.shields.io/badge/licen%C3%A7a-Apache--2.0-7bc6a8)](LICENSE)
 ![Plataformas](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-4d6fa8)

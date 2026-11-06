@@ -6,14 +6,6 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
-    # Lets installer changes be tested from this branch before the workflow
-    # exists on the default branch (manual dispatch requires that).
-    branches: [feature/005-container-lifecycle]
-    paths:
-      - '.github/workflows/release.yml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/icons/**'
-      - 'apps/desktop/src-tauri/Cargo.toml'
 
 
 permissions:
