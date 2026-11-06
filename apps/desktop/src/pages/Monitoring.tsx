@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { call } from "../ipc";
 import {
   Activity,
@@ -10,12 +10,15 @@ import {
 } from "lucide-react";
 import { Badge, Panel } from "../components/ui";
 import { useI18n } from "../i18n";
+import type { TranslationKey } from "../i18n/core";
 import type { ContainerMetrics, MonitoringReport } from "../types";
 
 type Sample = {
   time: number;
   cpu: number | null;
   memory: number | null;
+  rx: number | null;
+  tx: number | null;
 };
 
 type NetworkRate = {
@@ -83,16 +86,39 @@ function networkRate(
   };
 }
 
+type Field = "cpu" | "memory" | "rx" | "tx";
+
+const FIELD_KEY: Record<Field, TranslationKey> = {
+  cpu: "monitor.metric.cpu",
+  memory: "monitor.metric.memory",
+  rx: "monitor.metric.rx",
+  tx: "monitor.metric.tx",
+};
+
+// Round a byte rate up to a "nice" axis maximum (1, 2, 5 x 10^n).
+function niceMax(value: number): number {
+  if (!(value > 0)) return 1024;
+  const exponent = Math.floor(Math.log10(value));
+  const base = 10 ** exponent;
+  const fraction = value / base;
+  const nice = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return nice * base;
+}
+
 function Trend({
   samples,
   field,
   color,
 }: {
   samples: Sample[];
-  field: "cpu" | "memory";
+  field: Field;
   color: string;
 }) {
   const { t, locale } = useI18n();
+  const gradientId = useId().replace(/:/g, "");
+  const [hover, setHover] = useState<number | null>(null);
+  const isBytes = field === "rx" || field === "tx";
+
   const valid = samples.filter(
     (sample) =>
       sample[field] !== null &&
@@ -109,31 +135,47 @@ function Trend({
   }
 
   const width = 600;
-  const height = 190;
-  const left = 48;
+  const height = 210;
+  const left = isBytes ? 62 : 48;
   const right = 585;
   const top = 12;
-  const bottom = 150;
+  const bottom = 160;
 
   const firstTime = samples[0].time;
   const lastTime = samples[samples.length - 1].time;
   const duration = Math.max(1, lastTime - firstTime);
 
   const values = valid.map((sample) => sample[field] as number);
+  const peak = Math.max(...values);
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const lowest = Math.min(...values);
+  const latest = values[values.length - 1];
 
-  // CPU Docker pode ultrapassar 100% em containers multicore.
+  // Docker CPU can exceed 100% on multi-core containers.
   const maximum =
     field === "cpu"
-      ? Math.max(100, Math.ceil(Math.max(...values) / 25) * 25)
-      : 100;
+      ? Math.max(100, Math.ceil(peak / 25) * 25)
+      : field === "memory"
+        ? 100
+        : niceMax(peak);
+
+  const format = (value: number) =>
+    isBytes
+      ? `${formatBytes(value, t("monitor.unavailable"))}/s`
+      : formatPercent(value, t("monitor.unavailable"));
+
+  const axis = (value: number) =>
+    isBytes
+      ? formatBytes(value, t("monitor.unavailable"))
+      : `${value.toFixed(0)}%`;
 
   const x = (time: number) =>
     left + ((time - firstTime) / duration) * (right - left);
 
   const y = (value: number) => bottom - (value / maximum) * (bottom - top);
 
-  const segments: string[][] = [];
-  let current: string[] = [];
+  const segments: { x: number; y: number }[][] = [];
+  let current: { x: number; y: number }[] = [];
 
   samples.forEach((sample) => {
     const value = sample[field];
@@ -148,7 +190,7 @@ function Trend({
       return;
     }
 
-    current.push(`${x(sample.time).toFixed(2)},${y(value).toFixed(2)}`);
+    current.push({ x: x(sample.time), y: y(value) });
   });
 
   if (current.length >= 2) segments.push(current);
@@ -160,73 +202,182 @@ function Trend({
       second: "2-digit",
     });
 
+  const points = (segment: { x: number; y: number }[]) =>
+    segment.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+
+  const area = (segment: { x: number; y: number }[]) =>
+    `${points(segment)} ${segment[segment.length - 1].x.toFixed(2)},${bottom} ${segment[0].x.toFixed(2)},${bottom}`;
+
+  const last = valid[valid.length - 1];
+  const hovered = hover !== null && valid[hover] ? valid[hover] : null;
+
+  const moveTo = (clientX: number, element: SVGSVGElement) => {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const svgX = ((clientX - rect.left) / rect.width) * width;
+    let best = 0;
+    let distance = Infinity;
+    valid.forEach((sample, index) => {
+      const d = Math.abs(x(sample.time) - svgX);
+      if (d < distance) {
+        distance = d;
+        best = index;
+      }
+    });
+    setHover(best);
+  };
+
+  const step = (delta: number) =>
+    setHover((index) => {
+      const base = index ?? valid.length - 1;
+      return Math.min(valid.length - 1, Math.max(0, base + delta));
+    });
+
+  const tipLeft = hovered
+    ? Math.min(Math.max(((x(hovered.time) - 0) / width) * 100, 12), 88)
+    : 0;
+
   return (
     <div className="ad-monitor-trend">
-      <svg
-        className="ad-monitor-chart"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={t("monitor.chartAria", {
-          metric: field === "cpu" ? t("monitor.metric.cpu") : t("monitor.metric.memory"),
-          count: valid.length,
-        })}
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {[0, 0.5, 1].map((fraction) => {
-          const value = maximum * (1 - fraction);
-          const lineY = top + fraction * (bottom - top);
-
-          return (
-            <g key={fraction}>
-              <line
-                x1={left}
-                x2={right}
-                y1={lineY}
-                y2={lineY}
-                stroke="currentColor"
-                strokeOpacity="0.18"
-                strokeDasharray="4 5"
-              />
-              <text
-                x={left - 7}
-                y={lineY + 4}
-                textAnchor="end"
-                fill="currentColor"
-                fontSize="11"
-              >
-                {value.toFixed(0)}%
-              </text>
-            </g>
-          );
-        })}
-
-        {segments.map((points, index) => (
-          <polyline
-            key={index}
-            points={points.join(" ")}
-            fill="none"
-            stroke={color}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-
-        <text x={left} y={height - 12} fill="currentColor" fontSize="11">
-          {timeLabel(firstTime)}
-        </text>
-
-        <text
-          x={right}
-          y={height - 12}
-          textAnchor="end"
-          fill="currentColor"
-          fontSize="11"
+      <div className="ad-monitor-stats" aria-hidden="true">
+        <span>{t("monitor.stat.min")} <b>{format(lowest)}</b></span>
+        <span>{t("monitor.stat.avg")} <b>{format(average)}</b></span>
+        <span>{t("monitor.stat.max")} <b>{format(peak)}</b></span>
+      </div>
+      <div className="ad-monitor-plot">
+        <svg
+          className="ad-monitor-chart"
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          tabIndex={0}
+          aria-label={t("monitor.chartAria", {
+            metric: t(FIELD_KEY[field]),
+            count: valid.length,
+          })}
+          preserveAspectRatio="xMidYMid meet"
+          onMouseMove={(event) => moveTo(event.clientX, event.currentTarget)}
+          onMouseLeave={() => setHover(null)}
+          onBlur={() => setHover(null)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              step(-1);
+            } else if (event.key === "ArrowRight") {
+              event.preventDefault();
+              step(1);
+            } else if (event.key === "Escape") {
+              setHover(null);
+            }
+          }}
         >
-          {timeLabel(lastTime)}
-        </text>
-      </svg>
+          <defs>
+            <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.38" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+
+          {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+            const value = maximum * (1 - fraction);
+            const lineY = top + fraction * (bottom - top);
+
+            return (
+              <g key={fraction}>
+                <line
+                  x1={left}
+                  x2={right}
+                  y1={lineY}
+                  y2={lineY}
+                  stroke="currentColor"
+                  strokeOpacity={fraction === 1 ? 0.35 : 0.14}
+                  strokeDasharray={fraction === 1 ? undefined : "4 5"}
+                />
+                <text
+                  x={left - 7}
+                  y={lineY + 4}
+                  textAnchor="end"
+                  fill="currentColor"
+                  fontSize="11"
+                >
+                  {axis(value)}
+                </text>
+              </g>
+            );
+          })}
+
+          {segments.map((segment, index) => (
+            <g key={index}>
+              <polygon points={area(segment)} fill={`url(#${gradientId})`} />
+              <polyline
+                points={points(segment)}
+                fill="none"
+                stroke={color}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          ))}
+
+          <circle
+            cx={x(last.time)}
+            cy={y(last[field] as number)}
+            r="4.5"
+            fill={color}
+            stroke="var(--panel, #0f1523)"
+            strokeWidth="2"
+          />
+
+          {hovered && (
+            <g>
+              <line
+                x1={x(hovered.time)}
+                x2={x(hovered.time)}
+                y1={top}
+                y2={bottom}
+                stroke="currentColor"
+                strokeOpacity="0.45"
+              />
+              <circle
+                cx={x(hovered.time)}
+                cy={y(hovered[field] as number)}
+                r="5"
+                fill={color}
+                stroke="#fff"
+                strokeWidth="1.5"
+              />
+            </g>
+          )}
+
+          {[0, 0.5, 1].map((fraction) => (
+            <text
+              key={fraction}
+              x={left + fraction * (right - left)}
+              y={height - 14}
+              textAnchor={fraction === 0 ? "start" : fraction === 1 ? "end" : "middle"}
+              fill="currentColor"
+              fontSize="11"
+            >
+              {timeLabel(firstTime + fraction * duration)}
+            </text>
+          ))}
+        </svg>
+
+        {hovered && (
+          <div
+            className="ad-monitor-tooltip"
+            style={{ left: `${tipLeft}%` }}
+            role="status"
+          >
+            <strong>{format(hovered[field] as number)}</strong>
+            <small>{timeLabel(hovered.time)}</small>
+          </div>
+        )}
+      </div>
+      <p className="ad-monitor-caption">
+        {t("monitor.caption", { count: valid.length, now: format(latest) })}
+      </p>
     </div>
   );
 }
@@ -304,6 +455,8 @@ export function Monitoring() {
               time: now,
               cpu: metric.cpuPercent,
               memory: metric.memoryPercent,
+              rx: nextRates[metric.id]?.rx ?? null,
+              tx: nextRates[metric.id]?.tx ?? null,
             },
           ].slice(-MAX_SAMPLES);
         }
@@ -570,6 +723,24 @@ export function Monitoring() {
                       field="memory"
                       color="#4ac6ad"
                     />
+                  </div>
+                  <div>
+                    <div className="ad-monitor-graph-heading">
+                      <strong>{t("monitor.history.rx")}</strong>
+                      <Badge tone="neutral">
+                        {currentRates.rx === null ? t("monitor.unavailable") : `${bytes(currentRates.rx)}/s`}
+                      </Badge>
+                    </div>
+                    <Trend samples={currentHistory} field="rx" color="#e0a85c" />
+                  </div>
+                  <div>
+                    <div className="ad-monitor-graph-heading">
+                      <strong>{t("monitor.history.tx")}</strong>
+                      <Badge tone="neutral">
+                        {currentRates.tx === null ? t("monitor.unavailable") : `${bytes(currentRates.tx)}/s`}
+                      </Badge>
+                    </div>
+                    <Trend samples={currentHistory} field="tx" color="#b38cf0" />
                   </div>
                 </div>
               </>
