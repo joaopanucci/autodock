@@ -147,6 +147,7 @@ version = "0.1.0"
 dependencies = [
  "command-group",
  "fs4",
+ "libc",
  "roxmltree",
  "serde",
  "serde_json",

@@ -1,13 +1,15 @@
 use crate::{
     doctor::{probe, resolve, ToolStatus},
+    lifecycle_journal::{LifecycleJournal, PendingOperation},
     memory_capture::{self, Output},
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    path::PathBuf,
     process::Command,
-    sync::{Mutex, OnceLock},
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -86,181 +88,293 @@ pub struct LifecycleReport {
     pub reconciliation_required: bool,
 }
 
-#[derive(Default)]
-struct LifecycleRegistry {
-    active: HashSet<String>,
-    pending: HashSet<String>,
+/// Public executor contract: implementations must scope every call to `context`.
+/// Inspection must return the full immutable Docker ID, not the requested alias.
+pub trait LifecycleExecutor {
+    fn inspect(&mut self, context: &str, id: &str) -> Result<ContainerObservation, String>;
+    /// `Missing` guarantees no command was spawned. Every other unverified
+    /// result retains the reservation, including spawn errors and timeouts.
+    fn execute(&mut self, context: &str, arguments: &[String]) -> LifecycleOutput;
 }
 
-static REGISTRY: OnceLock<Mutex<LifecycleRegistry>> = OnceLock::new();
-
-fn registry() -> &'static Mutex<LifecycleRegistry> {
-    REGISTRY.get_or_init(|| Mutex::new(LifecycleRegistry::default()))
+#[derive(Debug, Clone)]
+pub struct LifecycleOutput {
+    pub status: ToolStatus,
+    pub exit_code: Option<i32>,
+    pub truncated: bool,
+    pub duration_ms: u128,
 }
 
-fn normalize_identity(id: &str) -> String {
-    id.to_ascii_lowercase()
+impl From<Output> for LifecycleOutput {
+    fn from(output: Output) -> Self {
+        Self {
+            status: output.status,
+            exit_code: output.exit_code,
+            truncated: output.truncated,
+            duration_ms: output.duration_ms,
+        }
+    }
 }
 
-// Dois identificadores podem representar o mesmo container
-// quando um deles e prefixo hexadecimal do outro.
-// Em caso de duvida, bloqueamos conservadoramente.
-fn identities_overlap(left: &str, right: &str) -> bool {
-    let left = normalize_identity(left);
-    let right = normalize_identity(right);
-
-    left.starts_with(&right) || right.starts_with(&left)
+#[derive(Debug, Clone)]
+pub struct ContainerObservation {
+    pub container_id: String,
+    pub state: String,
 }
 
-struct OperationGuard {
-    id: String,
+fn validate_observation(observation: &ContainerObservation, requested: &str) -> Result<(), String> {
+    if observation.container_id.len() != 64
+        || !observation
+            .container_id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit())
+        || !observation
+            .container_id
+            .to_ascii_lowercase()
+            .starts_with(&requested.to_ascii_lowercase())
+        || !matches!(
+            observation.state.as_str(),
+            "created" | "running" | "paused" | "restarting" | "removing" | "exited" | "dead"
+        )
+    {
+        return Err("Identidade ou estado observado invalido.".into());
+    }
+    Ok(())
 }
 
-impl OperationGuard {
-    fn acquire(id: &str) -> Result<Self, String> {
-        let mut state = registry()
-            .lock()
-            .map_err(|_| "Controle de concorrência indisponível.")?;
+pub struct LifecycleService {
+    journal: LifecycleJournal,
+    context: String,
+}
 
-        let canonical = normalize_identity(id);
+impl LifecycleService {
+    pub fn new(directory: PathBuf, context: String) -> Result<Self, String> {
+        PendingOperation {
+            schema_version: 1,
+            operation_id: "0".repeat(32),
+            docker_context: context.clone(),
+            container_id: "0".repeat(64),
+            action: "start".into(),
+        }
+        .validate()?;
+        Ok(Self {
+            journal: LifecycleJournal::new(directory),
+            context,
+        })
+    }
 
-        if state
-            .pending
-            .iter()
-            .any(|pending| identities_overlap(pending, &canonical))
+    pub fn execute_with_docker(
+        &self,
+        request: LifecycleRequest,
+    ) -> Result<LifecycleReport, String> {
+        self.execute(request, &mut DockerExecutor)
+    }
+
+    pub fn reconcile_with_docker(
+        &self,
+        request: ReconciliationRequest,
+    ) -> Result<ReconciliationReport, String> {
+        self.reconcile(request, &mut DockerExecutor)
+    }
+
+    /// Listing after restart never replays Docker operations. Any unreadable
+    /// record or abandoned temporary blocks the entire journal.
+    pub fn pending(&self) -> Result<Vec<PendingOperation>, String> {
+        self.journal.list()
+    }
+
+    pub fn execute(
+        &self,
+        mut request: LifecycleRequest,
+        executor: &mut impl LifecycleExecutor,
+    ) -> Result<LifecycleReport, String> {
+        request.arguments()?;
+        let transaction = self.journal.transaction()?;
+        let records = transaction.list()?;
+        if records.iter().any(|p| {
+            p.docker_context == self.context
+                && p.container_id
+                    .to_ascii_lowercase()
+                    .starts_with(&request.container_id.to_ascii_lowercase())
+        }) {
+            return Err("Container bloqueado: reconciliacao explicita necessaria.".into());
+        }
+        let before = executor.inspect(&self.context, &request.container_id)?;
+        validate_observation(&before, &request.container_id)?;
+        request.container_id = before.container_id.to_ascii_lowercase();
+        static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+        // IDs are collision-resistant labels, not credentials. Any collision is
+        // refused by exclusive publication rather than overwriting old evidence.
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos();
+        let operation_id = format!(
+            "{:032x}",
+            stamp
+                ^ ((std::process::id() as u128) << 64)
+                ^ SEQUENCE.fetch_add(1, Ordering::Relaxed) as u128
+        );
+        let pending = PendingOperation {
+            schema_version: 1,
+            operation_id,
+            docker_context: self.context.clone(),
+            container_id: request.container_id.clone(),
+            action: request.action.argument().into(),
+        };
+        transaction.record(&pending)?;
+        // No mutating command can run before the reservation is durable/readable.
+        // Retain the lock through verification: a persistent reservation alone
+        // cannot distinguish an interrupted executor from one still running.
+        let output = executor.execute(&self.context, &request.arguments()?);
+        let observed_state = if output.status != ToolStatus::Missing {
+            executor
+                .inspect(&self.context, &request.container_id)
+                .ok()
+                .filter(|o| validate_observation(o, &request.container_id).is_ok())
+                .map(|o| o.state)
+        } else {
+            None
+        };
+        let report = lifecycle_report(request, output, observed_state);
+        if report.state_verified || report.status == ToolStatus::Missing {
+            transaction.complete(&pending)?;
+        }
+        Ok(report)
+    }
+
+    pub fn reconcile(
+        &self,
+        request: ReconciliationRequest,
+        executor: &mut impl LifecycleExecutor,
+    ) -> Result<ReconciliationReport, String> {
+        if !request.acknowledged {
+            return Err("Reconciliacao exige confirmacao explicita.".into());
+        }
+        if request.container_id.len() != 64
+            || !request.container_id.bytes().all(|b| b.is_ascii_hexdigit())
         {
-            return Err("Container bloqueado: reconciliação explícita necessária.".into());
+            return Err("Reconciliacao exige o ID completo persistido.".into());
         }
-
-        if state
-            .active
-            .iter()
-            .any(|active| identities_overlap(active, &canonical))
-        {
-            return Err("Já existe uma operação em andamento neste container.".into());
+        let transaction = self.journal.transaction()?;
+        let pending = transaction
+            .list()?
+            .into_iter()
+            .find(|p| {
+                p.docker_context == self.context
+                    && p.container_id.eq_ignore_ascii_case(&request.container_id)
+            })
+            .ok_or("Nao existe operacao pendente para reconciliar.")?;
+        let observed = executor.inspect(&self.context, &pending.container_id)?;
+        validate_observation(&observed, &pending.container_id)?;
+        if !matches!(
+            observed.state.as_str(),
+            "running" | "exited" | "created" | "paused" | "dead"
+        ) {
+            return Err("Estado transitorio: reconciliacao mantida.".into());
         }
-
-        state.active.insert(canonical.clone());
-
-        Ok(Self { id: canonical })
-    }
-
-    fn acquire_reconciliation(id: &str) -> Result<Self, String> {
-        let mut state = registry()
-            .lock()
-            .map_err(|_| "Controle de concorrência indisponível.")?;
-
-        let canonical = normalize_identity(id);
-
-        // A reconciliacao exige a identidade original exata,
-        // normalizada apenas quanto a letras maiusculas.
-        if !state.pending.contains(&canonical) {
-            return Err("Não existe operação pendente para reconciliar.".into());
-        }
-
-        if state
-            .active
-            .iter()
-            .any(|active| identities_overlap(active, &canonical))
-        {
-            return Err("Já existe uma operação em andamento neste container.".into());
-        }
-
-        state.active.insert(canonical.clone());
-
-        Ok(Self { id: canonical })
-    }
-
-    fn mark_pending(&self) -> Result<(), String> {
-        let mut state = registry()
-            .lock()
-            .map_err(|_| "Controle de concorrência indisponível.")?;
-
-        state.pending.insert(self.id.clone());
-        Ok(())
-    }
-
-    fn clear_pending(&self) -> Result<(), String> {
-        let mut state = registry()
-            .lock()
-            .map_err(|_| "Controle de concorrência indisponível.")?;
-
-        state.pending.remove(&self.id);
-        Ok(())
+        transaction.complete(&pending)?;
+        Ok(ReconciliationReport { schema_version: 1, container_id: pending.container_id, observed_state: observed.state, released: true, detail: "Estado observado e pendencia liberada mediante confirmacao. O resultado anterior permanece indeterminado.".into() })
     }
 }
 
-impl Drop for OperationGuard {
-    fn drop(&mut self) {
-        if let Ok(mut state) = registry().lock() {
-            state.active.remove(&self.id);
+struct DockerExecutor;
+impl LifecycleExecutor for DockerExecutor {
+    fn inspect(&mut self, context: &str, id: &str) -> Result<ContainerObservation, String> {
+        let result = probe(
+            "autodock-lifecycle-inspect",
+            "docker",
+            &[
+                "--context",
+                context,
+                "inspect",
+                "--type",
+                "container",
+                "--format",
+                "{{.Id}} {{.State.Status}}",
+                id,
+            ],
+            Duration::from_secs(10),
+        );
+        if result.status != ToolStatus::Available || result.exit_code != Some(0) || result.truncated
+        {
+            return Err("Nao foi possivel verificar identidade e estado no Docker Engine.".into());
         }
+        let parts: Vec<_> = result.stdout.split_whitespace().collect();
+        if parts.len() != 2 {
+            return Err("Inspecao Docker ambigua.".into());
+        }
+        Ok(ContainerObservation {
+            container_id: parts[0].into(),
+            state: parts[1].into(),
+        })
+    }
+
+    fn execute(&mut self, context: &str, arguments: &[String]) -> LifecycleOutput {
+        let Some(docker) = resolve("docker") else {
+            return Output::missing().into();
+        };
+        memory_capture::run(
+            Command::new(docker)
+                .args(["--context", context])
+                .args(arguments),
+            Duration::from_secs(35),
+            100,
+        )
+        .into()
     }
 }
 
-fn inspect_container_state(id: &str) -> Result<String, String> {
-    let result = probe(
-        "autodock-lifecycle-inspect",
+fn default_service() -> Result<LifecycleService, String> {
+    let context = probe(
+        "autodock-lifecycle-context",
         "docker",
-        &["inspect", "--format", "{{.State.Status}}", id],
+        &["context", "show"],
         Duration::from_secs(10),
     );
-
-    if result.status != ToolStatus::Available || result.exit_code != Some(0) || result.truncated {
-        return Err("Não foi possível verificar o estado no Docker Engine.".into());
+    if context.status != ToolStatus::Available || context.exit_code != Some(0) || context.truncated
+    {
+        return Err("Contexto Docker indisponivel.".into());
     }
-
-    let state = result.stdout.trim();
-
-    if !matches!(
-        state,
-        "created" | "running" | "paused" | "restarting" | "removing" | "exited" | "dead"
-    ) {
-        return Err("Docker Engine retornou um estado não reconhecido.".into());
+    #[cfg(windows)]
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .ok_or("LOCALAPPDATA indisponivel")?;
+    #[cfg(not(windows))]
+    let base = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or("HOME indisponivel")?;
+    if !base.is_absolute() {
+        return Err("Diretorio de dados deve ser absoluto.".into());
     }
-
-    Ok(state.to_owned())
+    let base = base.canonicalize().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    let directory = base.join("Library/Application Support/AutoDock/lifecycle/pending");
+    #[cfg(target_os = "linux")]
+    let directory = match std::env::var_os("XDG_DATA_HOME") {
+        Some(value) if PathBuf::from(&value).is_absolute() => {
+            PathBuf::from(value).join("autodock/lifecycle/pending")
+        }
+        Some(_) => return Err("XDG_DATA_HOME deve ser absoluto.".into()),
+        None => base.join(".local/share/autodock/lifecycle/pending"),
+    };
+    #[cfg(windows)]
+    let directory = base.join("AutoDock/lifecycle/pending");
+    LifecycleService::new(directory, context.stdout.trim().into())
 }
 
 pub fn execute_container_lifecycle(request: LifecycleRequest) -> Result<LifecycleReport, String> {
-    execute_with_verified(
-        request,
-        |args| {
-            let Some(docker) = resolve("docker") else {
-                return Output::missing();
-            };
-
-            memory_capture::run(
-                Command::new(docker).args(args),
-                Duration::from_secs(35),
-                100,
-            )
-        },
-        inspect_container_state,
-    )
+    request.arguments()?;
+    default_service()?.execute_with_docker(request)
 }
 
-fn execute_with_verified(
+fn lifecycle_report(
     request: LifecycleRequest,
-    execute: impl FnOnce(&[String]) -> Output,
-    inspect: impl FnOnce(&str) -> Result<String, String>,
-) -> Result<LifecycleReport, String> {
-    let args = request.arguments()?;
-
-    // O bloqueio cobre a execução e a inspeção posterior.
-    let guard = OperationGuard::acquire(&request.container_id)?;
-
-    let output = execute(&args);
-
+    output: LifecycleOutput,
+    observed_state: Option<String>,
+) -> LifecycleReport {
     let cli_succeeded =
         output.status == ToolStatus::Available && output.exit_code == Some(0) && !output.truncated;
-
-    // A inspeção é somente leitura e não repete a operação.
-    let observed_state = if output.status != ToolStatus::Missing {
-        inspect(&request.container_id).ok()
-    } else {
-        None
-    };
 
     let state_verified =
         cli_succeeded && observed_state.as_deref() == Some(request.action.expected_state());
@@ -281,15 +395,9 @@ fn execute_with_verified(
         "Operação não confirmada. Verifique o estado do container antes de repetir.".into()
     };
 
-    // A pendência é registrada antes de liberar o bloqueio ativo.
-    // Falhas ou resultados não verificados exigem reconciliação.
     let reconciliation_required = output.status != ToolStatus::Missing && !state_verified;
 
-    if reconciliation_required {
-        guard.mark_pending()?;
-    }
-
-    Ok(LifecycleReport {
+    LifecycleReport {
         schema_version: 1,
         container_id: request.container_id,
         action: request.action,
@@ -301,7 +409,7 @@ fn execute_with_verified(
         state_verified,
         observed_state,
         reconciliation_required,
-    })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -324,50 +432,23 @@ pub struct ReconciliationReport {
 pub fn reconcile_container_lifecycle(
     request: ReconciliationRequest,
 ) -> Result<ReconciliationReport, String> {
-    reconcile_with(request, inspect_container_state)
-}
-
-fn reconcile_with(
-    request: ReconciliationRequest,
-    inspect: impl FnOnce(&str) -> Result<String, String>,
-) -> Result<ReconciliationReport, String> {
     if !request.acknowledged {
-        return Err("Reconciliação exige confirmação explícita.".into());
+        return Err("Reconciliacao exige confirmacao explicita.".into());
     }
-
-    if !(12..=64).contains(&request.container_id.len())
-        || !request.container_id.bytes().all(|b| b.is_ascii_hexdigit())
-    {
-        return Err("ID Docker inválido para reconciliação.".into());
-    }
-
-    let guard = OperationGuard::acquire_reconciliation(&request.container_id)?;
-
-    let observed_state = inspect(&request.container_id)?;
-
-    // Estado transitório não autoriza liberação.
-    if !matches!(
-        observed_state.as_str(),
-        "running" | "exited" | "created" | "paused" | "dead"
-    ) {
-        return Err("Estado transitório ou desconhecido: reconciliação mantida.".into());
-    }
-
-    guard.clear_pending()?;
-
-    Ok(ReconciliationReport {
-        schema_version: 1,
-        container_id: request.container_id,
-        observed_state,
-        released: true,
-        detail: "Estado observado e pendência liberada mediante confirmação. O resultado da operação anterior permanece indeterminado.".into(),
-    })
+    default_service()?.reconcile_with_docker(request)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{cell::Cell, fs};
 
-    // IDs exclusivos evitam interferência entre testes executados em paralelo.
+    fn tempdir() -> tempfile::TempDir {
+        tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
+    }
+    fn id() -> String {
+        "abcdef1234567890".repeat(4)
+    }
     fn request(action: LifecycleAction, id: &str) -> LifecycleRequest {
         LifecycleRequest {
             container_id: id.into(),
@@ -375,41 +456,90 @@ mod tests {
             confirmed: true,
         }
     }
-
-    fn output(status: ToolStatus, exit_code: Option<i32>) -> Output {
-        let mut result = Output::missing();
-        result.status = status;
-        result.exit_code = exit_code;
-        result
+    struct Fake {
+        state: String,
+        status: ToolStatus,
+        exit: Option<i32>,
+        truncated: bool,
+        fail_inspection: bool,
+        inspections: usize,
+        calls: usize,
+        wrong_identity: bool,
+    }
+    impl Default for Fake {
+        fn default() -> Self {
+            Self {
+                state: "running".into(),
+                status: ToolStatus::Available,
+                exit: Some(0),
+                truncated: false,
+                fail_inspection: false,
+                inspections: 0,
+                calls: 0,
+                wrong_identity: false,
+            }
+        }
+    }
+    impl LifecycleExecutor for Fake {
+        fn inspect(&mut self, context: &str, _: &str) -> Result<ContainerObservation, String> {
+            assert!(context == "default" || context == "remote");
+            self.inspections += 1;
+            if self.fail_inspection && self.inspections > 1 {
+                return Err("offline".into());
+            }
+            Ok(ContainerObservation {
+                container_id: if self.wrong_identity && self.inspections > 1 {
+                    "f".repeat(64)
+                } else {
+                    id()
+                },
+                state: self.state.clone(),
+            })
+        }
+        fn execute(&mut self, _: &str, arguments: &[String]) -> LifecycleOutput {
+            self.calls += 1;
+            assert_eq!(arguments.last(), Some(&id()));
+            LifecycleOutput {
+                status: self.status.clone(),
+                exit_code: self.exit,
+                truncated: self.truncated,
+                duration_ms: 1,
+            }
+        }
+    }
+    fn service(dir: &tempfile::TempDir) -> LifecycleService {
+        LifecycleService::new(dir.path().join("pending"), "default".into()).unwrap()
+    }
+    fn acknowledgement() -> ReconciliationRequest {
+        ReconciliationRequest {
+            container_id: id(),
+            acknowledged: true,
+        }
     }
 
     #[test]
     fn only_permitted_operations_and_fixed_arguments() {
-        assert_eq!(
-            request(LifecycleAction::Start, "aaaaaaaaaaaa")
-                .arguments()
-                .unwrap(),
-            ["start", "aaaaaaaaaaaa"]
-        );
-
-        assert_eq!(
-            request(LifecycleAction::Stop, "bbbbbbbbbbbb")
-                .arguments()
-                .unwrap(),
-            ["stop", "--time", "10", "bbbbbbbbbbbb"]
-        );
-
-        assert_eq!(
-            request(LifecycleAction::Restart, "cccccccccccc")
-                .arguments()
-                .unwrap(),
-            ["restart", "--time", "10", "cccccccccccc"]
-        );
+        for (action, args) in [
+            (LifecycleAction::Start, vec!["start", "abcdef123456"]),
+            (
+                LifecycleAction::Stop,
+                vec!["stop", "--time", "10", "abcdef123456"],
+            ),
+            (
+                LifecycleAction::Restart,
+                vec!["restart", "--time", "10", "abcdef123456"],
+            ),
+        ] {
+            assert_eq!(request(action, "abcdef123456").arguments().unwrap(), args);
+        }
     }
 
     #[test]
     fn rejects_invalid_ids_before_execution() {
-        for id in [
+        let dir = tempdir();
+        let service = service(&dir);
+        let mut fake = Fake::default();
+        for value in [
             "",
             "short",
             "--help",
@@ -419,420 +549,366 @@ mod tests {
             "gggggggggggg",
             &"a".repeat(65),
         ] {
-            let r = request(LifecycleAction::Stop, id);
-
-            assert!(execute_with_verified(
-                r,
-                |_| panic!("must not execute"),
-                |_| panic!("must not inspect"),
-            )
-            .is_err());
+            assert!(service
+                .execute(request(LifecycleAction::Start, value), &mut fake)
+                .is_err());
         }
+        assert_eq!((fake.calls, fake.inspections), (0, 0));
     }
 
     #[test]
     fn requires_explicit_confirmation() {
-        let mut r = request(LifecycleAction::Start, "dddddddddddd");
+        let dir = tempdir();
+        let service = service(&dir);
+        let mut fake = Fake::default();
+        let mut r = request(LifecycleAction::Start, &id());
         r.confirmed = false;
-
-        assert!(execute_with_verified(
-            r,
-            |_| panic!("must not execute"),
-            |_| panic!("must not inspect"),
-        )
-        .is_err());
+        assert!(service.execute(r, &mut fake).is_err());
+        assert_eq!((fake.calls, fake.inspections), (0, 0));
     }
 
     #[test]
     fn rejects_unknown_actions_and_fields() {
         for action in ["rm", "prune", "exec", "kill"] {
-            let value = serde_json::json!({
-                "containerId": "eeeeeeeeeeee",
-                "action": action,
-                "confirmed": true
-            });
-
-            assert!(serde_json::from_value::<LifecycleRequest>(value).is_err());
-        }
-
-        let extra = serde_json::json!({
-            "containerId": "eeeeeeeeeeee",
-            "action": "start",
-            "confirmed": true,
-            "command": "rm"
-        });
-
-        assert!(serde_json::from_value::<LifecycleRequest>(extra).is_err());
-    }
-
-    #[test]
-    fn verifies_expected_state_after_success() {
-        for (action, id, state) in [
-            (LifecycleAction::Start, "111111111111", "running"),
-            (LifecycleAction::Stop, "222222222222", "exited"),
-            (LifecycleAction::Restart, "333333333333", "running"),
-        ] {
-            let report = execute_with_verified(
-                request(action, id),
-                |_| output(ToolStatus::Available, Some(0)),
-                |_| Ok(state.into()),
+            assert!(serde_json::from_value::<LifecycleRequest>(
+                serde_json::json!({"containerId": id(), "action": action, "confirmed": true})
             )
-            .unwrap();
+            .is_err());
+        }
+        assert!(serde_json::from_value::<LifecycleRequest>(serde_json::json!({"containerId": id(), "action": "start", "confirmed": true, "command": "rm"})).is_err());
+    }
 
-            assert!(report.outcome_confirmed);
-            assert!(report.state_verified);
-            assert_eq!(report.observed_state.as_deref(), Some(state));
+    #[test]
+    fn verifies_expected_state_after_success_and_clears_reservation() {
+        for (action, state) in [
+            (LifecycleAction::Start, "running"),
+            (LifecycleAction::Stop, "exited"),
+            (LifecycleAction::Restart, "running"),
+        ] {
+            let dir = tempdir();
+            let service = service(&dir);
+            let mut fake = Fake {
+                state: state.into(),
+                ..Fake::default()
+            };
+            let report = service
+                .execute(request(action, "ABCDEF123456"), &mut fake)
+                .unwrap();
+            assert!(
+                report.outcome_confirmed
+                    && report.state_verified
+                    && !report.reconciliation_required
+            );
+            assert_eq!(report.container_id, id());
+            assert!(service.pending().unwrap().is_empty());
+            assert!(service.execute(request(action, &id()), &mut fake).is_ok());
         }
     }
 
     #[test]
-    fn does_not_verify_unexpected_state() {
-        let report = execute_with_verified(
-            request(LifecycleAction::Stop, "444444444444"),
-            |_| output(ToolStatus::Available, Some(0)),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert!(report.outcome_confirmed);
-        assert!(!report.state_verified);
-        assert_eq!(report.observed_state.as_deref(), Some("running"));
+    fn uncertain_results_survive_restart_and_block_aliases() {
+        for (status, exit, state, fail, truncated, wrong) in [
+            (ToolStatus::Timeout, None, "running", false, false, false),
+            (
+                ToolStatus::Available,
+                Some(0),
+                "exited",
+                false,
+                false,
+                false,
+            ),
+            (
+                ToolStatus::Available,
+                Some(0),
+                "running",
+                true,
+                false,
+                false,
+            ),
+            (
+                ToolStatus::ExecutionError,
+                Some(1),
+                "running",
+                false,
+                false,
+                false,
+            ),
+            (
+                ToolStatus::Available,
+                Some(0),
+                "running",
+                false,
+                true,
+                false,
+            ),
+            (
+                ToolStatus::Available,
+                Some(0),
+                "running",
+                false,
+                false,
+                true,
+            ),
+        ] {
+            let dir = tempdir();
+            let first = service(&dir);
+            let mut fake = Fake {
+                status,
+                exit,
+                state: state.into(),
+                fail_inspection: fail,
+                truncated,
+                wrong_identity: wrong,
+                ..Fake::default()
+            };
+            let report = first
+                .execute(request(LifecycleAction::Restart, &id()), &mut fake)
+                .unwrap();
+            assert!(!report.state_verified && report.reconciliation_required);
+            drop(first);
+            let reopened = service(&dir);
+            assert_eq!(reopened.pending().unwrap().len(), 1);
+            for alias in [&id(), &id().to_uppercase(), &id()[..12]] {
+                assert!(reopened
+                    .execute(request(LifecycleAction::Restart, alias), &mut fake)
+                    .is_err());
+            }
+            assert_eq!(fake.calls, 1);
+        }
     }
 
     #[test]
-    fn timeout_remains_unconfirmed_even_if_state_matches() {
-        let report = execute_with_verified(
-            request(LifecycleAction::Start, "555555555555"),
-            |_| output(ToolStatus::Timeout, None),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert!(!report.outcome_confirmed);
-        assert!(!report.state_verified);
-        assert_eq!(report.observed_state.as_deref(), Some("running"));
+    fn missing_docker_skips_post_inspection_and_releases_reservation() {
+        let dir = tempdir();
+        let service = service(&dir);
+        let mut fake = Fake {
+            status: ToolStatus::Missing,
+            exit: None,
+            ..Fake::default()
+        };
+        let report = service
+            .execute(request(LifecycleAction::Start, &id()), &mut fake)
+            .unwrap();
+        assert!(!report.state_verified && !report.reconciliation_required);
+        assert_eq!(fake.inspections, 1);
+        assert!(service.pending().unwrap().is_empty());
     }
 
     #[test]
-    fn inspection_failure_does_not_claim_verified_state() {
-        let report = execute_with_verified(
-            request(LifecycleAction::Restart, "666666666666"),
-            |_| output(ToolStatus::Available, Some(0)),
-            |_| Err("Engine unavailable".into()),
-        )
-        .unwrap();
-
-        assert!(report.outcome_confirmed);
-        assert!(!report.state_verified);
-        assert!(report.observed_state.is_none());
+    fn no_execution_when_preinspection_identity_is_invalid() {
+        struct Invalid;
+        impl LifecycleExecutor for Invalid {
+            fn inspect(&mut self, _: &str, _: &str) -> Result<ContainerObservation, String> {
+                Ok(ContainerObservation {
+                    container_id: "f".repeat(64),
+                    state: "running".into(),
+                })
+            }
+            fn execute(&mut self, _: &str, _: &[String]) -> LifecycleOutput {
+                panic!("must not execute")
+            }
+        }
+        let dir = tempdir();
+        assert!(service(&dir)
+            .execute(request(LifecycleAction::Start, &id()), &mut Invalid)
+            .is_err());
+        assert!(service(&dir).pending().unwrap().is_empty());
     }
 
     #[test]
-    fn concurrent_operation_on_same_id_is_rejected() {
-        let id = "777777777777";
-        let _guard = OperationGuard::acquire(id).unwrap();
+    fn reconciliation_preserves_pending_until_explicit_stable_identical_inspection() {
+        let dir = tempdir();
+        let service = service(&dir);
+        let mut fake = Fake {
+            status: ToolStatus::Timeout,
+            ..Fake::default()
+        };
+        service
+            .execute(request(LifecycleAction::Restart, &id()), &mut fake)
+            .unwrap();
+        let mut r = acknowledgement();
+        r.acknowledged = false;
+        assert!(service.reconcile(r, &mut fake).is_err());
+        let mut r = acknowledgement();
+        r.container_id.truncate(12);
+        assert!(service.reconcile(r, &mut fake).is_err());
+        for state in ["restarting", "removing", "unknown"] {
+            fake.state = state.into();
+            assert!(service.reconcile(acknowledgement(), &mut fake).is_err());
+            assert_eq!(service.pending().unwrap().len(), 1);
+        }
+        fake.state = "running".into();
+        fake.fail_inspection = true;
+        assert!(service.reconcile(acknowledgement(), &mut fake).is_err());
+        fake.fail_inspection = false;
+        fake.wrong_identity = true;
+        assert!(service.reconcile(acknowledgement(), &mut fake).is_err());
+        assert_eq!(service.pending().unwrap().len(), 1);
+        fake.wrong_identity = false;
+        let mut r = acknowledgement();
+        r.container_id = id().to_uppercase();
+        assert!(service.reconcile(r, &mut fake).unwrap().released);
+        assert!(service.pending().unwrap().is_empty());
+        assert_eq!(fake.calls, 1); // reconciliation never invokes mutations
+    }
 
-        let result = execute_with_verified(
-            request(LifecycleAction::Stop, id),
-            |_| panic!("must not execute"),
-            |_| panic!("must not inspect"),
+    #[test]
+    fn reconciliation_without_pending_never_inspects() {
+        let dir = tempdir();
+        let mut fake = Fake::default();
+        assert!(service(&dir)
+            .reconcile(acknowledgement(), &mut fake)
+            .is_err());
+        assert_eq!(fake.inspections, 0);
+    }
+
+    #[test]
+    fn corrupt_or_abandoned_records_prevent_any_docker_call() {
+        for (name, contents) in [
+            ("abandoned.tmp", b"partial".as_slice()),
+            ("invalid.json", b"{".as_slice()),
+        ] {
+            let dir = tempdir();
+            let service = service(&dir);
+            fs::create_dir(dir.path().join("pending")).unwrap();
+            fs::write(dir.path().join("pending").join(name), contents).unwrap();
+            let mut fake = Fake::default();
+            assert!(service
+                .execute(request(LifecycleAction::Start, &id()), &mut fake)
+                .is_err());
+            assert_eq!((fake.calls, fake.inspections), (0, 0));
+        }
+    }
+
+    #[test]
+    fn lock_covers_inspection_execution_and_reconciliation() {
+        struct Nested<'a> {
+            service: &'a LifecycleService,
+            calls: Cell<usize>,
+        }
+        impl LifecycleExecutor for Nested<'_> {
+            fn inspect(&mut self, _: &str, _: &str) -> Result<ContainerObservation, String> {
+                assert!(self.service.pending().is_err());
+                Ok(ContainerObservation {
+                    container_id: id(),
+                    state: "running".into(),
+                })
+            }
+            fn execute(&mut self, _: &str, _: &[String]) -> LifecycleOutput {
+                assert!(self
+                    .service
+                    .execute(request(LifecycleAction::Start, &id()), &mut Fake::default())
+                    .is_err());
+                assert!(self
+                    .service
+                    .reconcile(acknowledgement(), &mut Fake::default())
+                    .is_err());
+                self.calls.set(self.calls.get() + 1);
+                LifecycleOutput {
+                    status: ToolStatus::Available,
+                    exit_code: Some(0),
+                    truncated: false,
+                    duration_ms: 0,
+                }
+            }
+        }
+        let dir = tempdir();
+        let service = service(&dir);
+        let mut nested = Nested {
+            service: &service,
+            calls: Cell::new(0),
+        };
+        assert!(
+            service
+                .execute(request(LifecycleAction::Start, &id()), &mut nested)
+                .unwrap()
+                .state_verified
         );
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("em andamento"));
+        assert_eq!(nested.calls.get(), 1);
     }
 
     #[test]
-    fn guard_releases_id_after_completion() {
-        let id = "888888888888";
-
-        let first = execute_with_verified(
-            request(LifecycleAction::Start, id),
-            |_| output(ToolStatus::Available, Some(0)),
-            |_| Ok("running".into()),
+    fn panic_after_reservation_is_recovered_without_replay() {
+        struct Interrupted;
+        impl LifecycleExecutor for Interrupted {
+            fn inspect(&mut self, _: &str, _: &str) -> Result<ContainerObservation, String> {
+                Ok(ContainerObservation {
+                    container_id: id(),
+                    state: "running".into(),
+                })
+            }
+            fn execute(&mut self, _: &str, _: &[String]) -> LifecycleOutput {
+                panic!("simulated interruption")
+            }
+        }
+        let dir = tempdir();
+        assert!(std::panic::catch_unwind(
+            || service(&dir).execute(request(LifecycleAction::Start, &id()), &mut Interrupted)
+        )
+        .is_err());
+        let reopened = service(&dir);
+        assert_eq!(reopened.pending().unwrap().len(), 1);
+        let mut fake = Fake::default();
+        assert!(reopened
+            .execute(request(LifecycleAction::Start, &id()), &mut fake)
+            .is_err());
+        assert_eq!(fake.calls, 0);
+        assert!(
+            reopened
+                .reconcile(acknowledgement(), &mut fake)
+                .unwrap()
+                .released
         );
-
-        let second = execute_with_verified(
-            request(LifecycleAction::Stop, id),
-            |_| output(ToolStatus::Available, Some(0)),
-            |_| Ok("exited".into()),
-        );
-
-        assert!(first.is_ok());
-        assert!(second.is_ok());
     }
 
     #[test]
-    fn failed_cli_result_never_verifies_state() {
-        let report = execute_with_verified(
-            request(LifecycleAction::Restart, "999999999999"),
-            |_| output(ToolStatus::ExecutionError, Some(1)),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert!(!report.outcome_confirmed);
-        assert!(!report.state_verified);
+    fn context_is_part_of_identity_and_invalid_contexts_are_rejected() {
+        let dir = tempdir();
+        let mut fake = Fake {
+            status: ToolStatus::Timeout,
+            ..Fake::default()
+        };
+        service(&dir)
+            .execute(request(LifecycleAction::Start, &id()), &mut fake)
+            .unwrap();
+        let remote = LifecycleService::new(dir.path().join("pending"), "remote".into()).unwrap();
+        remote
+            .execute(request(LifecycleAction::Start, &id()), &mut fake)
+            .unwrap();
+        assert_eq!(remote.pending().unwrap().len(), 2);
+        for context in ["", "--help", "../bad", "a b", &"x".repeat(129)] {
+            // Leading hyphens must never become CLI option values.
+            assert!(LifecycleService::new(dir.path().join("pending"), context.into()).is_err());
+        }
     }
-
+    #[cfg(unix)]
     #[test]
-    fn missing_docker_skips_inspection() {
-        let report = execute_with_verified(
-            request(LifecycleAction::Start, "abababababab"),
-            |_| output(ToolStatus::Missing, None),
-            |_| panic!("must not inspect"),
-        )
-        .unwrap();
-
-        assert!(!report.outcome_confirmed);
-        assert!(!report.state_verified);
-        assert!(report.observed_state.is_none());
-    }
-
-    #[test]
-    fn accepts_full_hexadecimal_id() {
-        let id = "abcdef0123456789".repeat(4);
-
-        let report = execute_with_verified(
-            request(LifecycleAction::Start, &id),
-            |_| output(ToolStatus::Available, Some(0)),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert_eq!(report.container_id, id);
-        assert!(report.state_verified);
-    }
-
-    #[test]
-    fn timeout_blocks_repeated_operation() {
-        let id = "a1a1a1a1a1a1";
-
-        let report = execute_with_verified(
-            request(LifecycleAction::Restart, id),
-            |_| output(ToolStatus::Timeout, None),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert!(report.reconciliation_required);
-
-        let retry = execute_with_verified(
-            request(LifecycleAction::Restart, id),
-            |_| panic!("must not repeat"),
-            |_| panic!("must not inspect"),
-        );
-
-        assert!(retry.is_err());
-        assert!(retry.unwrap_err().contains("reconciliação"));
-    }
-
-    #[test]
-    fn inspection_failure_keeps_container_blocked() {
-        let id = "b2b2b2b2b2b2";
-
-        let report = execute_with_verified(
-            request(LifecycleAction::Start, id),
-            |_| output(ToolStatus::Available, Some(0)),
-            |_| Err("inspect failed".into()),
-        )
-        .unwrap();
-
-        assert!(report.reconciliation_required);
-
-        let result = reconcile_with(
-            ReconciliationRequest {
-                container_id: id.into(),
-                acknowledged: true,
-            },
-            |_| Err("Engine unavailable".into()),
-        );
-
-        assert!(result.is_err());
-
-        let retry = OperationGuard::acquire(id);
-        assert!(retry.is_err());
-    }
-
-    #[test]
-    fn explicit_reconciliation_releases_pending_container() {
-        let id = "c3c3c3c3c3c3";
-
-        let report = execute_with_verified(
-            request(LifecycleAction::Stop, id),
-            |_| output(ToolStatus::Timeout, None),
-            |_| Ok("exited".into()),
-        )
-        .unwrap();
-
-        assert!(report.reconciliation_required);
-
-        let result = reconcile_with(
-            ReconciliationRequest {
-                container_id: id.into(),
-                acknowledged: true,
-            },
-            |_| Ok("exited".into()),
-        )
-        .unwrap();
-
-        assert!(result.released);
-        assert_eq!(result.observed_state, "exited");
-
-        assert!(OperationGuard::acquire(id).is_ok());
-    }
-
-    #[test]
-    fn reconciliation_requires_acknowledgement() {
-        let id = "d4d4d4d4d4d4";
-
-        let report = execute_with_verified(
-            request(LifecycleAction::Start, id),
-            |_| output(ToolStatus::ExecutionError, Some(1)),
-            |_| Ok("exited".into()),
-        )
-        .unwrap();
-
-        assert!(report.reconciliation_required);
-
-        let result = reconcile_with(
-            ReconciliationRequest {
-                container_id: id.into(),
-                acknowledged: false,
-            },
-            |_| panic!("must not inspect"),
-        );
-
-        assert!(result.is_err());
-        assert!(OperationGuard::acquire(id).is_err());
-    }
-
-    #[test]
-    fn transitional_state_does_not_release_pending() {
-        let id = "e5e5e5e5e5e5";
-
-        execute_with_verified(
-            request(LifecycleAction::Restart, id),
-            |_| output(ToolStatus::Timeout, None),
-            |_| Ok("restarting".into()),
-        )
-        .unwrap();
-
-        let result = reconcile_with(
-            ReconciliationRequest {
-                container_id: id.into(),
-                acknowledged: true,
-            },
-            |_| Ok("restarting".into()),
-        );
-
-        assert!(result.is_err());
-        assert!(OperationGuard::acquire(id).is_err());
-    }
-
-    #[test]
-    fn successful_verified_operation_does_not_create_pending() {
-        let id = "f6f6f6f6f6f6";
-
-        let report = execute_with_verified(
-            request(LifecycleAction::Start, id),
-            |_| output(ToolStatus::Available, Some(0)),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert!(report.state_verified);
-        assert!(!report.reconciliation_required);
-        assert!(OperationGuard::acquire(id).is_ok());
-    }
-
-    #[test]
-    fn reconciliation_without_pending_is_rejected() {
-        let result = reconcile_with(
-            ReconciliationRequest {
-                container_id: "123456789abc".into(),
-                acknowledged: true,
-            },
-            |_| panic!("must not inspect"),
-        );
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Não existe operação pendente"));
-    }
-
-    #[test]
-    fn identity_comparison_is_case_insensitive() {
-        assert!(identities_overlap("ABCDEF123456", "abcdef123456"));
-        assert!(!identities_overlap("abcdef123456", "123456abcdef"));
-    }
-
-    #[test]
-    fn short_and_full_identity_cannot_bypass_active_guard() {
-        let short = "abcdef987654";
-        let full = format!("{}{}", short, "1".repeat(52));
-
-        let _guard = OperationGuard::acquire(short).unwrap();
-
-        assert!(OperationGuard::acquire(&full).is_err());
-        assert!(OperationGuard::acquire(&short.to_uppercase()).is_err());
-    }
-
-    #[test]
-    fn short_and_full_identity_cannot_bypass_pending_guard() {
-        let short = "1234abcdef56";
-        let full = format!("{}{}", short, "2".repeat(52));
-
-        let report = execute_with_verified(
-            request(LifecycleAction::Restart, short),
-            |_| output(ToolStatus::Timeout, None),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert!(report.reconciliation_required);
-        assert!(OperationGuard::acquire(&full).is_err());
-        assert!(OperationGuard::acquire(&short.to_uppercase()).is_err());
-    }
-
-    #[test]
-    fn reconciliation_accepts_case_change_but_not_alias() {
-        let short = "fedcba123456";
-        let full = format!("{}{}", short, "3".repeat(52));
-
-        execute_with_verified(
-            request(LifecycleAction::Start, short),
-            |_| output(ToolStatus::Timeout, None),
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        let alias = reconcile_with(
-            ReconciliationRequest {
-                container_id: full.clone(),
-                acknowledged: true,
-            },
-            |_| panic!("alias must not inspect"),
-        );
-
-        assert!(alias.is_err());
-
-        let result = reconcile_with(
-            ReconciliationRequest {
-                container_id: short.to_uppercase(),
-                acknowledged: true,
-            },
-            |_| Ok("running".into()),
-        )
-        .unwrap();
-
-        assert!(result.released);
-        assert!(OperationGuard::acquire(&full).is_ok());
-    }
-
-    #[test]
-    fn unrelated_identities_remain_independent() {
-        let _guard = OperationGuard::acquire("aaaaaaaa1234").unwrap();
-
-        assert!(OperationGuard::acquire("bbbbbbbb5678").is_ok());
+    fn directory_sync_failure_prevents_execution_and_retains_ambiguous_publication() {
+        let dir = tempdir();
+        let service = service(&dir);
+        assert!(service.pending().unwrap().is_empty());
+        let failure = crate::lifecycle_fs::fail_next_sync(&dir.path().join("pending"));
+        let mut fake = Fake::default();
+        let error = service
+            .execute(request(LifecycleAction::Start, &id()), &mut fake)
+            .unwrap_err();
+        assert!(error.contains("simulated directory sync failure"));
+        assert_eq!(fake.calls, 0);
+        drop(failure);
+        let files: Vec<_> = fs::read_dir(dir.path().join("pending"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert!(files
+            .iter()
+            .any(|path| path.extension().is_some_and(|ext| ext == "json")));
+        assert!(files
+            .iter()
+            .any(|path| path.extension().is_some_and(|ext| ext == "tmp")));
+        assert!(service.pending().is_err());
+        assert!(service
+            .execute(request(LifecycleAction::Start, &id()), &mut fake)
+            .is_err());
+        assert_eq!(fake.calls, 0);
     }
 }
