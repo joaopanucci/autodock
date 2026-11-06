@@ -1,0 +1,105 @@
+name: Smoke test installers
+
+# Installs the published installers on clean Windows and Linux runners, opens the
+# app, checks it keeps running and saves a screenshot as a workflow artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose installers are tested
+        default: v0.1.0
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag || 'v0.1.0' }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Download installer
+        shell: pwsh
+        run: gh release download $env:TAG --repo ${{ github.repository }} --pattern '*x64-setup.exe' --dir .
+
+      - name: Install silently
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Filter *x64-setup.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter autodock-desktop.exe -ErrorAction SilentlyContinue | Select-Object -First 1 FullName
+
+      - name: Launch and capture
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter autodock-desktop.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw 'autodock-desktop.exe not found after install' }
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 20
+          if ($proc.HasExited) { throw "App exited early with code $($proc.ExitCode)" }
+          Write-Host "App is running (pid $($proc.Id)), window title: '$($proc.MainWindowTitle)'"
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bmp.Save("$PWD\windows.png")
+          Stop-Process -Id $proc.Id -Force
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-windows
+          path: windows.png
+          if-no-files-found: warn
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download installer
+        run: gh release download "$TAG" --repo ${{ github.repository }} --pattern '*amd64.deb' --dir .
+
+      - name: Install package and tools
+        timeout-minutes: 10
+        run: |
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $APT_OPTS update
+          sudo apt-get $APT_OPTS install -y ./AutoDock_*_amd64.deb xvfb scrot x11-utils openbox
+
+      - name: Launch and capture
+        env:
+          # No GPU on the runner: make WebKitGTK paint in software.
+          WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GDK_BACKEND: x11
+        run: |
+          xvfb-run -a --server-args="-screen 0 1360x860x24" bash -c '
+            openbox > /dev/null 2>&1 &
+            sleep 2
+            autodock-desktop > app.log 2>&1 &
+            PID=$!
+            sleep 25
+            xwininfo -root -tree >> app.log 2>&1 || true
+            kill -0 "$PID" || { echo "App exited early"; cat app.log; exit 1; }
+            echo "App is running (pid $PID)"
+            scrot linux.png
+            kill "$PID"
+          '
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-linux
+          path: |
+            linux.png
+            app.log
+          if-no-files-found: warn
