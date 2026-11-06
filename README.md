@@ -71,8 +71,24 @@ Pegue o instalador da sua plataforma na [página de releases](https://github.com
 
 > **Requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução para criar e rodar os ambientes.
 
+### ⚡ Instalação rápida, sem aviso de segurança
+
+Um comando baixa a última versão, **confere o SHA-256** e instala:
+
+```bash
+# macOS
+curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
+```
+
+Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.1.2`.
+
 <details>
-<summary><b>⚠️ "App de desenvolvedor não identificado"? É esperado, e aqui está o porquê</b></summary>
+<summary><b>⚠️ Baixou pelo navegador e apareceu "desenvolvedor não identificado"? É esperado</b></summary>
 
 <br/>
 

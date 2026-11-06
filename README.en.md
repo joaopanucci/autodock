@@ -50,7 +50,21 @@ Supported stacks: **Node.js** (npm/pnpm/yarn, Vite), **Java/Spring Boot** (Maven
 
 ## Download
 
-Get the installer from the [releases page](https://github.com/joaopanucci/autodock/releases/latest): macOS (`.dmg`, universal), Windows (`.exe`), Linux (`.deb`, `.AppImage`). Docker must be installed and running.
+**Quick install, no security warning.** One command downloads the latest release, **verifies its SHA-256** and installs it:
+
+```bash
+# macOS
+curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
+```
+
+Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh), [`install.ps1`](scripts/install.ps1).
+
+Or get the installer from the [releases page](https://github.com/joaopanucci/autodock/releases/latest): macOS (`.dmg`, universal), Windows (`.exe`), Linux (`.deb`, `.AppImage`). Docker must be installed and running.
 
 The installers are **not code-signed yet**, so your OS shows a warning on first launch (macOS: *System Settings → Privacy & Security → Open Anyway*; Windows: *More info → Run anyway*). Each release ships a `SHA256SUMS.txt`.
 
