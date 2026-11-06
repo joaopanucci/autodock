@@ -1,0 +1,17 @@
+[package]
+name = "autodock-desktop"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[lib]
+name = "autodock_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+autodock-core = { path = "../../../crates/autodock-core" }
+tauri-plugin-dialog = "2"

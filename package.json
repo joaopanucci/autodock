@@ -1,0 +1,8 @@
+{
+  "name": "autodock-workspace",
+  "private": true,
+  "scripts": {
+    "desktop:dev": "npm --prefix apps/desktop run tauri dev",
+    "desktop:build": "npm --prefix apps/desktop run build"
+  }
+}

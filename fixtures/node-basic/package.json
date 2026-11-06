@@ -1,0 +1,1 @@
+{"name":"node-basic","private":true,"scripts":{"postinstall":"this-must-never-run"}}

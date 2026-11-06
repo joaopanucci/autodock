@@ -1,0 +1,10 @@
+/target/
+/node_modules/
+/apps/desktop/node_modules/
+/apps/desktop/dist/
+/apps/desktop/src-tauri/target/
+.autodock-bootstrap/
+
+/.cache/
+/.local-backups/
+/apps/desktop/src-tauri/gen/
