@@ -80,7 +80,10 @@ impl Output {
             stdout: String::new(),
             stderr: String::new(),
             truncated: false,
-            detail: "Docker não resolvido no PATH; a instalação pode existir.".into(),
+            detail: tr!(
+                "Docker não resolvido no PATH; a instalação pode existir.",
+                "Docker was not resolved in PATH; the installation may exist."
+            ),
             duration_ms: 0,
         }
     }
@@ -103,7 +106,10 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, lines: usize) -> Out
     let mut child = match command.group_spawn() {
         Ok(child) => child,
         Err(_) => {
-            result.detail = "Não foi possível iniciar a consulta de logs.".into();
+            result.detail = tr!(
+                "Não foi possível iniciar a consulta de logs.",
+                "Could not start the logs query."
+            );
             result.duration_ms = started.elapsed().as_millis();
             return result;
         }
@@ -119,7 +125,10 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, lines: usize) -> Out
             match child.try_wait() {
                 Ok(status) => exit = status,
                 Err(_) => {
-                    result.detail = "Falha ao consultar estado do processo.".into();
+                    result.detail = tr!(
+                        "Falha ao consultar estado do processo.",
+                        "Failed to query the process state."
+                    );
                     break true;
                 }
             }
@@ -127,12 +136,15 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, lines: usize) -> Out
         let out = stdout.lock().unwrap();
         let err = stderr.lock().unwrap();
         if out.failed || err.failed {
-            result.detail = "Falha ao capturar a saída do processo.".into();
+            result.detail = tr!(
+                "Falha ao capturar a saída do processo.",
+                "Failed to capture the process output."
+            );
             break true;
         }
         if out.truncated || err.truncated {
             result.truncated = true;
-            result.detail = "Saída truncada: limite de linhas ou 128 KiB por fluxo atingido. Apenas o prefixo capturado é exibido.".into();
+            result.detail = tr!("Saída truncada: limite de linhas ou 128 KiB por fluxo atingido. Apenas o prefixo capturado é exibido.", "Output truncated: line limit or 128 KiB per stream reached. Only the captured prefix is shown.");
             break true;
         }
         if let Some(status) = exit {
@@ -148,8 +160,10 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, lines: usize) -> Out
         }
         if started.elapsed() >= timeout {
             result.status = ToolStatus::Timeout;
-            result.detail =
-                "Consulta excedeu o prazo de execução/captura; saída pode ser parcial.".into();
+            result.detail = tr!(
+                "Consulta excedeu o prazo de execução/captura; saída pode ser parcial.",
+                "The query exceeded the execution/capture deadline; output may be partial."
+            );
             break true;
         }
         drop(out);
@@ -186,9 +200,10 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, lines: usize) -> Out
         }
 
         if kill_failed || cleanup_error || !process_exited || !readers_finished {
-            result.detail.push_str(
+            result.detail.push_str(&tr!(
                 " Atenção: não foi possível confirmar a limpeza completa do processo e de seus leitores.",
-            );
+                " Warning: could not confirm full cleanup of the process and its readers."
+            ));
         }
 
         if result.exit_code.is_none() {

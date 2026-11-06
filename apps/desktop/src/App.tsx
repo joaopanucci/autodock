@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "./ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
@@ -22,53 +22,25 @@ import { Monitoring } from "./pages/Monitoring";
 import { Console } from "./pages/Console";
 import { Assistant } from "./pages/Assistant";
 import { Contribute } from "./pages/Contribute";
+import { LANGUAGES, useI18n, type Lang, type TranslationKey } from "./i18n";
 
-const headings: Record<Page, { title: string; description: string }> = {
-  overview: {
-    title: "Seu workspace, em foco.",
-    description:
-      "Conheça seus projetos. Entenda seu ambiente. Prepare o próximo passo.",
-  },
-  projects: {
-    title: "Projetos",
-    description:
-      "Do diretório às evidências: uma visão clara da estrutura do seu código.",
-  },
-  setup: {
-    title: "Assistente Docker",
-    description:
-      "Responda algumas perguntas e o AutoDock prepara o Docker do seu projeto. Você revisa tudo antes de gravar.",
-  },
-  environment: {
-    title: "Ambiente",
-    description:
-      "O que o projeto declara e o que o sistema confirma, sem suposições.",
-  },
-  containers: {
-    title: "Containers",
-    description:
-      "Os containers do seu Docker local, agrupados por projeto.",
-  },
-  monitoring: {
-    title: "Monitoramento",
-    description: "Acompanhe CPU, memória e tráfego de rede dos containers Docker.",
-  },
-  console: {
-    title: "Console",
-    description: "Execute consultas Docker autorizadas e acompanhe os resultados.",
-  },
-  contribute: {
-    title: "Contribuir",
-    description:
-      "O AutoDock é livre e gratuito. Veja como ajudar o projeto a continuar evoluindo.",
-  },
-  settings: {
-    title: "Configurações",
-    description: "Transparência e controle fazem parte do seu workspace.",
-  },
+const headings: Record<
+  Page,
+  { title: TranslationKey; description: TranslationKey }
+> = {
+  overview: { title: "page.overview.title", description: "page.overview.description" },
+  projects: { title: "page.projects.title", description: "page.projects.description" },
+  setup: { title: "page.setup.title", description: "page.setup.description" },
+  environment: { title: "page.environment.title", description: "page.environment.description" },
+  containers: { title: "page.containers.title", description: "page.containers.description" },
+  monitoring: { title: "page.monitoring.title", description: "page.monitoring.description" },
+  console: { title: "page.console.title", description: "page.console.description" },
+  contribute: { title: "page.contribute.title", description: "page.contribute.description" },
+  settings: { title: "page.settings.title", description: "page.settings.description" },
 };
 
 export default function App() {
+  const { t, lang, setLang, locale } = useI18n();
   const [page, setPage] = useState<Page>("overview");
   const [path, setPath] = useState("");
   const [scan, setScan] = useState<Scan | null>(null);
@@ -83,7 +55,7 @@ export default function App() {
   useEffect(() => {
     if (previousPage.current === page) return;
     previousPage.current = page;
-    // Mensagens de uma tela não devem aparecer em outra.
+    // Messages from one page must not show up on another.
     setMessage("");
     setError("");
     document.getElementById("content")?.focus({ preventScroll: true });
@@ -115,14 +87,12 @@ export default function App() {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Selecionar projeto",
+        title: t("app.dialog.selectProject"),
       });
       if (selected) {
         setPath(selected);
         setScan(null);
-        setMessage(
-          "Pasta selecionada. Inicie a análise para conhecer o projeto.",
-        );
+        setMessage(t("app.message.folderSelected"));
       }
     });
   }
@@ -130,7 +100,7 @@ export default function App() {
     if (!path.trim()) return;
     void run("scan", async () => {
       setScan(null);
-      const result = await invoke<Scan>("scan_project", { path: path.trim() });
+      const result = await call<Scan>("scan_project", { path: path.trim() });
       setScan(result);
       setProjects((previous) =>
         rememberProject(
@@ -141,20 +111,18 @@ export default function App() {
       );
       setMessage(
         result.warnings.length
-          ? "Análise concluída com avisos. Consulte as limitações abaixo."
-          : "Análise concluída. As evidências estão prontas para consulta.",
+          ? t("app.message.scanWarnings")
+          : t("app.message.scanDone"),
       );
     });
   }
   function diagnose() {
     setPage("environment");
     void run("doctor", async () => {
-      const report = await invoke<Doctor>("doctor_environment");
+      const report = await call<Doctor>("doctor_environment");
       setDoctor(report);
       setCheckedAt(new Date().toISOString());
-      setMessage(
-        "Diagnóstico concluído. Consulte os resultados de cada ferramenta.",
-      );
+      setMessage(t("app.message.doctorDone"));
     });
   }
   function inspect(project: SessionProject) {
@@ -170,11 +138,11 @@ export default function App() {
       <div className="page-heading">
         <div>
           <p className="eyebrow">
-            WORKSPACE LOCAL <span>/</span>{" "}
-            {nav.label.toLocaleUpperCase("pt-BR")}
+            {t("app.eyebrow")} <span>/</span>{" "}
+            {t(nav.labelKey).toLocaleUpperCase(locale)}
           </p>
-          <h1>{headings[page].title}</h1>
-          <p>{headings[page].description}</p>
+          <h1>{t(headings[page].title)}</h1>
+          <p>{t(headings[page].description)}</p>
         </div>
         {page === "overview" && (
           <button
@@ -183,7 +151,7 @@ export default function App() {
             disabled={!!busy}
           >
             <FolderPlus size={17} aria-hidden="true" />
-            Importar projeto
+            {t("app.importProject")}
           </button>
         )}
       </div>
@@ -193,10 +161,10 @@ export default function App() {
             <LoaderCircle className="spin" size={18} aria-hidden="true" />
             <span>
               {busy === "scan"
-                ? "Analisando manifests e diretórios…"
+                ? t("app.busy.scan")
                 : busy === "doctor"
-                  ? "Verificando ferramentas… Cada check pode levar até 8 segundos, além da limpeza de processos."
-                  : "Aguardando seleção de pasta…"}
+                  ? t("app.busy.doctor")
+                  : t("app.busy.select")}
             </span>
           </div>
         )}
@@ -206,7 +174,7 @@ export default function App() {
             <span>{message}</span>
             <button
               className="icon-button"
-              aria-label="Fechar mensagem"
+              aria-label={t("app.closeMessage")}
               onClick={() => setMessage("")}
             >
               <X size={16} />
@@ -218,15 +186,15 @@ export default function App() {
         <div className="feedback error" role="alert">
           <AlertTriangle size={19} aria-hidden="true" />
           <div>
-            <strong>Não foi possível concluir</strong>
+            <strong>{t("app.error.title")}</strong>
             <p>{error}</p>
             <small>
-              Confira o caminho ou o estado da ferramenta e tente novamente.
+              {t("app.error.hint")}
             </small>
           </div>
           <button
             className="icon-button"
-            aria-label="Fechar erro"
+            aria-label={t("app.closeError")}
             onClick={() => setError("")}
           >
             <X size={16} />
@@ -281,88 +249,77 @@ export default function App() {
         <div hidden={page !== "console"}><Console /></div>
         {page === "settings" && (
           <>
+            <Panel title={t("settings.language.title")} eyebrow={t("settings.language.eyebrow")}>
+              <p className="section-description">{t("settings.language.body")}</p>
+              <label className="field-label" htmlFor="language-select">
+                {t("settings.language.label")}
+              </label>
+              <select
+                id="language-select"
+                className="language-select"
+                value={lang}
+                onChange={(event) => setLang(event.target.value as Lang)}
+              >
+                {LANGUAGES.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </Panel>
             <div className="requirements-grid">
-              <Panel title="Aparência" eyebrow="PREFERÊNCIAS">
+              <Panel title={t("settings.appearance.title")} eyebrow={t("settings.appearance.eyebrow")}>
                 <div className="setting-row">
                   <div>
-                    <strong>Tema escuro</strong>
-                    <p>Grafite e azul, seguindo a identidade AutoDock.</p>
+                    <strong>{t("settings.theme.title")}</strong>
+                    <p>{t("settings.theme.body")}</p>
                   </div>
-                  <Badge tone="blue">Padrão atual</Badge>
+                  <Badge tone="blue">{t("settings.theme.badge")}</Badge>
                 </div>
                 <div className="setting-row">
                   <div>
-                    <strong>Redução de movimento</strong>
-                    <p>Segue automaticamente a preferência do sistema.</p>
+                    <strong>{t("settings.motion.title")}</strong>
+                    <p>{t("settings.motion.body")}</p>
                   </div>
-                  <Badge>Automático</Badge>
+                  <Badge>{t("settings.motion.badge")}</Badge>
                 </div>
-                <p className="card-note">
-                  Personalização de tema e outras preferências estão em
-                  desenvolvimento.
-                </p>
+                <p className="card-note">{t("settings.appearance.note")}</p>
               </Panel>
-              <Panel title="Dados da sessão" eyebrow="PRIVACIDADE">
-                <ShieldCheck
-                  className="accent-icon"
-                  size={26}
-                  aria-hidden="true"
-                />
-                <p className="section-description">
-                  Projetos analisados e diagnósticos ficam somente na memória
-                  desta janela. Fechar o aplicativo encerra a sessão.
-                </p>
-                <Badge>Sem persistência de preferências</Badge>
+              <Panel title={t("settings.session.title")} eyebrow={t("settings.session.eyebrow")}>
+                <ShieldCheck className="accent-icon" size={26} aria-hidden="true" />
+                <p className="section-description">{t("settings.session.body")}</p>
+                <Badge>{t("settings.session.badge")}</Badge>
               </Panel>
             </div>
-            <Panel
-              title="Permissões e operações"
-              eyebrow="VOCÊ AUTORIZA CADA ALTERAÇÃO"
-            >
+            <Panel title={t("settings.permissions.title")} eyebrow={t("settings.permissions.eyebrow")}>
               <div className="notice">
                 <Info size={20} aria-hidden="true" />
-                <p>
-                  O AutoDock analisa projetos e consulta ferramentas sem alterar
-                  nada. A única escrita é a criação de arquivos Docker pelo
-                  Assistente, sempre depois da sua confirmação.
-                </p>
+                <p>{t("settings.permissions.notice")}</p>
               </div>
               <ol className="permission-steps">
                 <li>
                   <span>01</span>
                   <div>
-                    <strong>Revisão antes da execução</strong>
-                    <p>
-                      Apresentar a ação, os comandos previstos e os arquivos
-                      afetados.
-                    </p>
+                    <strong>{t("settings.step1.title")}</strong>
+                    <p>{t("settings.step1.body")}</p>
                   </div>
                 </li>
                 <li>
                   <span>02</span>
                   <div>
-                    <strong>Autorização explícita</strong>
-                    <p>
-                      Solicitar consentimento antes de efeitos colaterais ou
-                      privilégios administrativos.
-                    </p>
+                    <strong>{t("settings.step2.title")}</strong>
+                    <p>{t("settings.step2.body")}</p>
                   </div>
                 </li>
                 <li>
                   <span>03</span>
                   <div>
-                    <strong>Proteção e registro</strong>
-                    <p>
-                      Nunca sobrescrever arquivos existentes e informar o
-                      que foi criado ou ignorado, sem credenciais nos logs.
-                    </p>
+                    <strong>{t("settings.step3.title")}</strong>
+                    <p>{t("settings.step3.body")}</p>
                   </div>
                 </li>
               </ol>
-              <p className="card-note">
-                O Assistente Docker cria somente arquivos novos na pasta do
-                projeto. Nenhuma instalação automática é feita.
-              </p>
+              <p className="card-note">{t("settings.permissions.note")}</p>
             </Panel>
           </>
         )}

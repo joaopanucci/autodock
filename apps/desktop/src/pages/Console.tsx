@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../ipc";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -15,6 +15,8 @@ import { Badge, Panel } from "../components/ui";
 import { parseConsoleContainers } from "../console-format";
 import type { ConsoleOperation, ConsoleReport } from "../types";
 import { ContainerLogs } from "./ContainerLogs";
+import { useI18n } from "../i18n";
+import type { Translate } from "../i18n";
 
 type Entry = {
   id: number;
@@ -22,46 +24,50 @@ type Entry = {
   executedAt: string;
 };
 
-const operations: {
+function getOperations(t: Translate): {
   id: ConsoleOperation;
   title: string;
   command: string;
   description: string;
-}[] = [
-  {
-    id: "containers",
-    title: "Listar containers",
-    command: "docker ps -a --no-trunc --format {{json .}}",
-    description: "Consulte todos os containers do Docker Engine.",
-  },
-  {
-    id: "engine_info",
-    title: "Docker Engine",
-    command: "docker info",
-    description: "Consulte as informações do ambiente Docker.",
-  },
-  {
-    id: "docker_version",
-    title: "Versão",
-    command: "docker version",
-    description: "Consulte as versões do cliente e do servidor.",
-  },
-];
+}[] {
+  return [
+    {
+      id: "containers",
+      title: t("console.op.containers.title"),
+      command: "docker ps -a --no-trunc --format {{json .}}",
+      description: t("console.op.containers.description"),
+    },
+    {
+      id: "engine_info",
+      title: t("console.op.engine.title"),
+      command: "docker info",
+      description: t("console.op.engine.description"),
+    },
+    {
+      id: "docker_version",
+      title: t("console.op.version.title"),
+      command: "docker version",
+      description: t("console.op.version.description"),
+    },
+  ];
+}
 
-function statusLabel(status: ConsoleReport["status"]) {
+function statusLabel(status: ConsoleReport["status"], t: Translate) {
   switch (status) {
     case "available":
-      return "Concluído";
+      return t("console.status.available");
     case "missing":
-      return "Docker indisponível";
+      return t("console.status.missing");
     case "timeout":
-      return "Tempo esgotado";
+      return t("console.status.timeout");
     default:
-      return "Falha na execução";
+      return t("console.status.failed");
   }
 }
 
 export function Console() {
+  const { t, locale } = useI18n();
+  const operations = getOperations(t);
   const [area, setArea] = useState<"queries" | "logs">("queries");
   const [operation, setOperation] = useState<ConsoleOperation>("containers");
   const [history, setHistory] = useState<Entry[]>([]);
@@ -85,14 +91,14 @@ export function Console() {
     setCopied(false);
 
     try {
-      const report = await invoke<ConsoleReport>("execute_console_operation", {
+      const report = await call<ConsoleReport>("execute_console_operation", {
         operation,
       });
 
       const entry: Entry = {
         id: ++nextId.current,
         report,
-        executedAt: new Date().toLocaleTimeString("pt-BR"),
+        executedAt: new Date().toLocaleTimeString(locale),
       };
 
       setHistory((previous) => [entry, ...previous].slice(0, 20));
@@ -114,7 +120,7 @@ export function Console() {
       `$ ${report.command}`,
       report.stdout,
       report.stderr ? `[stderr]\n${report.stderr}` : "",
-      report.detail ? `[detalhes]\n${report.detail}` : "",
+      report.detail ? `${t("console.details")}\n${report.detail}` : "",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -123,7 +129,7 @@ export function Console() {
       await navigator.clipboard.writeText(output);
       setCopied(true);
     } catch {
-      setError("Não foi possível copiar a saída.");
+      setError(t("console.error.copy"));
     }
   }
 
@@ -131,7 +137,7 @@ export function Console() {
     selected?.report.operation === "containers" &&
     selected.report.status === "available" &&
     !selected.report.truncated &&
-    !/truncad/i.test(selected.report.detail)
+    !/truncad|truncat/i.test(selected.report.detail)
       ? parseConsoleContainers(selected.report.stdout)
       : null;
 
@@ -140,7 +146,7 @@ export function Console() {
       <div
         className="console-view-switch"
         role="group"
-        aria-label="Área do Console"
+        aria-label={t("console.view.aria")}
       >
         <button
           type="button"
@@ -148,7 +154,7 @@ export function Console() {
           className={area === "queries" ? "selected" : ""}
           onClick={() => setArea("queries")}
         >
-          Consultas Docker
+          {t("console.view.queries")}
         </button>
         <button
           type="button"
@@ -156,7 +162,7 @@ export function Console() {
           className={area === "logs" ? "selected" : ""}
           onClick={() => setArea("logs")}
         >
-          Logs de containers
+          {t("logs.title")}
         </button>
       </div>
       <div hidden={area !== "logs"}>
@@ -165,18 +171,18 @@ export function Console() {
       <div hidden={area !== "queries"}>
         <div className="console-intro">
           <div>
-            <p className="eyebrow">DOCKER ENGINE LOCAL</p>
+            <p className="eyebrow">{t("containers.eyebrow")}</p>
             <p className="section-description">
-              Consultas controladas, sem alterações em containers.
+              {t("console.intro")}
             </p>
           </div>
           <Badge tone="green">
             <ShieldCheck size={13} aria-hidden="true" />
-            Somente leitura
+            {t("console.readonly")}
           </Badge>
         </div>
 
-        <Panel title="Selecionar operação" eyebrow="COMANDOS PERMITIDOS">
+        <Panel title={t("console.select.title")} eyebrow={t("console.select.eyebrow")}>
           <div className="console-operations">
             {operations.map((item) => (
               <button
@@ -198,7 +204,7 @@ export function Console() {
 
           <div className="console-action">
             <div>
-              <span>Comando selecionado</span>
+              <span>{t("console.selectedCommand")}</span>
               <code>$ {current.command}</code>
             </div>
             <button
@@ -212,7 +218,7 @@ export function Console() {
               ) : (
                 <Play size={17} />
               )}
-              {busy ? "Executando..." : "Executar consulta"}
+              {busy ? t("console.running") : t("console.run")}
             </button>
           </div>
         </Panel>
@@ -221,21 +227,21 @@ export function Console() {
           <div className="feedback error" role="alert">
             <AlertTriangle size={19} aria-hidden="true" />
             <div>
-              <strong>Não foi possível executar a consulta</strong>
+              <strong>{t("console.error.title")}</strong>
               <p>{error}</p>
             </div>
           </div>
         )}
         {busy && (
           <p role="status" aria-live="polite">
-            Executando consulta Docker…
+            {t("console.runningStatus")}
           </p>
         )}
 
         <div className="console-results">
           <Panel
-            title="Saída da operação"
-            eyebrow="RESULTADO"
+            title={t("console.output.title")}
+            eyebrow={t("console.output.eyebrow")}
             action={
               selected ? (
                 <button
@@ -244,7 +250,7 @@ export function Console() {
                   onClick={() => void copyOutput()}
                 >
                   <Copy size={15} aria-hidden="true" />
-                  {copied ? "Copiado" : "Copiar"}
+                  {copied ? t("logs.copied") : t("console.copy")}
                 </button>
               ) : undefined
             }
@@ -262,27 +268,26 @@ export function Console() {
                     ) : (
                       <AlertTriangle size={13} />
                     )}
-                    {statusLabel(selected.report.status)}
+                    {statusLabel(selected.report.status, t)}
                   </Badge>
                   <span>
                     <Clock3 size={14} aria-hidden="true" />
                     {selected.report.durationMs} ms
                   </span>
                   <span>{selected.executedAt}</span>
-                  <span>Exit code: {selected.report.exitCode ?? "—"}</span>
+                  <span>{t("console.exitCode", { code: selected.report.exitCode ?? "—" })}</span>
                 </div>
                 {selected.report.operation === "containers" &&
                   formatted === null && (
                     <p className="notice warning" role="status">
-                      Visualização formatada indisponível: consulta sem sucesso,
-                      saída truncada ou JSON inválido. Consulte a saída bruta.
+                      {t("console.formattedUnavailable")}
                     </p>
                   )}
                 {
                   <div
                     className="console-view-switch"
                     role="group"
-                    aria-label="Visualização do resultado"
+                    aria-label={t("console.resultView")}
                   >
                     <button
                       type="button"
@@ -291,7 +296,7 @@ export function Console() {
                       disabled={formatted === null}
                       onClick={() => setView("formatted")}
                     >
-                      Formatada
+                      {t("console.formatted")}
                     </button>
                     <button
                       type="button"
@@ -299,7 +304,7 @@ export function Console() {
                       aria-pressed={view === "raw"}
                       onClick={() => setView("raw")}
                     >
-                      Bruta
+                      {t("console.raw")}
                     </button>
                   </div>
                 }
@@ -309,16 +314,16 @@ export function Console() {
                       <table className="console-table">
                         <thead>
                           <tr>
-                            <th>Container</th>
-                            <th>Imagem</th>
-                            <th>Estado</th>
-                            <th>Portas</th>
+                            <th>{t("console.th.container")}</th>
+                            <th>{t("console.th.image")}</th>
+                            <th>{t("console.th.state")}</th>
+                            <th>{t("console.th.ports")}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {formatted.length === 0 ? (
                             <tr>
-                              <td colSpan={4}>Nenhum container encontrado.</td>
+                              <td colSpan={4}>{t("console.none")}</td>
                             </tr>
                           ) : (
                             formatted.map((container) => (
@@ -346,14 +351,14 @@ export function Console() {
                   <div className="console-terminal">
                     <div className="console-terminal-heading">
                       <TerminalSquare size={16} aria-hidden="true" />
-                      Saída Docker
+                      {t("console.dockerOutput")}
                     </div>
                     <pre>
                       <span className="console-command">
                         $ {selected.report.command}
                       </span>
                       {"\n\n"}
-                      {selected.report.stdout || "(sem saída padrão)"}
+                      {selected.report.stdout || t("logs.noStdout")}
                       {selected.report.stderr && (
                         <>
                           {"\n\n[stderr]\n"}
@@ -362,7 +367,7 @@ export function Console() {
                       )}
                       {selected.report.detail && (
                         <>
-                          {"\n\n[detalhes]\n"}
+                          {`\n\n${t("console.details")}\n`}
                           {selected.report.detail}
                         </>
                       )}
@@ -373,15 +378,15 @@ export function Console() {
             ) : (
               <div className="console-empty">
                 <TerminalSquare size={28} aria-hidden="true" />
-                <strong>Nenhuma consulta executada</strong>
-                <p>Selecione uma operação e clique em Executar consulta.</p>
+                <strong>{t("console.empty.title")}</strong>
+                <p>{t("console.empty.description")}</p>
               </div>
             )}
           </Panel>
 
           <Panel
-            title="Histórico"
-            eyebrow="SESSÃO ATUAL"
+            title={t("console.history.title")}
+            eyebrow={t("console.history.eyebrow")}
             action={
               history.length > 0 ? (
                 <button
@@ -395,14 +400,14 @@ export function Console() {
                   disabled={busy}
                 >
                   <Trash2 size={15} aria-hidden="true" />
-                  Limpar
+                  {t("console.history.clear")}
                 </button>
               ) : undefined
             }
           >
             {history.length === 0 ? (
               <p className="section-description">
-                As consultas realizadas aparecerão aqui.
+                {t("console.history.empty")}
               </p>
             ) : (
               <div className="console-history">
@@ -420,7 +425,7 @@ export function Console() {
                   >
                     <strong>{entry.report.label}</strong>
                     <small>{entry.executedAt}</small>
-                    <span>{statusLabel(entry.report.status)}</span>
+                    <span>{statusLabel(entry.report.status, t)}</span>
                   </button>
                 ))}
               </div>
@@ -431,10 +436,7 @@ export function Console() {
         <div className="notice">
           <ShieldCheck size={18} aria-hidden="true" />
           <p>
-            O Console executa apenas operações predefinidas pelo Rust. O
-            histórico permanece na memória desta janela, limitado a 20
-            consultas. Revise os resultados antes de copiá-los: informações do
-            Docker podem conter dados sensíveis.
+            {t("console.note")}
           </p>
         </div>
       </div>

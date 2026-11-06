@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { Doctor, Scan } from "../types";
 import {
-  checkLabels,
+  checkLabel,
   checkSummary,
   compatibility,
   recommendation,
@@ -16,6 +16,7 @@ import {
   projectName,
 } from "../model";
 import { Badge, EmptyState, Panel } from "../components/ui";
+import { useI18n } from "../i18n";
 
 export function Environment({
   doctor,
@@ -30,7 +31,8 @@ export function Environment({
   busy: boolean;
   checkedAt: string | null;
 }) {
-  const comparisons = scan ? compatibility(scan, doctor) : [];
+  const { t, locale } = useI18n();
+  const comparisons = scan ? compatibility(scan, doctor, t) : [];
   const technologies = new Set(scan?.components.map((c) => c.technology));
   const localTools = [
     ...(technologies.has("nodejs") ? ["node"] : []),
@@ -54,11 +56,7 @@ export function Environment({
                 : "neutral"
           }
         >
-          {check
-            ? check.name === "docker-engine" && check.status === "available"
-              ? "Engine acessível"
-              : checkLabels[check.status]
-            : "Não verificado"}
+          {check ? checkLabel(check, t) : t("check.notVerified")}
         </Badge>
       </div>
     );
@@ -66,8 +64,8 @@ export function Environment({
   return (
     <>
       <Panel
-        title="Diagnóstico do ambiente"
-        eyebrow="INSTALAÇÕES E DISPONIBILIDADE"
+        title={t("env.title")}
+        eyebrow={t("env.eyebrow")}
         action={
           <button
             className="button secondary"
@@ -75,27 +73,30 @@ export function Environment({
             disabled={busy}
           >
             <RefreshCw size={16} aria-hidden="true" />
-            {doctor ? "Atualizar diagnóstico" : "Verificar ambiente"}
+            {doctor ? t("env.update") : t("env.verify")}
           </button>
         }
       >
         <p className="section-description">
-          Verificações locais de ferramentas e acesso ao Docker Engine. Nenhuma
-          instalação ou alteração é executada.
+          {t("env.intro")}
         </p>
         {doctor ? (
           <>
             <div className="diagnostic-meta">
               <Badge tone="blue">{doctor.os}</Badge>
               <span>
-                Última verificação:{" "}
-                {checkedAt
-                  ? new Date(checkedAt).toLocaleTimeString("pt-BR")
-                  : "horário não registrado"}
+                {t("env.lastCheck", {
+                  time: checkedAt
+                    ? new Date(checkedAt).toLocaleTimeString(locale)
+                    : t("env.noTime"),
+                })}
               </span>
               <span>
-                {doctor.checks.filter((c) => c.status === "available").length}{" "}
-                de {doctor.checks.length} checks responderam
+                {t("env.checksOk", {
+                  ok: doctor.checks.filter((c) => c.status === "available")
+                    .length,
+                  total: doctor.checks.length,
+                })}
               </span>
             </div>
             <div className="tool-grid">
@@ -122,36 +123,33 @@ export function Environment({
                           : "red"
                     }
                   >
-                    {check.name === "docker-engine" &&
-                    check.status === "available"
-                      ? "Engine acessível"
-                      : checkLabels[check.status]}
+                    {checkLabel(check, t)}
                   </Badge>
-                  <p className="tool-version mono">{checkSummary(check)}</p>
-                  <p className="recommendation">{recommendation(check)}</p>
+                  <p className="tool-version mono">{checkSummary(check, t)}</p>
+                  <p className="recommendation">{recommendation(check, t)}</p>
                   <details className="details">
-                    <summary>Evidência da verificação</summary>
+                    <summary>{t("env.evidence")}</summary>
                     <dl>
-                      <dt>Executável</dt>
-                      <dd>{check.executable ?? "Não resolvido"}</dd>
-                      <dt>Código de saída</dt>
-                      <dd>{check.exitCode ?? "Não disponível"}</dd>
-                      <dt>Duração</dt>
+                      <dt>{t("env.executable")}</dt>
+                      <dd>{check.executable ?? t("env.unresolved")}</dd>
+                      <dt>{t("env.exitCode")}</dt>
+                      <dd>{check.exitCode ?? t("env.notAvailable")}</dd>
+                      <dt>{t("env.duration")}</dt>
                       <dd>
                         {check.durationMs === undefined
-                          ? "Não informada"
+                          ? t("env.notReported")
                           : `${check.durationMs} ms`}
                       </dd>
                     </dl>
                     {check.stdout && (
                       <>
-                        <h4>Saída padrão</h4>
+                        <h4>{t("env.stdout")}</h4>
                         <pre>{check.stdout}</pre>
                       </>
                     )}
                     {check.stderr && (
                       <>
-                        <h4>Saída de erro</h4>
+                        <h4>{t("env.stderr")}</h4>
                         <pre>{check.stderr}</pre>
                       </>
                     )}
@@ -169,56 +167,56 @@ export function Environment({
         ) : (
           <EmptyState
             icon={SlidersHorizontal}
-            title="Seu ambiente ainda não foi verificado"
-            description="Execute o diagnóstico para consultar versões e ferramentas. Cada verificação tem um prazo limitado; falhas e ausência são apresentadas separadamente."
+            title={t("env.empty.title")}
+            description={t("env.empty.description")}
           />
         )}
       </Panel>
       <div className="requirements-grid">
         <Panel
-          title="Execução local"
-          eyebrow={scan ? projectName(scan.project) : "REQUISITOS DO PROJETO"}
+          title={t("env.local.title")}
+          eyebrow={scan ? projectName(scan.project) : t("env.local.eyebrow")}
         >
           {scan && localTools.length ? (
             <>
               <p className="section-description">
-                Ferramentas base associadas às tecnologias detectadas. Versões e
-                dependências adicionais precisam de evidência no projeto.
+                {t("env.local.intro")}
               </p>
               {localTools.map(requirement)}
               <p className="card-note">
-                Java e Maven não são sondados pelo doctor atual. Scripts de
-                inicialização não são executados. Gerenciadores de pacotes
-                alternativos não são inferidos.
+                {t("env.local.note")}
               </p>
             </>
           ) : (
             <EmptyState
               icon={SlidersHorizontal}
-              title="Requisitos não verificados"
-              description="Analise um projeto para relacionar as tecnologias detectadas às ferramentas locais."
+              title={t("env.local.empty.title")}
+              description={t("env.local.empty.description")}
             />
           )}
         </Panel>
-        <Panel title="Execução com Docker" eyebrow="PRÉ-REQUISITOS GERAIS">
+        <Panel title={t("env.docker.title")} eyebrow={t("env.docker.eyebrow")}>
           <p className="section-description">
-            A disponibilidade das ferramentas não garante que o projeto esteja
-            pronto para executar em containers.
+            {t("env.docker.intro")}
           </p>
           {["docker", "compose", "docker-engine"].map(requirement)}
           <p className="card-note">
             {scan
-              ? `${(scan.findings ?? []).filter((f) => f.kind === "container_config").length} arquivos Docker/Compose encontrados. Validade e requisitos internos não verificados.`
-              : "Configuração Docker do projeto ainda não verificada."}
+              ? t("env.docker.files", {
+                  count: (scan.findings ?? []).filter(
+                    (f) => f.kind === "container_config",
+                  ).length,
+                })
+              : t("env.docker.notChecked")}
           </p>
         </Panel>
       </div>
-      <Panel title="Compatibilidade de versões" eyebrow="DECLARAÇÃO × SISTEMA">
+      <Panel title={t("env.compat.title")} eyebrow={t("env.compat.eyebrow")}>
         {!comparisons.length ? (
           <EmptyState
             icon={ShieldCheck}
-            title="Nenhuma comparação disponível"
-            description="É necessário um requisito de versão declarado e uma versão instalada verificável. Ausência de resultados não confirma compatibilidade."
+            title={t("env.compat.empty.title")}
+            description={t("env.compat.empty.description")}
           />
         ) : (
           <div className="comparison-list">
@@ -236,16 +234,16 @@ export function Environment({
                     }
                   >
                     {c.status === "incompatible"
-                      ? "Incompatibilidade confirmada"
+                      ? t("env.compat.incompatible")
                       : c.status === "matches"
-                        ? "Versão exata correspondente"
-                        : "Não verificado"}
+                        ? t("env.compat.matches")
+                        : t("check.notVerified")}
                   </Badge>
                 </div>
                 <p>
                   <code>{c.declared}</code>
                   <ArrowRight size={14} aria-hidden="true" />
-                  <code>{c.installed ?? "Instalação não verificada"}</code>
+                  <code>{c.installed ?? t("env.compat.notInstalled")}</code>
                 </p>
                 <small>{c.source}</small>
                 <p className="card-note">{c.reason}</p>

@@ -10,7 +10,14 @@ import path from "node:path";
 const require = createRequire(new URL("../apps/desktop/package.json", import.meta.url));
 const { chromium } = require("@playwright/test");
 const root = new URL("..", import.meta.url).pathname;
-const out = path.join(root, "docs/screenshots");
+const lang = process.env.AUTODOCK_LANG === "en" ? "en" : "pt";
+const out = path.join(root, "docs/screenshots", lang === "en" ? "en" : "");
+fs.mkdirSync(out, { recursive: true });
+// UI labels the script clicks, per language.
+const L = {
+  pt: { projects: "Projetos", assistant: "Assistente Docker", selectFolder: "Selecionar pasta", analyze: "Analisar projeto", modules: "módulos identificados", found: /Encontramos/, next: /Continuar/, review: /Revisar/, reviewTitle: "Revise antes de criar", view: "ver", create: /Criar \d+ arquivo/, openIn: "Abrir o projeto em:", containers: "Containers", environment: "Ambiente", contribute: "Contribuir", refresh: /Carregar|Atualizar|Listar/, check: /Verificar|Atualizar/ },
+  en: { projects: "Projects", assistant: "Docker assistant", selectFolder: "Select folder", analyze: "Analyze project", modules: "modules found", found: /Found:/, next: /Continue/, review: /Review/, reviewTitle: "Review before creating", view: "view", create: /Create \d+ file/, openIn: "Open the project in:", containers: "Containers", environment: "Environment", contribute: "Contribute", refresh: /Load|Refresh|List/, check: /Check|Refresh/ },
+}[lang];
 const base = process.env.AUTODOCK_URL ?? "http://127.0.0.1:1420";
 const cli = path.join(root, "target/debug/autodock");
 
@@ -21,19 +28,30 @@ const services = ["postgres", "redis", "adminer"].flatMap((name) => ["--service"
 const makeSample = (name) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, scripts: { dev: "node --watch index.js", start: "node index.js" } }));
-  execFileSync(cli, ["generate", dir, "--stack", "nodejs", "--port", "3000", "--start-script", "start", ...services, "--write"], { stdio: "ignore", env: process.env });
+  execFileSync(cli, ["--lang", lang, "generate", dir, "--stack", "nodejs", "--port", "3000", "--start-script", "start", ...services, "--write"], { stdio: "ignore", env: process.env });
   return dir;
 };
 const firstSample = makeSample("primeiro-projeto");
 const sample = makeSample("loja-online");
 const names = ["Dockerfile", "docker-compose.yml", ".dockerignore", ".env.docker", ".env.docker.example"];
-const descriptions = {
-  Dockerfile: "Como a imagem da aplicação é construída.",
-  "docker-compose.yml": "Orquestra a aplicação e os serviços escolhidos. Não contém senhas.",
-  ".dockerignore": "Evita copiar arquivos desnecessários ou sensíveis para a imagem.",
-  ".env.docker": "Senhas fortes de 32 caracteres geradas agora. Não versione este arquivo.",
-  ".env.docker.example": "Modelo das variáveis, sem segredos, para quem clonar o projeto.",
-};
+const descriptions = lang === "en"
+  ? {
+      Dockerfile: "How the application image is built.",
+      "docker-compose.yml": "Runs the application and the chosen services. Contains no passwords.",
+      ".dockerignore": "Keeps unneeded or sensitive files out of the image.",
+      ".env.docker": "Strong 32-character passwords generated now. Do not commit this file.",
+      ".env.docker.example": "Variable template without secrets, for whoever clones the project.",
+    }
+  : {
+      Dockerfile: "Como a imagem da aplicação é construída.",
+      "docker-compose.yml": "Orquestra a aplicação e os serviços escolhidos. Não contém senhas.",
+      ".dockerignore": "Evita copiar arquivos desnecessários ou sensíveis para a imagem.",
+      ".env.docker": "Senhas fortes de 32 caracteres geradas agora. Não versione este arquivo.",
+      ".env.docker.example": "Modelo das variáveis, sem segredos, para quem clonar o projeto.",
+    };
+const previewNotes = lang === "en"
+  ? ["Nothing has been written yet. Review the files before confirming.", "Strong 32-character passwords were just generated and live in .env.docker (restricted permissions). Do not commit that file."]
+  : ["Nada foi gravado ainda. Revise os arquivos antes de confirmar.", "Senhas fortes de 32 caracteres foram geradas agora e ficam em .env.docker (permissão restrita). Não versione esse arquivo."];
 const files = names
   .filter((name) => fs.existsSync(path.join(sample, name)))
   .map((name) => ({
@@ -86,9 +104,9 @@ const containers = {
 };
 
 const browser = await chromium.launch({ channel: process.env.AUTODOCK_BROWSER_CHANNEL ?? "chrome" });
-const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark", locale: "pt-BR" });
+const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark", locale: lang === "en" ? "en-US" : "pt-BR" });
 const page = await context.newPage();
-await page.addInitScript(({ scan, doctor, containers, files, project, ports }) => {
+await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes }) => {
   window.__TAURI_INTERNALS__ = {
     transformCallback: () => 1,
     invoke: async (command) => {
@@ -99,14 +117,14 @@ await page.addInitScript(({ scan, doctor, containers, files, project, ports }) =
         case "list_docker_containers": return containers;
         case "detect_stacks": return [{ stack: "nodejs", evidence: "package.json", scripts: ["dev", "start"], packageManager: "npm", pythonFramework: null, vite: false }];
         case "inspect_folder": return false;
-        case "preview_docker_setup": return { schemaVersion: 1, project, files, seed: "0".repeat(64), ports, notes: ["Nada foi gravado ainda. Revise os arquivos antes de confirmar.", "Senhas fortes de 32 caracteres foram geradas agora e ficam em .env.docker (permissão restrita). Não versione esse arquivo."] };
+        case "preview_docker_setup": return { schemaVersion: 1, project, files, seed: "0".repeat(64), ports, notes: previewNotes };
         case "apply_docker_setup": return { written: files.map((f) => f.name), skipped: [] };
         case "detect_ides": return [{ id: "vscode", label: "VS Code" }, { id: "cursor", label: "Cursor" }, { id: "intellij", label: "IntelliJ IDEA" }];
         default: throw new Error(`IPC ${command}`);
       }
     },
   };
-}, { scan, doctor, containers, files, project, ports });
+}, { scan, doctor, containers, files, project, ports, previewNotes });
 
 const shot = async (name) => {
   await page.waitForTimeout(250);
@@ -119,39 +137,39 @@ await page.goto(base);
 await shot("01-visao-geral");
 
 // Projetos: análise
-await nav("Projetos");
-await page.getByRole("button", { name: "Selecionar pasta" }).click();
-await page.getByRole("button", { name: "Analisar projeto" }).click();
-await page.getByText("módulos identificados").first().waitFor();
+await nav(L.projects);
+await page.getByRole("button", { name: L.selectFolder }).click();
+await page.getByRole("button", { name: L.analyze }).click();
+await page.getByText(L.modules).first().waitFor();
 await shot("02-analise");
 
 // Assistente
-await nav("Assistente Docker");
-await page.getByRole("button", { name: "Selecionar pasta" }).last().click();
-await page.getByText(/Encontramos/).waitFor();
+await nav(L.assistant);
+await page.getByRole("button", { name: L.selectFolder }).last().click();
+await page.getByText(L.found).waitFor();
 await shot("03-assistente-projeto");
-await page.getByRole("button", { name: /Continuar/ }).click();
+await page.getByRole("button", { name: L.next }).click();
 await shot("04-assistente-tecnologia");
-await page.getByRole("button", { name: /Continuar/ }).click();
+await page.getByRole("button", { name: L.next }).click();
 for (const label of ["PostgreSQL", "Redis", "Adminer"]) await page.locator(".choice", { hasText: label }).click();
 await shot("05-assistente-servicos");
-await page.getByRole("button", { name: /Revisar/ }).click();
-await page.getByText("Revise antes de criar").waitFor();
-await page.locator(".file-list li", { hasText: "docker-compose.yml" }).getByRole("button", { name: "ver" }).click();
+await page.getByRole("button", { name: L.review }).click();
+await page.getByText(L.reviewTitle).waitFor();
+await page.locator(".file-list li", { hasText: "docker-compose.yml" }).getByRole("button", { name: L.view }).click();
 await shot("06-assistente-revisao");
-await page.getByRole("button", { name: /Criar \d+ arquivo/ }).click();
-await page.getByText("Abrir o projeto em:").waitFor();
+await page.getByRole("button", { name: L.create }).click();
+await page.getByText(L.openIn).waitFor();
 await page.locator(".wizard").scrollIntoViewIfNeeded();
 await shot("07-assistente-pronto");
 
 // Containers, ambiente, contribuir
-await nav("Containers");
-await page.getByRole("button", { name: /Carregar|Atualizar|Listar/ }).first().click().catch(() => {});
+await nav(L.containers);
+await page.getByRole("button", { name: L.refresh }).first().click().catch(() => {});
 await shot("08-containers");
-await nav("Ambiente");
-await page.getByRole("button", { name: /Verificar|Atualizar/ }).first().click().catch(() => {});
+await nav(L.environment);
+await page.getByRole("button", { name: L.check }).first().click().catch(() => {});
 await shot("09-ambiente");
-await nav("Contribuir");
+await nav(L.contribute);
 await shot("10-contribuir");
 
 await browser.close();

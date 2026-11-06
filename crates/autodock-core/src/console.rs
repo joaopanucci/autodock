@@ -19,11 +19,11 @@ impl ConsoleOperation {
         }
     }
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Self::Containers => "Listar containers",
-            Self::EngineInfo => "Informações do Docker Engine",
-            Self::DockerVersion => "Versão do Docker",
+            Self::Containers => tr!("Listar containers", "List containers"),
+            Self::EngineInfo => tr!("Informações do Docker Engine", "Docker Engine information"),
+            Self::DockerVersion => tr!("Versão do Docker", "Docker version"),
         }
     }
 }
@@ -52,7 +52,7 @@ pub fn execute_console_operation(operation: ConsoleOperation) -> ConsoleReport {
     ConsoleReport {
         schema_version: 1,
         operation,
-        label: operation.label().into(),
+        label: operation.label(),
         command: format!("docker {}", args.join(" ")),
         status: result.status,
         exit_code: result.exit_code,

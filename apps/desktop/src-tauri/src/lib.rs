@@ -1,110 +1,133 @@
-#[tauri::command]
-async fn query_container_logs(
-    request: autodock_core::LogsRequest,
-) -> Result<autodock_core::LogsReport, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::query_container_logs(request))
+use autodock_core::i18n::{with_lang, Lang};
+
+/// Runs `task` on a blocking thread with the caller's language, so every message
+/// the core produces (errors, notes, descriptions) comes back in that language.
+async fn localized<T: Send + 'static>(
+    lang: Option<String>,
+    task: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    let lang = Lang::parse(lang.as_deref());
+    tauri::async_runtime::spawn_blocking(move || with_lang(lang, task))
         .await
-        .map_err(|_| "Falha na tarefa de consulta de logs.".to_string())?
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-async fn collect_container_metrics() -> Result<autodock_core::MonitoringReport, String> {
-    tauri::async_runtime::spawn_blocking(autodock_core::collect_container_metrics)
-        .await
-        .map_err(|error| error.to_string())?
+async fn query_container_logs(
+    request: autodock_core::LogsRequest,
+    lang: Option<String>,
+) -> Result<autodock_core::LogsReport, String> {
+    localized(lang, move || autodock_core::query_container_logs(request)).await?
 }
+
 #[tauri::command]
-async fn list_docker_containers() -> Result<autodock_core::DockerContainersReport, String> {
-    tauri::async_runtime::spawn_blocking(autodock_core::list_docker_containers)
-        .await
-        .map_err(|e| e.to_string())?
+async fn collect_container_metrics(
+    lang: Option<String>,
+) -> Result<autodock_core::MonitoringReport, String> {
+    localized(lang, autodock_core::collect_container_metrics).await?
 }
+
 #[tauri::command]
-async fn detect_stacks(path: String) -> Result<Vec<autodock_core::generate::Suggestion>, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::detect_stacks(&path))
-        .await
-        .map_err(|e| e.to_string())?
+async fn list_docker_containers(
+    lang: Option<String>,
+) -> Result<autodock_core::DockerContainersReport, String> {
+    localized(lang, autodock_core::list_docker_containers).await?
 }
+
 #[tauri::command]
-async fn inspect_folder(path: String) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::folder_is_empty(&path))
-        .await
-        .map_err(|e| e.to_string())?
+async fn detect_stacks(
+    path: String,
+    lang: Option<String>,
+) -> Result<Vec<autodock_core::generate::Suggestion>, String> {
+    localized(lang, move || autodock_core::generate::detect_stacks(&path)).await?
 }
+
 #[tauri::command]
-async fn detect_ides() -> Result<Vec<autodock_core::ide::IdeInfo>, String> {
-    tauri::async_runtime::spawn_blocking(autodock_core::ide::detect_ides)
-        .await
-        .map_err(|e| e.to_string())
+async fn inspect_folder(path: String, lang: Option<String>) -> Result<bool, String> {
+    localized(lang, move || {
+        autodock_core::generate::folder_is_empty(&path)
+    })
+    .await?
 }
+
 #[tauri::command]
-async fn open_in_ide(id: String, path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::ide::open_in_ide(&id, &path))
-        .await
-        .map_err(|e| e.to_string())?
+async fn detect_ides(lang: Option<String>) -> Result<Vec<autodock_core::ide::IdeInfo>, String> {
+    localized(lang, autodock_core::ide::detect_ides).await
 }
+
 #[tauri::command]
-async fn reveal_folder(path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::ide::reveal_folder(&path))
-        .await
-        .map_err(|e| e.to_string())?
+async fn open_in_ide(id: String, path: String, lang: Option<String>) -> Result<(), String> {
+    localized(lang, move || autodock_core::ide::open_in_ide(&id, &path)).await?
 }
+
+#[tauri::command]
+async fn reveal_folder(path: String, lang: Option<String>) -> Result<(), String> {
+    localized(lang, move || autodock_core::ide::reveal_folder(&path)).await?
+}
+
 #[tauri::command]
 async fn scaffold_plan(
     request: autodock_core::scaffold::ScaffoldRequest,
+    lang: Option<String>,
 ) -> Result<autodock_core::scaffold::ScaffoldPlan, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::scaffold::plan(&request))
-        .await
-        .map_err(|e| e.to_string())?
+    localized(lang, move || autodock_core::scaffold::plan(&request)).await?
 }
+
 #[tauri::command]
 async fn scaffold_run(
     request: autodock_core::scaffold::ScaffoldRequest,
+    lang: Option<String>,
 ) -> Result<autodock_core::scaffold::ScaffoldReport, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::scaffold::run(&request))
-        .await
-        .map_err(|e| e.to_string())?
+    localized(lang, move || autodock_core::scaffold::run(&request)).await?
 }
+
 #[tauri::command]
 async fn preview_docker_setup(
     request: autodock_core::generate::GenerateRequest,
+    lang: Option<String>,
 ) -> Result<autodock_core::generate::GeneratePlan, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::preview(&request))
-        .await
-        .map_err(|e| e.to_string())?
+    localized(lang, move || autodock_core::generate::preview(&request)).await?
 }
+
 #[tauri::command]
 async fn apply_docker_setup(
     request: autodock_core::generate::GenerateRequest,
     files: Vec<String>,
+    lang: Option<String>,
 ) -> Result<autodock_core::generate::ApplyReport, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::apply(&request, &files))
-        .await
-        .map_err(|e| e.to_string())?
+    localized(lang, move || {
+        autodock_core::generate::apply(&request, &files)
+    })
+    .await?
 }
+
 #[tauri::command]
-async fn scan_project(path: String) -> Result<autodock_core::ScanReport, String> {
-    tauri::async_runtime::spawn_blocking(move || autodock_core::scan(std::path::Path::new(&path)))
-        .await
-        .map_err(|e| e.to_string())?
+async fn scan_project(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::ScanReport, String> {
+    localized(lang, move || {
+        autodock_core::scan(std::path::Path::new(&path))
+    })
+    .await?
 }
+
 #[tauri::command]
-async fn doctor_environment() -> Result<autodock_core::DoctorReport, String> {
-    tauri::async_runtime::spawn_blocking(autodock_core::doctor)
-        .await
-        .map_err(|e| e.to_string())
+async fn doctor_environment(lang: Option<String>) -> Result<autodock_core::DoctorReport, String> {
+    localized(lang, autodock_core::doctor).await
 }
 
 #[tauri::command]
 async fn execute_console_operation(
     operation: autodock_core::ConsoleOperation,
+    lang: Option<String>,
 ) -> Result<autodock_core::ConsoleReport, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    localized(lang, move || {
         autodock_core::execute_console_operation(operation)
     })
     .await
-    .map_err(|error| format!("Falha na tarefa do Console: {error}"))
 }
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -126,5 +149,5 @@ pub fn run() {
             query_container_logs,
         ])
         .run(tauri::generate_context!())
-        .expect("Falha ao iniciar AutoDock");
+        .expect("Failed to start AutoDock");
 }

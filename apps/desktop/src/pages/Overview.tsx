@@ -15,6 +15,7 @@ import {
 import type { Doctor, Page, SessionProject } from "../types";
 import { displayPath, groupModules, projectName, toolNames } from "../model";
 import { Badge, EmptyState, Metric, Panel } from "../components/ui";
+import { useI18n } from "../i18n";
 
 export function Overview({
   projects,
@@ -33,6 +34,7 @@ export function Overview({
   diagnose: () => void;
   busy: boolean;
 }) {
+  const { t } = useI18n();
   const available = doctor?.checks.filter(
     (c) => c.status === "available",
   ).length;
@@ -45,29 +47,29 @@ export function Overview({
       <div className="metrics-grid">
         <Metric
           icon={FolderGit2}
-          title="Projetos na sessão"
+          title={t("overview.metric.projects.title")}
           value={projects.length}
-          detail="Análises realizadas neste workspace"
+          detail={t("overview.metric.projects.detail")}
         />
         <Metric
           icon={Layers3}
-          title="Módulos identificados"
+          title={t("overview.metric.modules.title")}
           value={modules}
-          detail="Agrupados pelo diretório de origem"
+          detail={t("overview.metric.modules.detail")}
         />
         <Metric
           icon={CheckCheck}
-          title="Verificações concluídas"
+          title={t("overview.metric.checks.title")}
           value={doctor ? `${available}/${doctor.checks.length}` : "—"}
           detail={
             doctor
-              ? "Ferramentas que responderam com sucesso"
-              : "Ambiente ainda não verificado"
+              ? t("overview.metric.checks.done")
+              : t("overview.metric.checks.pending")
           }
         />
         <Metric
           icon={Boxes}
-          title="Arquivos Docker"
+          title={t("overview.metric.docker.title")}
           value={projects.reduce(
             (n, p) =>
               n +
@@ -76,27 +78,25 @@ export function Overview({
               ).length,
             0,
           )}
-          detail="Presença detectada, execução não verificada"
+          detail={t("overview.metric.docker.detail")}
         />
       </div>
       <div className="overview-grid">
         <Panel
-          title="Seus projetos começam aqui"
-          eyebrow="DO CÓDIGO AO AMBIENTE"
+          title={t("overview.hero.title")}
+          eyebrow={t("overview.hero.eyebrow")}
           className="import-panel"
         >
           <p className="lead">
-            Do código ao Docker, em poucos cliques. Ou só entenda a estrutura do
-            projeto antes de preparar o ambiente.
+            {t("overview.hero.lead")}
           </p>
           <div className="import-zone">
             <div className="folder-art">
               <FolderGit2 size={36} strokeWidth={1.4} aria-hidden="true" />
             </div>
-            <h3>Coloque seu projeto no Docker</h3>
+            <h3>{t("overview.zone.title")}</h3>
             <p>
-              Crie um projeto novo ou configure um existente com algumas
-              <br className="wide-only" /> perguntas. Você revisa tudo antes de gravar.
+              {t("overview.zone.body")}
             </p>
             <button
               className="button primary"
@@ -104,7 +104,7 @@ export function Overview({
               onClick={() => navigate("setup")}
             >
               <WandSparkles size={17} aria-hidden="true" />
-              Preparar Docker com o assistente
+              {t("overview.zone.assistant")}
             </button>
             <button
               className="button secondary"
@@ -112,34 +112,34 @@ export function Overview({
               onClick={importProject}
             >
               <FolderPlus size={17} aria-hidden="true" />
-              Selecionar projeto
+              {t("overview.zone.select")}
             </button>
             <span className="micro-copy">
               <ShieldCheck size={13} aria-hidden="true" />
-              A análise não altera nada. O assistente só cria arquivos após sua confirmação
+              {t("overview.zone.micro")}
             </span>
           </div>
           <div className="flow">
             <span>
-              <b>01</b> Selecione
+              <b>01</b> {t("overview.flow.1")}
             </span>
             <ArrowRight size={14} />
             <span>
-              <b>02</b> Analise
+              <b>02</b> {t("overview.flow.2")}
             </span>
             <ArrowRight size={14} />
             <span>
-              <b>03</b> Entenda
+              <b>03</b> {t("overview.flow.3")}
             </span>
             <ArrowRight size={14} />
             <span>
-              <b>04</b> Dockerize
+              <b>04</b> {t("overview.flow.4")}
             </span>
           </div>
         </Panel>
         <Panel
-          title="Estado do ambiente"
-          eyebrow="FERRAMENTAS ESSENCIAIS"
+          title={t("overview.env.title")}
+          eyebrow={t("overview.env.eyebrow")}
           action={<SlidersHorizontal size={19} aria-hidden="true" />}
         >
           <div className="environment-mini">
@@ -161,12 +161,12 @@ export function Overview({
                     <strong>{toolNames[name]}</strong>
                     <span className="mini-status">
                       {!check
-                        ? "Não verificado"
+                        ? t("check.notVerified")
                         : check.status === "available"
-                          ? "Verificado"
+                          ? t("overview.env.verified")
                           : check.status === "missing"
-                            ? "Não encontrado"
-                            : "Requer atenção"}
+                            ? t("check.missing")
+                            : t("overview.env.attention")}
                     </span>
                   </div>
                 );
@@ -174,8 +174,7 @@ export function Overview({
             )}
           </div>
           <p className="card-note">
-            Essenciais para avaliar o ambiente. Docker não é necessário para
-            analisar arquivos.
+            {t("overview.env.note")}
           </p>
           <button
             className="button secondary full"
@@ -183,28 +182,28 @@ export function Overview({
             onClick={diagnose}
           >
             <SlidersHorizontal size={16} aria-hidden="true" />
-            {doctor ? "Atualizar diagnóstico" : "Verificar ambiente"}
+            {doctor ? t("env.update") : t("env.verify")}
           </button>
         </Panel>
       </div>
       <div className="overview-bottom">
         <Panel
-          title="Projetos analisados"
-          eyebrow="NESTA SESSÃO"
+          title={t("overview.bottom.title")}
+          eyebrow={t("overview.bottom.eyebrow")}
           action={
             <button
               className="text-button"
               onClick={() => navigate("projects")}
             >
-              Ver projetos <ArrowRight size={14} aria-hidden="true" />
+              {t("overview.bottom.view")} <ArrowRight size={14} aria-hidden="true" />
             </button>
           }
         >
           {!projects.length ? (
             <EmptyState
               icon={FolderGit2}
-              title="Nenhuma análise por enquanto"
-              description="Os projetos que você analisar aparecerão aqui. Os dados ficam apenas nesta sessão."
+              title={t("overview.bottom.empty.title")}
+              description={t("overview.bottom.empty.description")}
             />
           ) : (
             <div className="session-list">
@@ -220,7 +219,7 @@ export function Overview({
                     </small>
                   </span>
                   <Badge tone={p.scan.warnings.length ? "amber" : "green"}>
-                    {groupModules(p.scan).length} módulos
+                    {t("overview.modulesBadge", { count: groupModules(p.scan).length })}
                   </Badge>
                   <ArrowRight size={16} aria-hidden="true" />
                 </button>
@@ -229,31 +228,30 @@ export function Overview({
           )}
         </Panel>
         <Panel
-          title="Controle em cada etapa"
-          eyebrow="PERMISSÕES EXPLÍCITAS"
+          title={t("overview.trust.title")}
+          eyebrow={t("overview.trust.eyebrow")}
           className="trust-panel"
         >
           <ShieldCheck size={27} aria-hidden="true" />
           <p>
-            A análise lê manifests e reúne evidências. O assistente mostra cada
-            arquivo antes de gravar. Você decide.
+            {t("overview.trust.body")}
           </p>
           <ul className="check-list">
             <li>
               <CheckCheck size={15} />
-              Sem scripts do projeto
+              {t("overview.trust.1")}
             </li>
             <li>
               <CheckCheck size={15} />
-              Sem instalações automáticas
+              {t("overview.trust.2")}
             </li>
             <li>
               <CheckCheck size={15} />
-              Sem sobrescrever arquivos existentes
+              {t("overview.trust.3")}
             </li>
           </ul>
           <button className="text-button" onClick={() => navigate("settings")}>
-            Conhecer as permissões <ArrowRight size={14} aria-hidden="true" />
+            {t("overview.trust.link")} <ArrowRight size={14} aria-hidden="true" />
           </button>
         </Panel>
       </div>

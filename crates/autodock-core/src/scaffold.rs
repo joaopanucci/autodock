@@ -79,15 +79,16 @@ fn image_version(
     if allowed.contains(&version) {
         Ok(version.to_string())
     } else {
-        Err(format!(
+        Err(tr!(
             "Versão não suportada: {version}. Use: {}.",
+            "Unsupported version: {version}. Use: {}.",
             allowed.join(", ")
         ))
     }
 }
 
 struct Spec {
-    title: &'static str,
+    title: String,
     image: String,
     /// Arguments after the image name.
     args: Vec<String>,
@@ -98,30 +99,33 @@ struct Spec {
 fn spec(request: &ScaffoldRequest) -> Result<Spec, String> {
     let name = &request.project_name;
     if !valid_project_name(name) {
-        return Err("Nome do projeto inválido (use letras minúsculas, números e hífen).".into());
+        return Err(tr!(
+            "Nome do projeto inválido (use letras minúsculas, números e hífen).",
+            "Invalid project name (use lowercase letters, numbers and hyphens)."
+        ));
     }
     let shell = |script: String| vec!["sh".to_string(), "-c".to_string(), script];
     Ok(match request.framework {
         Framework::Laravel => Spec {
-            title: "Laravel (instalador oficial)",
+            title: tr!("Laravel (instalador oficial)", "Laravel (official installer)"),
             image: "composer:2".into(),
             args: ["create-project", "laravel/laravel", ".", "--prefer-dist", "--no-interaction"]
                 .map(String::from)
                 .to_vec(),
             marker: "artisan",
             notes: vec![
-                "Usa composer create-project laravel/laravel. Pode levar vários minutos.".into(),
-                "O banco padrão do Laravel é SQLite; serviços escolhidos serão configurados no compose.".into(),
+                tr!("Usa composer create-project laravel/laravel. Pode levar vários minutos.", "Uses composer create-project laravel/laravel. It can take several minutes."),
+                tr!("O banco padrão do Laravel é SQLite; serviços escolhidos serão configurados no compose.", "Laravel's default database is SQLite; the services you choose will be configured in compose."),
             ],
         },
         Framework::Django => {
             let package = name.replace('-', "_");
             if RESERVED_PYTHON_NAMES.contains(&package.as_str()) {
-                return Err(format!("\"{package}\" conflita com um módulo Python. Escolha outro nome."));
+                return Err(tr!("\"{package}\" conflita com um módulo Python. Escolha outro nome.", "\"{package}\" clashes with a Python module. Pick another name."));
             }
             let version = image_version(&["3.13", "3.12", "3.11"], "3.12", &request.runtime_version)?;
             Spec {
-                title: "Django (django-admin startproject)",
+                title: tr!("Django (django-admin startproject)", "Django (django-admin startproject)"),
                 image: format!("python:{version}-slim"),
                 args: shell(format!(
                     "pip install --no-cache-dir --target /tmp/py django >/dev/null && \
@@ -130,8 +134,8 @@ printf 'Django==%s\\n' \"$(PYTHONPATH=/tmp/py python -m django --version)\" > re
                 )),
                 marker: "manage.py",
                 notes: vec![
-                    format!("O pacote do projeto se chamará \"{package}\"."),
-                    "A versão instalada do Django é fixada em requirements.txt.".into(),
+                    tr!("O pacote do projeto se chamará \"{package}\".", "The project package will be called \"{package}\"."),
+                    tr!("A versão instalada do Django é fixada em requirements.txt.", "The installed Django version is pinned in requirements.txt."),
                 ],
             }
         }
@@ -140,9 +144,9 @@ printf 'Django==%s\\n' \"$(PYTHONPATH=/tmp/py python -m django --version)\" > re
             let template = if request.framework == Framework::ViteReact { "react-ts" } else { "vue-ts" };
             Spec {
                 title: if request.framework == Framework::ViteReact {
-                    "Vite + React + TypeScript (create-vite)"
+                    "Vite + React + TypeScript (create-vite)".to_string()
                 } else {
-                    "Vite + Vue + TypeScript (create-vite)"
+                    "Vite + Vue + TypeScript (create-vite)".to_string()
                 },
                 image: format!("node:{version}-alpine"),
                 args: shell(format!(
@@ -150,8 +154,8 @@ printf 'Django==%s\\n' \"$(PYTHONPATH=/tmp/py python -m django --version)\" > re
                 )),
                 marker: "package.json",
                 notes: vec![
-                    "As dependências são instaladas quando a imagem Docker é construída.".into(),
-                    "O servidor de desenvolvimento usa a porta 5173 por padrão.".into(),
+                    tr!("As dependências são instaladas quando a imagem Docker é construída.", "Dependencies are installed when the Docker image is built."),
+                    tr!("O servidor de desenvolvimento usa a porta 5173 por padrão.", "The development server uses port 5173 by default."),
                 ],
             }
         }
@@ -214,11 +218,14 @@ fn checked(request: &ScaffoldRequest) -> Result<(Spec, std::path::PathBuf), Stri
         .any(|c| c == ',' || c == '"' || c.is_control())
     {
         return Err(
-            "O caminho da pasta não pode conter vírgula, aspas ou caracteres de controle. Renomeie a pasta ou escolha outra.".into(),
+            tr!("O caminho da pasta não pode conter vírgula, aspas ou caracteres de controle. Renomeie a pasta ou escolha outra.", "The folder path cannot contain commas, quotes or control characters. Rename the folder or pick another one."),
         );
     }
     if !crate::generate::folder_is_empty(&request.path)? {
-        return Err("A pasta não está vazia. O instalador só roda em pasta vazia.".into());
+        return Err(tr!(
+            "A pasta não está vazia. O instalador só roda em pasta vazia.",
+            "The folder is not empty. The installer only runs in an empty folder."
+        ));
     }
     Ok((spec, root))
 }
@@ -235,12 +242,16 @@ pub fn plan(request: &ScaffoldRequest) -> Result<ScaffoldPlan, String> {
         .collect::<Vec<_>>()
         .join(" ");
     let mut notes = spec.notes.clone();
-    notes.push(
-        "Requer Docker em execução e acesso à internet. A primeira vez baixa imagens.".into(),
-    );
-    notes.push("A pasta é a única montada no container, e só ela é alterada.".into());
+    notes.push(tr!(
+        "Requer Docker em execução e acesso à internet. A primeira vez baixa imagens.",
+        "Requires a running Docker and internet access. The first run downloads images."
+    ));
+    notes.push(tr!(
+        "A pasta é a única montada no container, e só ela é alterada.",
+        "The folder is the only one mounted in the container, and only it is changed."
+    ));
     Ok(ScaffoldPlan {
-        title: spec.title.into(),
+        title: spec.title.clone(),
         image: spec.image.clone(),
         command,
         notes,
@@ -289,8 +300,12 @@ fn drain(
 /// Runs the official installer. Blocks until it finishes or times out.
 pub fn run(request: &ScaffoldRequest) -> Result<ScaffoldReport, String> {
     let (spec, root) = checked(request)?;
-    let docker = crate::doctor::resolve("docker")
-        .ok_or("Docker não foi encontrado. Instale e inicie o Docker Desktop.")?;
+    let docker = crate::doctor::resolve("docker").ok_or_else(|| {
+        tr!(
+            "Docker não foi encontrado. Instale e inicie o Docker Desktop.",
+            "Docker was not found. Install and start Docker Desktop."
+        )
+    })?;
     let started = Instant::now();
     let container = format!(
         "autodock-scaffold-{}-{}",
@@ -313,9 +328,12 @@ pub fn run(request: &ScaffoldRequest) -> Result<ScaffoldReport, String> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x0800_0000);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Não foi possível iniciar o Docker: {e}"))?;
+    let mut child = command.spawn().map_err(|e| {
+        tr!(
+            "Não foi possível iniciar o Docker: {e}",
+            "Could not start Docker: {e}"
+        )
+    })?;
     let tail = Arc::new(Mutex::new(Vec::new()));
     let readers = [
         drain(child.stdout.take().expect("piped stdout"), tail.clone()),
@@ -335,7 +353,12 @@ pub fn run(request: &ScaffoldRequest) -> Result<ScaffoldReport, String> {
                 break None;
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(200)),
-            Err(e) => return Err(format!("Falha ao acompanhar o Docker: {e}")),
+            Err(e) => {
+                return Err(tr!(
+                    "Falha ao acompanhar o Docker: {e}",
+                    "Failed to follow Docker: {e}"
+                ))
+            }
         }
     };
     for reader in readers {
@@ -348,17 +371,27 @@ pub fn run(request: &ScaffoldRequest) -> Result<ScaffoldReport, String> {
     let (success, detail) = match status {
         None => (
             false,
-            "Tempo esgotado (20 minutos). O container foi removido.".to_string(),
+            tr!(
+                "Tempo esgotado (20 minutos). O container foi removido.",
+                "Timed out (20 minutes). The container was removed."
+            ),
         ),
         Some(status) if !status.success() => (
             false,
-            "O instalador terminou com erro. Veja a saída abaixo.".to_string(),
+            tr!(
+                "O instalador terminou com erro. Veja a saída abaixo.",
+                "The installer finished with an error. See the output below."
+            ),
         ),
         Some(_) if !root.join(spec.marker).is_file() => (
             false,
-            format!("O instalador terminou, mas {} não foi criado.", spec.marker),
+            tr!(
+                "O instalador terminou, mas {} não foi criado.",
+                "The installer finished, but {} was not created.",
+                spec.marker
+            ),
         ),
-        Some(_) => (true, "Projeto criado.".to_string()),
+        Some(_) => (true, tr!("Projeto criado.", "Project created.")),
     };
     Ok(ScaffoldReport {
         success,
@@ -462,7 +495,11 @@ mod tests {
                 project_name: "ok".into(),
                 runtime_version: None,
             };
-            assert!(plan(&request).unwrap_err().contains("vírgula"), "{folder}");
+            let english = plan(&request).unwrap_err();
+            assert!(english.contains("commas, quotes"), "{folder}: {english}");
+            let portuguese =
+                crate::i18n::with_lang(crate::i18n::Lang::Pt, || plan(&request).unwrap_err());
+            assert!(portuguese.contains("vírgula"), "{folder}: {portuguese}");
         }
     }
 

@@ -15,23 +15,24 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Page } from "../types";
+import { useI18n, type TranslationKey } from "../i18n";
 import logo from "../../src-tauri/icons/128x128.png";
 
 export const navigation: {
   id: Page;
-  label: string;
+  labelKey: TranslationKey;
   icon: LucideIcon;
   planned?: boolean;
 }[] = [
-  { id: "overview", label: "Visão geral", icon: LayoutDashboard },
-  { id: "projects", label: "Projetos", icon: FolderGit2 },
-  { id: "setup", label: "Assistente Docker", icon: WandSparkles },
-  { id: "environment", label: "Ambiente", icon: SlidersHorizontal },
-  { id: "containers", label: "Containers", icon: Boxes },
-  { id: "monitoring", label: "Monitoramento", icon: Activity },
-  { id: "console", label: "Console", icon: TerminalSquare },
-  { id: "settings", label: "Configurações", icon: Settings2 },
-  { id: "contribute", label: "Contribuir", icon: HeartHandshake },
+  { id: "overview", labelKey: "nav.overview", icon: LayoutDashboard },
+  { id: "projects", labelKey: "nav.projects", icon: FolderGit2 },
+  { id: "setup", labelKey: "nav.setup", icon: WandSparkles },
+  { id: "environment", labelKey: "nav.environment", icon: SlidersHorizontal },
+  { id: "containers", labelKey: "nav.containers", icon: Boxes },
+  { id: "monitoring", labelKey: "nav.monitoring", icon: Activity },
+  { id: "console", labelKey: "nav.console", icon: TerminalSquare },
+  { id: "settings", labelKey: "nav.settings", icon: Settings2 },
+  { id: "contribute", labelKey: "nav.contribute", icon: HeartHandshake },
 ];
 export function Layout({
   page,
@@ -44,10 +45,11 @@ export function Layout({
   children: ReactNode;
   projects: number;
 }) {
+  const { t } = useI18n();
   return (
     <div className="app-shell">
       <a className="skip-link" href="#content">
-        Pular para o conteúdo
+        {t("nav.skip")}
       </a>
       <aside className="sidebar">
         <div className="brand">
@@ -60,12 +62,12 @@ export function Layout({
         <div className="workspace-label">
           <span className="workspace-icon">A</span>
           <div>
-            Workspace local<small>Sessão atual</small>
+            {t("layout.workspace")}<small>{t("layout.session")}</small>
           </div>
           <ShieldCheck size={16} aria-hidden="true" />
         </div>
-        <nav aria-label="Navegação principal">
-          <p className="nav-label">WORKSPACE</p>
+        <nav aria-label={t("nav.aria")}>
+          <p className="nav-label">{t("nav.group.workspace")}</p>
           {navigation.slice(0, 4).map((item) => (
             <button
               key={item.id}
@@ -73,13 +75,13 @@ export function Layout({
               onClick={() => navigate(item.id)}
             >
               <item.icon size={19} aria-hidden="true" />
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
               {item.id === "projects" && (
                 <span className="nav-count">{projects}</span>
               )}
             </button>
           ))}
-          <p className="nav-label secondary-label">OPERAÇÕES</p>
+          <p className="nav-label secondary-label">{t("nav.group.operations")}</p>
           {navigation.slice(4, 7).map((item) => (
             <button
               key={item.id}
@@ -87,10 +89,10 @@ export function Layout({
               onClick={() => navigate(item.id)}
             >
               <item.icon size={19} aria-hidden="true" />
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
               {item.planned && (
-                <span className="nav-soon" title="Em desenvolvimento">
-                  Em breve
+                <span className="nav-soon" title={t("nav.soonTitle")}>
+                  {t("nav.soon")}
                 </span>
               )}
             </button>
@@ -101,25 +103,25 @@ export function Layout({
               onClick={() => navigate("settings")}
             >
               <Settings2 size={19} aria-hidden="true" />
-              <span>Configurações</span>
+              <span>{t("nav.settings")}</span>
             </button>
             <button
               aria-current={page === "contribute" ? "page" : undefined}
               onClick={() => navigate("contribute")}
             >
               <HeartHandshake size={19} aria-hidden="true" />
-              <span>Contribuir</span>
+              <span>{t("nav.contribute")}</span>
             </button>
           </div>
         </nav>
         <div className="sidebar-note">
           <ShieldCheck size={18} aria-hidden="true" />
           <div>
-            <strong>Você está no controle</strong>
+            <strong>{t("layout.control.title")}</strong>
             <p>
-              Nada é gravado sem a sua confirmação.
+              {t("layout.control.line1")}
               <br />
-              Seu ambiente é preservado.
+              {t("layout.control.line2")}
             </p>
           </div>
         </div>
@@ -135,17 +137,17 @@ export function Layout({
           <div>
             <span>Workspace</span>
             <ChevronRight size={14} aria-hidden="true" />
-            <strong>{navigation.find((n) => n.id === page)?.label}</strong>
+            <strong>{t(navigation.find((n) => n.id === page)!.labelKey)}</strong>
           </div>
           <span className="local-label">
-            <ShieldCheck size={14} aria-hidden="true" /> Você confirma cada alteração
+            <ShieldCheck size={14} aria-hidden="true" /> {t("layout.topbar.confirm")}
           </span>
         </header>
         <main id="content" tabIndex={-1}>
           {children}
         </main>
         <footer className="workspace-footer">
-          <span>Tudo local. Scripts do projeto nunca são executados.</span>
+          <span>{t("layout.footer.local")}</span>
           <span>AutoDock v0.1.0 · Open source</span>
         </footer>
       </div>

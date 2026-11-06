@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   AlertTriangle,
@@ -30,79 +30,56 @@ import type {
 } from "../types";
 import { Badge, Panel } from "../components/ui";
 import { displayPath } from "../model";
+import { useI18n, type TranslationKey } from "../i18n";
 
 const STACKS: {
   id: StackId;
   title: string;
-  hint: string;
+  hint: TranslationKey;
   port: number;
   versions: string[];
-  versionLabel: string;
+  versionLabel: TranslationKey;
 }[] = [
-  {
-    id: "nodejs",
-    title: "Node.js",
-    hint: "Express, Next.js, Vite, NestJS…",
-    port: 3000,
-    versions: ["22", "24", "20"],
-    versionLabel: "Versão do Node.js",
-  },
-  {
-    id: "spring-boot",
-    title: "Java / Spring Boot",
-    hint: "Projetos Maven com Spring Boot.",
-    port: 8080,
-    versions: ["21", "17"],
-    versionLabel: "Versão do Java",
-  },
-  {
-    id: "python",
-    title: "Python",
-    hint: "FastAPI, Django ou Flask.",
-    port: 8000,
-    versions: ["3.12", "3.13", "3.11"],
-    versionLabel: "Versão do Python",
-  },
-  {
-    id: "laravel",
-    title: "PHP / Laravel",
-    hint: "Aplicações Laravel com Composer.",
-    port: 8000,
-    versions: ["8.4", "8.5", "8.3", "8.2"],
-    versionLabel: "Versão do PHP",
-  },
+  { id: "nodejs", title: "Node.js", hint: "wizard.stack.nodejs.hint", port: 3000, versions: ["22", "24", "20"], versionLabel: "wizard.stack.nodejs.version" },
+  { id: "spring-boot", title: "Java / Spring Boot", hint: "wizard.stack.spring.hint", port: 8080, versions: ["21", "17"], versionLabel: "wizard.stack.spring.version" },
+  { id: "python", title: "Python", hint: "wizard.stack.python.hint", port: 8000, versions: ["3.12", "3.13", "3.11"], versionLabel: "wizard.stack.python.version" },
+  { id: "laravel", title: "PHP / Laravel", hint: "wizard.stack.laravel.hint", port: 8000, versions: ["8.4", "8.5", "8.3", "8.2"], versionLabel: "wizard.stack.laravel.version" },
 ];
 
-const SERVICES: { id: ServiceId; title: string; hint: string; group: string }[] =
-  [
-    { id: "postgres", title: "PostgreSQL", hint: "Banco relacional", group: "Bancos de dados" },
-    { id: "mysql", title: "MySQL", hint: "Banco relacional", group: "Bancos de dados" },
-    { id: "mongodb", title: "MongoDB", hint: "Banco de documentos", group: "Bancos de dados" },
-    { id: "redis", title: "Redis", hint: "Cache e sessões", group: "Cache e filas" },
-    { id: "rabbitmq", title: "RabbitMQ", hint: "Fila de mensagens", group: "Cache e filas" },
-    { id: "adminer", title: "Adminer", hint: "Interface web para o banco (porta 8088)", group: "Ferramentas de desenvolvimento" },
-    { id: "mailhog", title: "MailHog", hint: "Captura e-mails de teste (porta 8025)", group: "Ferramentas de desenvolvimento" },
-  ];
+const SERVICES: { id: ServiceId; title: string; hint: TranslationKey; group: TranslationKey }[] = [
+  { id: "postgres", title: "PostgreSQL", hint: "wizard.svc.relational", group: "wizard.group.db" },
+  { id: "mysql", title: "MySQL", hint: "wizard.svc.relational", group: "wizard.group.db" },
+  { id: "mongodb", title: "MongoDB", hint: "wizard.svc.document", group: "wizard.group.db" },
+  { id: "redis", title: "Redis", hint: "wizard.svc.cache", group: "wizard.group.cache" },
+  { id: "rabbitmq", title: "RabbitMQ", hint: "wizard.svc.queue", group: "wizard.group.cache" },
+  { id: "adminer", title: "Adminer", hint: "wizard.svc.adminer", group: "wizard.group.dev" },
+  { id: "mailhog", title: "MailHog", hint: "wizard.svc.mailhog", group: "wizard.group.dev" },
+];
 
-const STEPS = ["Projeto", "Tecnologia", "Serviços", "Revisar e criar"];
+const STEP_KEYS: TranslationKey[] = [
+  "wizard.step.project",
+  "wizard.step.technology",
+  "wizard.step.services",
+  "wizard.step.review",
+];
 
 type Starter = "clean" | FrameworkId;
-const STARTERS: Record<StackId, { id: Starter; title: string; hint: string }[]> = {
+type StarterOption = { id: Starter; title: string | TranslationKey; translateTitle?: boolean; hint: TranslationKey };
+const CLEAN = "wizard.starter.clean" as const;
+const STARTERS: Record<StackId, StarterOption[]> = {
   nodejs: [
-    { id: "clean", title: "Projeto limpo", hint: "Servidor Express mínimo, só o essencial." },
-    { id: "vite-react", title: "Vite + React", hint: "Instalador oficial (create-vite), com TypeScript." },
-    { id: "vite-vue", title: "Vite + Vue", hint: "Instalador oficial (create-vite), com TypeScript." },
+    { id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.node.clean" },
+    { id: "vite-react", title: "Vite + React", hint: "wizard.starter.vite" },
+    { id: "vite-vue", title: "Vite + Vue", hint: "wizard.starter.vite" },
   ],
   "spring-boot": [
-    { id: "clean", title: "Projeto limpo", hint: "Spring Boot com Maven e dois endpoints de exemplo." },
+    { id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.spring.clean" },
   ],
   python: [
-    { id: "clean", title: "Projeto limpo", hint: "FastAPI ou Flask mínimo." },
-    { id: "django", title: "Django", hint: "Instalador oficial (django-admin startproject)." },
+    { id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.python.clean" },
+    { id: "django", title: "Django", hint: "wizard.starter.django" },
   ],
-  laravel: [
-    { id: "laravel", title: "Laravel", hint: "Instalador oficial (composer create-project)." },
-  ],
+  laravel: [{ id: "laravel", title: "Laravel", hint: "wizard.starter.laravel" }],
 };
 
 function suggestName(path: string) {
@@ -128,6 +105,7 @@ export function Assistant({
   path: string;
   setPath: (value: string) => void;
 }) {
+  const { t } = useI18n();
   const [step, setStep] = useState(0);
   const [suggestions, setSuggestions] = useState<StackSuggestion[]>([]);
   const [stack, setStack] = useState<StackId | null>(null);
@@ -193,7 +171,7 @@ export function Assistant({
     setBusy("detect");
     setError("");
     try {
-      const found = await invoke<StackSuggestion[]>("detect_stacks", { path: value });
+      const found = await call<StackSuggestion[]>("detect_stacks", { path: value });
       setSuggestions(found);
       setNewProject(false);
       if (found.length) {
@@ -201,7 +179,7 @@ export function Assistant({
         chooseStack(found[0].stack, found);
       } else {
         setStack(null);
-        setEmptyFolder(await invoke<boolean>("inspect_folder", { path: value }));
+        setEmptyFolder(await call<boolean>("inspect_folder", { path: value }));
       }
     } catch (e) {
       setSuggestions([]);
@@ -233,7 +211,7 @@ export function Assistant({
 
   async function selectFolder() {
     try {
-      const picked = await open({ directory: true, multiple: false, title: "Selecionar projeto" });
+      const picked = await open({ directory: true, multiple: false, title: t("app.dialog.selectProject") });
       if (typeof picked === "string") {
         setPath(picked);
         setEmptyFolder(false);
@@ -259,7 +237,7 @@ export function Assistant({
   async function review() {
     const body = request();
     if (!body) {
-      setError("Revise a porta informada.");
+      setError(t("wizard.error.port"));
       return;
     }
     setBusy("preview");
@@ -267,7 +245,7 @@ export function Assistant({
     try {
       if (isFramework && !scaffold?.success) {
         setScaffoldPlan(
-          await invoke<ScaffoldPlan>("scaffold_plan", {
+          await call<ScaffoldPlan>("scaffold_plan", {
             request: {
               path: body.path,
               framework: starter,
@@ -281,7 +259,7 @@ export function Assistant({
         setStep(3);
         return;
       }
-      const generated = await invoke<GeneratePlan>("preview_docker_setup", { request: body });
+      const generated = await call<GeneratePlan>("preview_docker_setup", { request: body });
       setPlan(generated);
       setSelected(generated.files.filter((f) => !f.exists).map((f) => f.name));
       setActive(generated.files[0]?.name ?? "");
@@ -302,7 +280,7 @@ export function Assistant({
     setError("");
     setScaffold(null);
     try {
-      const report = await invoke<ScaffoldReport>("scaffold_run", {
+      const report = await call<ScaffoldReport>("scaffold_run", {
         request: {
           path: body.path,
           framework: starter,
@@ -312,7 +290,7 @@ export function Assistant({
       });
       setScaffold(report);
       if (report.success) {
-        const generated = await invoke<GeneratePlan>("preview_docker_setup", { request: body });
+        const generated = await call<GeneratePlan>("preview_docker_setup", { request: body });
         setPlan(generated);
         setSelected(generated.files.filter((f) => !f.exists).map((f) => f.name));
         setActive(generated.files[0]?.name ?? "");
@@ -344,7 +322,7 @@ export function Assistant({
   async function openIn(id: string) {
     setError("");
     try {
-      await invoke("open_in_ide", { id, path });
+      await call("open_in_ide", { id, path });
       setOpened(id);
     } catch (e) {
       setError(message(e));
@@ -354,7 +332,7 @@ export function Assistant({
   async function reveal() {
     setError("");
     try {
-      await invoke("reveal_folder", { path });
+      await call("reveal_folder", { path });
       setOpened("folder");
     } catch (e) {
       setError(message(e));
@@ -367,7 +345,7 @@ export function Assistant({
     setBusy("apply");
     setError("");
     try {
-      const report = await invoke<ApplyReport>("apply_docker_setup", {
+      const report = await call<ApplyReport>("apply_docker_setup", {
         // The seed and ports come from the preview, so the written files are identical.
         request: { ...body, seed: plan?.seed, ports: plan?.ports },
         files: selected,
@@ -375,7 +353,7 @@ export function Assistant({
       setResult(report);
       if (report.written.length) {
         setOpened("");
-        setIdes(await invoke<IdeInfo[]>("detect_ides").catch(() => []));
+        setIdes(await call<IdeInfo[]>("detect_ides").catch(() => []));
       }
     } catch (e) {
       setError(message(e));
@@ -398,12 +376,13 @@ export function Assistant({
   }, [path, stack, step]);
 
   const grouped = useMemo(() => {
-    const groups = new Map<string, typeof SERVICES>();
+    const groups = new Map<TranslationKey, typeof SERVICES>();
     for (const service of SERVICES) {
       groups.set(service.group, [...(groups.get(service.group) ?? []), service]);
     }
     return [...groups.entries()];
   }, []);
+  const stepLabel = (n: number) => t("wizard.stepOf", { n });
 
   const canContinue =
     step === 0 ? !!path.trim() && !!stack : step === 1
@@ -414,15 +393,15 @@ export function Assistant({
 
   return (
     <div className="wizard">
-      <ol className="wizard-steps" aria-label="Etapas do assistente">
-        {STEPS.map((label, index) => (
+      <ol className="wizard-steps" aria-label={t("wizard.steps.aria")}>
+        {STEP_KEYS.map((labelKey, index) => (
           <li
-            key={label}
+            key={labelKey}
             className={index === step ? "current" : index < step ? "done" : ""}
             aria-current={index === step ? "step" : undefined}
           >
             <span>{index < step ? <Check size={14} aria-hidden="true" /> : index + 1}</span>
-            {label}
+            {t(labelKey)}
           </li>
         ))}
       </ol>
@@ -431,22 +410,21 @@ export function Assistant({
         <div className="feedback error" role="alert">
           <AlertTriangle size={19} aria-hidden="true" />
           <div>
-            <strong>Não foi possível continuar</strong>
+            <strong>{t("wizard.error.title")}</strong>
             <p>{error}</p>
           </div>
         </div>
       )}
 
       {step === 0 && (
-        <Panel title="Qual projeto você quer colocar no Docker?" eyebrow="PASSO 1 DE 4">
+        <Panel title={t("wizard.s1.title")} eyebrow={stepLabel(1)}>
           <p className="section-description">
-            Escolha a pasta do projeto. O AutoDock lê apenas os arquivos de configuração para
-            sugerir a tecnologia, sem executar nada do seu código.
+            {t("wizard.s1.body")}
           </p>
           <div className="path-control">
             <FolderOpen size={18} aria-hidden="true" />
             <input
-              aria-label="Pasta do projeto para o Docker"
+              aria-label={t("wizard.s1.pathAria")}
               value={path}
               onChange={(e) => {
                 setPath(e.target.value);
@@ -458,43 +436,44 @@ export function Assistant({
                 setScaffoldPlan(null);
                 setPlan(null);
               }}
-              placeholder="Selecione uma pasta ou informe o caminho absoluto"
+              placeholder={t("projects.path.placeholder")}
             />
             <button type="button" className="button secondary" onClick={() => void selectFolder()} disabled={!!busy}>
-              Selecionar pasta
+              {t("projects.selectFolder")}
             </button>
           </div>
           {busy === "detect" && (
             <p className="field-hint">
-              <LoaderCircle className="spin" size={13} aria-hidden="true" /> Procurando a tecnologia do projeto…
+              <LoaderCircle className="spin" size={13} aria-hidden="true" /> {t("wizard.s1.detecting")}
             </p>
           )}
           {!busy && path.trim() && !suggestions.length && !emptyFolder && !error && (
             <p className="field-hint">
-              Nenhuma tecnologia reconhecida automaticamente. Você ainda pode escolher uma no próximo passo.
+              {t("wizard.s1.none")}
             </p>
           )}
           {!busy && emptyFolder && (
             <div className="empty-folder" role="status">
               <Sparkles size={22} aria-hidden="true" />
               <div>
-                <strong>Esta pasta está vazia.</strong>
+                <strong>{t("wizard.s1.empty.title")}</strong>
                 <p>
-                  Quer que o AutoDock crie um projeto novo aqui? Ele monta um projeto inicial
-                  mínimo, já pronto para rodar no Docker.
+                  {t("wizard.s1.empty.body")}
                 </p>
               </div>
               <button type="button" className="button primary" onClick={startNewProject}>
-                Criar projeto novo
+                {t("wizard.s1.empty.button")}
               </button>
             </div>
           )}
           {suggestions.length > 0 && (
             <p className="wizard-detected">
-              <CheckCircle2 size={16} aria-hidden="true" /> Encontramos:{" "}
-              {suggestions
-                .map((s) => `${STACKS.find((x) => x.id === s.stack)?.title} (${s.evidence})`)
-                .join(", ")}
+              <CheckCircle2 size={16} aria-hidden="true" />{" "}
+              {t("wizard.s1.found", {
+                list: suggestions
+                  .map((s) => `${STACKS.find((x) => x.id === s.stack)?.title} (${s.evidence})`)
+                  .join(", "),
+              })}
             </p>
           )}
         </Panel>
@@ -502,10 +481,10 @@ export function Assistant({
 
       {step === 1 && (
         <Panel
-          title={newProject ? "Com que tecnologia você quer criar o projeto?" : "Como o projeto é feito?"}
-          eyebrow="PASSO 2 DE 4"
+          title={newProject ? t("wizard.s2.titleNew") : t("wizard.s2.titleExisting")}
+          eyebrow={stepLabel(2)}
         >
-          <div className="choice-grid" role="radiogroup" aria-label="Tecnologia">
+          <div className="choice-grid" role="radiogroup" aria-label={t("wizard.s2.techAria")}>
             {STACKS.map((s) => (
               <button
                 key={s.id}
@@ -516,8 +495,8 @@ export function Assistant({
                 onClick={() => chooseStack(s.id)}
               >
                 <strong>{s.title}</strong>
-                <span>{s.hint}</span>
-                {detected(s.id) && <Badge tone="green">Detectado</Badge>}
+                <span>{t(s.hint)}</span>
+                {detected(s.id) && <Badge tone="green">{t("wizard.s2.detected")}</Badge>}
               </button>
             ))}
           </div>
@@ -525,7 +504,7 @@ export function Assistant({
             <>
               <div className="question-grid">
                 <label className="question">
-                  <span>Nome do projeto</span>
+                  <span>{t("wizard.s2.name.label")}</span>
                   <input
                     value={projectName}
                     onChange={(e) => setProjectName(e.target.value.toLowerCase())}
@@ -533,13 +512,13 @@ export function Assistant({
                   />
                   <small>
                     {validName(projectName)
-                      ? "Usado nos arquivos do projeto. Os arquivos são criados na pasta escolhida."
-                      : "Use letras minúsculas, números e hífen, começando por uma letra."}
+                      ? t("wizard.s2.name.ok")
+                      : t("wizard.s2.name.bad")}
                   </small>
                 </label>
               </div>
-              <p className="field-label">Como começar?</p>
-              <div className="choice-grid" role="radiogroup" aria-label="Como começar">
+              <p className="field-label">{t("wizard.s2.how")}</p>
+              <div className="choice-grid" role="radiogroup" aria-label={t("wizard.s2.howAria")}>
                 {STARTERS[stack!].map((option) => (
                   <button
                     key={option.id}
@@ -554,9 +533,9 @@ export function Assistant({
                       setScaffoldPlan(null);
                     }}
                   >
-                    <strong>{option.title}</strong>
-                    <span>{option.hint}</span>
-                    {option.id !== "clean" && <Badge tone="blue">Instalador oficial</Badge>}
+                    <strong>{option.translateTitle ? t(option.title as TranslationKey) : option.title}</strong>
+                    <span>{t(option.hint)}</span>
+                    {option.id !== "clean" && <Badge tone="blue">{t("wizard.s2.official")}</Badge>}
                   </button>
                 ))}
               </div>
@@ -565,7 +544,7 @@ export function Assistant({
           {meta && (
             <div className="question-grid">
               <label className="question">
-                <span>Porta da aplicação</span>
+                <span>{t("wizard.s2.port.label")}</span>
                 <input
                   inputMode="numeric"
                   value={port}
@@ -574,10 +553,10 @@ export function Assistant({
                     setPlan(null);
                   }}
                 />
-                <small>Porta preferida. Se estiver ocupada ou reservada por outro projeto, o AutoDock escolhe a próxima livre.</small>
+                <small>{t("wizard.s2.port.hint")}</small>
               </label>
               <label className="question">
-                <span>{meta.versionLabel}</span>
+                <span>{t(meta.versionLabel)}</span>
                 <select
                   value={version}
                   onChange={(e) => {
@@ -593,7 +572,7 @@ export function Assistant({
               {stack === "nodejs" && (
                 <>
                   <label className="question">
-                    <span>Gerenciador de pacotes</span>
+                    <span>{t("wizard.s2.pm")}</span>
                     <select value={packageManager} onChange={(e) => setPackageManager(e.target.value as PackageManager)}>
                       <option>npm</option>
                       <option>pnpm</option>
@@ -602,7 +581,7 @@ export function Assistant({
                   </label>
                   {!newProject && (
                   <label className="question">
-                    <span>Script que inicia o app</span>
+                    <span>{t("wizard.s2.script.label")}</span>
                     {nodeScripts.length ? (
                       <select value={startScript} onChange={(e) => setStartScript(e.target.value)}>
                         {nodeScripts.map((s) => (
@@ -612,7 +591,7 @@ export function Assistant({
                     ) : (
                       <input value={startScript} onChange={(e) => setStartScript(e.target.value)} />
                     )}
-                    <small>Será executado como “{packageManager} run {startScript || "start"}”.</small>
+                    <small>{t("wizard.s2.script.hint", { pm: packageManager, script: startScript || "start" })}</small>
                   </label>
                   )}
                 </>
@@ -620,7 +599,7 @@ export function Assistant({
               {stack === "python" && starter === "clean" && (
                 <>
                   <label className="question">
-                    <span>Framework</span>
+                    <span>{t("wizard.s2.framework")}</span>
                     <select value={framework} onChange={(e) => setFramework(e.target.value as PythonFramework)}>
                       <option value="fastapi">FastAPI</option>
                       {!newProject && <option value="django">Django</option>}
@@ -629,13 +608,13 @@ export function Assistant({
                   </label>
                   {framework !== "django" && !newProject && (
                     <label className="question">
-                      <span>Módulo da aplicação</span>
+                      <span>{t("wizard.s2.module.label")}</span>
                       <input
                         value={module}
                         onChange={(e) => setModule(e.target.value)}
                         placeholder={framework === "fastapi" ? "main:app" : "app"}
                       />
-                      <small>Deixe em branco para usar o padrão.</small>
+                      <small>{t("wizard.s2.module.hint")}</small>
                     </label>
                   )}
                 </>
@@ -646,13 +625,13 @@ export function Assistant({
       )}
 
       {step === 2 && (
-        <Panel title="De que mais o projeto precisa?" eyebrow="PASSO 3 DE 4">
+        <Panel title={t("wizard.s3.title")} eyebrow={stepLabel(3)}>
           <p className="section-description">
-            Cada item vira um container ao lado da sua aplicação, já configurado e conectado. Pode pular se não precisar.
+            {t("wizard.s3.body")}
           </p>
           {grouped.map(([group, items]) => (
             <fieldset className="service-group" key={group}>
-              <legend>{group}</legend>
+              <legend>{t(group)}</legend>
               <div className="choice-grid">
                 {items.map((s) => (
                   <label key={s.id} className={`choice ${services.includes(s.id) ? "selected" : ""}`}>
@@ -662,7 +641,7 @@ export function Assistant({
                       onChange={() => toggleService(s.id)}
                     />
                     <strong>{s.title}</strong>
-                    <span>{s.hint}</span>
+                    <span>{t(s.hint)}</span>
                   </label>
                 ))}
               </div>
@@ -672,12 +651,11 @@ export function Assistant({
       )}
 
       {step === 3 && isFramework && !plan && scaffoldPlan && (
-        <Panel title={`Instalar ${scaffoldPlan.title}`} eyebrow="PASSO 4 DE 4">
+        <Panel title={t("wizard.install.title", { title: scaffoldPlan.title })} eyebrow={stepLabel(4)}>
           <p className="section-description">
-            O AutoDock vai rodar o instalador oficial dentro de um container Docker, sem instalar
-            nada no seu computador. Este é o comando exato:
+            {t("wizard.install.body")}
           </p>
-          <pre className="code-preview" aria-label="Comando que será executado">
+          <pre className="code-preview" aria-label={t("wizard.install.cmdAria")}>
             <code>{scaffoldPlan.command}</code>
           </pre>
           <div className="notice">
@@ -691,8 +669,9 @@ export function Assistant({
             <div className="feedback loading" role="status">
               <LoaderCircle className="spin" size={18} aria-hidden="true" />
               <span>
-                Instalando… {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}. Na
-                primeira vez pode levar alguns minutos (baixa imagens e dependências).
+                {t("wizard.install.running", {
+                  time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`,
+                })}
               </span>
             </div>
           )}
@@ -711,20 +690,21 @@ export function Assistant({
       )}
 
       {step === 3 && plan && (
-        <Panel title={newProject ? "Revise o projeto novo antes de criar" : "Revise antes de criar"} eyebrow="PASSO 4 DE 4">
+        <Panel title={newProject ? t("wizard.review.titleNew") : t("wizard.review.title")} eyebrow={stepLabel(4)}>
           {scaffold?.success && (
             <div className="feedback success" role="status">
               <CheckCircle2 size={18} aria-hidden="true" />
               <span>
-                Projeto criado com {scaffoldPlan?.title ?? "o instalador oficial"} em{" "}
-                {Math.max(1, Math.round(scaffold.durationMs / 1000))} s. Falta gerar os arquivos
-                Docker.
+                {t("wizard.install.done", {
+                  title: scaffoldPlan?.title ?? t("wizard.install.official"),
+                  seconds: Math.max(1, Math.round(scaffold.durationMs / 1000)),
+                })}
               </span>
             </div>
           )}
           <p className="section-description">
-            Nada foi gravado ainda. Estes arquivos serão criados em{" "}
-            <span className="mono">{displayPath(plan.project)}</span>. Arquivos que já existem nunca são sobrescritos.
+            {t("wizard.review.before")}{" "}
+            <span className="mono">{displayPath(plan.project)}</span>. {t("wizard.review.after")}
           </p>
           <ul className="file-list">
             {plan.files.map((file) => (
@@ -741,28 +721,28 @@ export function Assistant({
                   <span className="mono">{file.name}</span>
                 </label>
                 <button type="button" className="link-button" onClick={() => setActive(file.name)}>
-                  ver
+                  {t("wizard.review.view")}
                 </button>
                 <small>{file.description}</small>
                 <span className="file-badges">
-                  {file.sensitive && <Badge tone="red">Contém senhas</Badge>}
-                  {file.exists ? <Badge tone="amber">Já existe, será mantido</Badge> : <Badge tone="blue">Novo</Badge>}
+                  {file.sensitive && <Badge tone="red">{t("wizard.badge.secrets")}</Badge>}
+                  {file.exists ? <Badge tone="amber">{t("wizard.badge.exists")}</Badge> : <Badge tone="blue">{t("wizard.badge.new")}</Badge>}
                 </span>
               </li>
             ))}
           </ul>
           {!!plan.ports?.length && (
             <div className="port-box">
-              <p className="field-label">Portas no seu computador</p>
+              <p className="field-label">{t("wizard.ports.title")}</p>
               <ul className="port-list">
                 {plan.ports.map((item) => (
                   <li key={item.name} className={item.hostPort !== item.preferredPort ? "changed" : ""}>
-                    <span>{item.name === "app" ? "Aplicação" : item.name}</span>
+                    <span>{item.name === "app" ? t("wizard.ports.app") : item.name}</span>
                     <code>
                       localhost:{item.hostPort} → {item.containerPort}
                     </code>
                     {item.hostPort !== item.preferredPort && (
-                      <small>a {item.preferredPort} estava ocupada ou reservada</small>
+                      <small>{t("wizard.ports.changed", { port: item.preferredPort })}</small>
                     )}
                   </li>
                 ))}
@@ -770,7 +750,7 @@ export function Assistant({
             </div>
           )}
           {activeFile && (
-            <pre className="code-preview" aria-label={`Conteúdo de ${activeFile.name}`}>
+            <pre className="code-preview" aria-label={t("wizard.contentAria", { name: activeFile.name })}>
               <code>{activeFile.content}</code>
             </pre>
           )}
@@ -789,8 +769,8 @@ export function Assistant({
               <div>
                 <strong>
                   {result.written.length
-                    ? `${result.written.length} arquivo(s) criado(s)`
-                    : "Nenhum arquivo foi criado"}
+                    ? t("wizard.result.created", { count: result.written.length })
+                    : t("wizard.result.none")}
                 </strong>
                 {result.skipped.map((s) => (
                   <p key={s.name}>
@@ -799,7 +779,7 @@ export function Assistant({
                 ))}
                 {result.written.length > 0 && (
                   <>
-                    <p className="open-title">Abrir o projeto em:</p>
+                    <p className="open-title">{t("wizard.open.title")}</p>
                     <div className="open-actions">
                       {ides.map((ide) => (
                         <button
@@ -815,14 +795,14 @@ export function Assistant({
                       ))}
                       <button type="button" className="button secondary" onClick={() => void reveal()}>
                         <FolderSearch size={15} aria-hidden="true" />
-                        Mostrar na pasta
+                        {t("wizard.open.folder")}
                         {opened === "folder" && <Check size={14} aria-hidden="true" />}
                       </button>
                     </div>
                     {!ides.length && (
-                      <p className="field-hint">Nenhum editor conhecido foi encontrado neste computador.</p>
+                      <p className="field-hint">{t("wizard.open.noEditors")}</p>
                     )}
-                    <p>Para subir o ambiente, rode na pasta do projeto:</p>
+                    <p>{t("wizard.open.run")}</p>
                     <p className="command">
                       <code>{command}</code>
                       <button
@@ -835,12 +815,12 @@ export function Assistant({
                             .catch(() => undefined)
                         }
                       >
-                        <Copy size={13} aria-hidden="true" /> {copied ? "Copiado" : "Copiar"}
+                        <Copy size={13} aria-hidden="true" /> {copied ? t("logs.copied") : t("console.copy")}
                       </button>
                     </p>
                     {plan?.ports?.find((item) => item.name === "app") && (
                       <p>
-                        Depois, acesse{" "}
+                        {t("wizard.open.visit")}{" "}
                         <code>http://localhost:{plan.ports.find((item) => item.name === "app")!.hostPort}</code>
                       </p>
                     )}
@@ -859,7 +839,7 @@ export function Assistant({
           disabled={step === 0 || !!busy || installing}
           onClick={() => setStep((s) => s - 1)}
         >
-          <ArrowLeft size={16} aria-hidden="true" /> Voltar
+          <ArrowLeft size={16} aria-hidden="true" /> {t("wizard.back")}
         </button>
         {step < 2 && (
           <button
@@ -868,13 +848,13 @@ export function Assistant({
             disabled={!canContinue || !!busy}
             onClick={() => setStep((s) => s + 1)}
           >
-            Continuar <ArrowRight size={16} aria-hidden="true" />
+            {t("wizard.continue")} <ArrowRight size={16} aria-hidden="true" />
           </button>
         )}
         {step === 2 && (
           <button type="button" className="button primary" disabled={!!busy} onClick={() => void review()}>
             {busy === "preview" ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : null}
-            Revisar <ArrowRight size={16} aria-hidden="true" />
+            {t("wizard.review")} <ArrowRight size={16} aria-hidden="true" />
           </button>
         )}
         {step === 3 && isFramework && !plan && (
@@ -885,7 +865,7 @@ export function Assistant({
             onClick={() => void runScaffold()}
           >
             {installing ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : null}
-            {scaffold && !scaffold.success ? "Tentar de novo" : "Instalar e continuar"}
+            {scaffold && !scaffold.success ? t("wizard.install.retry") : t("wizard.install.go")}
           </button>
         )}
         {step === 3 && plan && !result && (
@@ -896,7 +876,7 @@ export function Assistant({
             onClick={() => void apply()}
           >
             {busy === "apply" ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : null}
-            Criar {selected.length} arquivo(s)
+            {t("wizard.create", { count: selected.length })}
           </button>
         )}
       </div>

@@ -3,6 +3,7 @@ import qrcode from "qrcode-generator";
 import { Check, Copy, GitPullRequest, HeartHandshake, Info, Star } from "lucide-react";
 import { Panel, Badge } from "../components/ui";
 import { CONTRIBUTION } from "../contribution";
+import { useI18n } from "../i18n";
 import { pixPayload } from "../pix";
 
 function QrCode({ value, label }: { value: string; label: string }) {
@@ -39,6 +40,7 @@ function QrCode({ value, label }: { value: string; label: string }) {
 }
 
 export function Contribute() {
+  const { t } = useI18n();
   const [amount, setAmount] = useState<number | undefined>();
   const [custom, setCustom] = useState("");
   const [copied, setCopied] = useState<"pix" | "repo" | null>(null);
@@ -79,26 +81,30 @@ export function Contribute() {
     <>
       <div className="contribute-grid">
         <Panel
-          title="Contribua com um PIX"
-          eyebrow="APOIE O PROJETO"
+          title={t("contribute.pix.title")}
+          eyebrow={t("contribute.pix.eyebrow")}
           action={<HeartHandshake size={20} aria-hidden="true" />}
         >
           <p className="section-description">
-            O AutoDock é open source (Apache-2.0) e gratuito. Se ele economiza o seu tempo, uma
-            contribuição voluntária ajuda a manter e evoluir o projeto. Nenhum recurso depende
-            dela.
+            {t("contribute.pix.body")}
           </p>
+          <p className="field-hint">{t("contribute.pix.what")}</p>
           {payload ? (
             <div className="pix-box">
               <div className="qr-wrap">
                 <QrCode
                   value={payload}
-                  label={`QR Code PIX para ${CONTRIBUTION.receiverName}${amount ? `, valor R$ ${amount.toFixed(2)}` : ", valor livre"}`}
+                  label={t("contribute.qr.aria", {
+                    name: CONTRIBUTION.receiverName,
+                    amount: amount
+                      ? t("contribute.amount.value", { value: amount.toFixed(2) })
+                      : t("contribute.amount.free"),
+                  })}
                 />
               </div>
               <div className="pix-side">
-                <p className="field-label">Valor da contribuição</p>
-                <div className="amounts" role="group" aria-label="Valor">
+                <p className="field-label">{t("contribute.amount.label")}</p>
+                <div className="amounts" role="group" aria-label={t("contribute.amount.group")}>
                   <button
                     type="button"
                     className={`chip ${amount === undefined && !custom ? "selected" : ""}`}
@@ -107,7 +113,7 @@ export function Contribute() {
                       setCustom("");
                     }}
                   >
-                    Valor livre
+                    {t("contribute.chip.free")}
                   </button>
                   {CONTRIBUTION.suggestedAmounts.map((value) => (
                     <button
@@ -125,19 +131,19 @@ export function Contribute() {
                   <input
                     className="chip-input"
                     inputMode="decimal"
-                    aria-label="Outro valor em reais"
-                    placeholder="Outro valor"
+                    aria-label={t("contribute.custom.aria")}
+                    placeholder={t("contribute.custom.placeholder")}
                     value={custom}
                     onChange={(e) => chooseCustom(e.target.value)}
                   />
                 </div>
                 <ol className="pix-steps">
-                  <li>Abra o app do seu banco e escolha pagar com PIX.</li>
-                  <li>Escaneie o QR Code ao lado, ou use o PIX copia e cola.</li>
-                  <li>Confira o recebedor e confirme.</li>
+                  <li>{t("contribute.step1")}</li>
+                  <li>{t("contribute.step2")}</li>
+                  <li>{t("contribute.step3")}</li>
                 </ol>
                 <p className="field-hint">
-                  Recebedor: <strong>{CONTRIBUTION.receiverName}</strong>
+                  {t("contribute.receiver", { name: CONTRIBUTION.receiverName })}
                 </p>
                 <button
                   type="button"
@@ -145,7 +151,7 @@ export function Contribute() {
                   onClick={() => void copy("pix", payload)}
                 >
                   {copied === "pix" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-                  {copied === "pix" ? "Código copiado" : "Copiar PIX copia e cola"}
+                  {copied === "pix" ? t("contribute.copied.pix") : t("contribute.copy.pix")}
                 </button>
               </div>
             </div>
@@ -153,44 +159,40 @@ export function Contribute() {
             <div className="notice warning" role="status">
               <Info size={20} aria-hidden="true" />
               <div>
-                <h3>Contribuição ainda não configurada</h3>
-                <p>
-                  Para ativar o QR Code, preencha <code>pixKey</code> e <code>city</code> em{" "}
-                  <code>apps/desktop/src/contribution.ts</code>.
-                </p>
+                <h3>{t("contribute.unconfigured.title")}</h3>
+                <p>{t("contribute.unconfigured.body")}</p>
               </div>
             </div>
           )}
           <p className="card-note">
-            O QR Code é gerado aqui, no seu computador, sem enviar dados a nenhum serviço. Confira
-            sempre o nome do recebedor no app do banco antes de confirmar.
+            {t("contribute.note")}
           </p>
         </Panel>
-        <Panel title="Outras formas de ajudar" eyebrow="NÃO PRECISA SER EM DINHEIRO">
+        <Panel title={t("contribute.other.title")} eyebrow={t("contribute.other.eyebrow")}>
           <ul className="help-list">
             <li>
               <Star size={18} aria-hidden="true" />
               <div>
-                <strong>Dê uma estrela no repositório</strong>
-                <p>Ajuda outras pessoas a encontrarem o AutoDock.</p>
+                <strong>{t("contribute.star.title")}</strong>
+                <p>{t("contribute.star.body")}</p>
               </div>
             </li>
             <li>
               <GitPullRequest size={18} aria-hidden="true" />
               <div>
-                <strong>Envie melhorias e relate problemas</strong>
-                <p>Issues e pull requests são muito bem-vindos. Veja o CONTRIBUTING.md.</p>
+                <strong>{t("contribute.pr.title")}</strong>
+                <p>{t("contribute.pr.body")}</p>
               </div>
             </li>
           </ul>
-          <p className="field-label">Repositório</p>
+          <p className="field-label">{t("contribute.repository")}</p>
           <p className="command">
             <code>{CONTRIBUTION.repository}</code>
             <button type="button" className="link-button" onClick={() => void copy("repo", CONTRIBUTION.repository)}>
-              <Copy size={13} aria-hidden="true" /> {copied === "repo" ? "Copiado" : "Copiar"}
+              <Copy size={13} aria-hidden="true" /> {copied === "repo" ? t("logs.copied") : t("console.copy")}
             </button>
           </p>
-          <Badge tone="blue">Licença Apache-2.0</Badge>
+          <Badge tone="blue">{t("contribute.license")}</Badge>
         </Panel>
       </div>
     </>

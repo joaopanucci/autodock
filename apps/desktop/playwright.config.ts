@@ -10,6 +10,8 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:1421",
     channel: process.env.AUTODOCK_BROWSER_CHANNEL || "msedge",
     viewport: { width: 1440, height: 1000 },
+    // Existing UI tests assert Portuguese text; i18n.spec.ts overrides this.
+    locale: "pt-BR",
     screenshot: "only-on-failure",
   },
   webServer: {

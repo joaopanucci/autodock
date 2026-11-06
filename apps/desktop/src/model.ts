@@ -1,11 +1,12 @@
+import type { Translate } from "./i18n/core.ts";
 import type { Check, Doctor, Scan, SessionProject } from "./types.ts";
 
-export const checkLabels = {
-  available: "Instalado no sistema",
-  missing: "Não encontrado",
-  timeout: "Tempo esgotado",
-  execution_error: "Erro na verificação",
-};
+/** Short status label of a check (the Engine gets its own wording when reachable). */
+export function checkLabel(check: Check, t: Translate) {
+  if (check.name === "docker-engine" && check.status === "available")
+    return t("check.engineReachable");
+  return t(`check.${check.status}`);
+}
 export const technologyNames: Record<string, string> = {
   nodejs: "Node.js",
   maven: "Maven",
@@ -82,24 +83,22 @@ export function rememberProject(
     ...projects.filter((p) => key(p.scan.project) !== key(entry.scan.project)),
   ];
 }
-export function checkSummary(check: Check) {
+export function checkSummary(check: Check, t: Translate) {
   // xcode-select prints a directory, not a version. Preserve the raw evidence.
   return (
-    (check.stdout || check.stderr).split(/\r?\n/)[0] || "Sem versão informada"
+    (check.stdout || check.stderr).split(/\r?\n/)[0] || t("check.noVersion")
   );
 }
-export function recommendation(check: Check) {
+export function recommendation(check: Check, t: Translate) {
   if (check.status === "missing")
-    return "Confira o PATH e a instalação. A busca não confirma que a ferramenta esteja ausente da máquina.";
+    return t("rec.missing");
   if (check.status === "timeout")
-    return "A ferramenta não respondeu no prazo. Verifique seu estado e repita o diagnóstico; timeout não confirma ausência.";
+    return t("rec.timeout");
   if (check.status === "execution_error")
     return check.name === "docker-engine"
-      ? "O Engine não pôde ser consultado. Confira o contexto, a conexão e as permissões do Docker; a causa não foi confirmada."
-      : "Confira a saída da verificação. Um erro de execução não confirma incompatibilidade ou ausência.";
-  return check.name === "docker-engine"
-    ? "O Engine respondeu à consulta. Nenhum container foi alterado."
-    : "A verificação respondeu com sucesso. Compatibilidade depende dos requisitos de cada projeto.";
+      ? t("rec.engineError")
+      : t("rec.error");
+  return check.name === "docker-engine" ? t("rec.engineOk") : t("rec.ok");
 }
 
 export type Compatibility = {
@@ -113,6 +112,7 @@ export type Compatibility = {
 export function compatibility(
   scan: Scan,
   doctor: Doctor | null,
+  t: Translate,
 ): Compatibility[] {
   return (scan.findings ?? [])
     .filter((f) => f.kind === "runtime")
@@ -146,10 +146,10 @@ export function compatibility(
         status,
         reason:
           status === "incompatible"
-            ? "A versão exata declarada difere da versão instalada verificada."
+            ? t("compat.reason.incompatible")
             : status === "matches"
-              ? "A versão instalada corresponde à declaração exata."
-              : "Comparação não realizada. Nesta etapa, apenas engines.node com versão exata x.y.z e resposta Node válida são comparados; ranges e propriedades permanecem literais.",
+              ? t("compat.reason.matches")
+              : t("compat.reason.unverified"),
       };
     });
 }

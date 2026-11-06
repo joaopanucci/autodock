@@ -127,8 +127,9 @@ fn next_free(
             candidate + 1
         };
     }
-    Err(format!(
-        "Não foi encontrada uma porta livre a partir da {preferred}."
+    Err(tr!(
+        "Não foi encontrada uma porta livre a partir da {preferred}.",
+        "No free port was found starting from {preferred}."
     ))
 }
 
@@ -186,7 +187,12 @@ fn validate_given_with(
     given: &[PortAssignment],
     free: &dyn Fn(u16) -> bool,
 ) -> Result<Vec<PortAssignment>, String> {
-    let mismatch = || "As portas não correspondem ao plano. Gere o preview novamente.".to_string();
+    let mismatch = || {
+        tr!(
+            "As portas não correspondem ao plano. Gere o preview novamente.",
+            "The ports do not match the plan. Generate the preview again."
+        )
+    };
     if given.len() != wanted.len() {
         return Err(mismatch());
     }
@@ -203,8 +209,9 @@ fn validate_given_with(
             return Err(mismatch());
         }
         if taken.contains(&item.host_port) || !free(item.host_port) {
-            return Err(format!(
+            return Err(tr!(
                 "A porta {} deixou de estar livre. Gere o preview novamente.",
+                "Port {} is no longer free. Generate the preview again.",
                 item.host_port
             ));
         }
@@ -338,7 +345,11 @@ mod tests {
         // a port that stopped being free is reported
         let busy = |p: u16| p != good[1].host_port;
         let error = validate_given_with(home.path(), "/p/a", &wanted(), &good, &busy).unwrap_err();
-        assert!(error.contains("deixou de estar livre"), "{error}");
+        assert!(error.contains("no longer free"), "{error}");
+        let portuguese = crate::i18n::with_lang(crate::i18n::Lang::Pt, || {
+            validate_given_with(home.path(), "/p/a", &wanted(), &good, &busy).unwrap_err()
+        });
+        assert!(portuguese.contains("deixou de estar livre"), "{portuguese}");
         // tampering: wrong count, wrong container port, duplicate host ports, port 0
         assert!(
             validate_given_with(home.path(), "/p/a", &wanted(), &good[..1], &|_| true).is_err()

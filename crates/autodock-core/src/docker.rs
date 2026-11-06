@@ -56,8 +56,9 @@ fn parse_containers(output: &str) -> Result<DockerContainersReport, String> {
             || field(&item, "Names").trim().is_empty()
             || !identities.insert(field(&item, "ID"))
         {
-            return Err(format!(
+            return Err(tr!(
                 "Resposta Docker sem identidade válida ou duplicada na linha {}",
+                "Docker answer without a valid or unique identity at line {}",
                 index + 1
             ));
         }
@@ -103,9 +104,11 @@ pub fn list_docker_containers() -> Result<DockerContainersReport, String> {
     );
 
     if result.status != ToolStatus::Available {
-        return Err(format!(
-            "Consulta Docker indisponivel: {} {}",
-            result.detail, result.stderr
+        return Err(tr!(
+            "Consulta Docker indisponível: {} {}",
+            "Docker query unavailable: {} {}",
+            result.detail,
+            result.stderr
         ));
     }
 

@@ -8,6 +8,10 @@ import {
   recommendation,
   checkSummary,
 } from "../src/model.ts";
+import { translate } from "../src/i18n/core.ts";
+
+const t = (key, params) => translate("pt", key, params);
+const tEn = (key, params) => translate("en", key, params);
 
 const scan = (findings = []) => ({
   schemaVersion: 1,
@@ -83,11 +87,11 @@ test("rescanning replaces a Windows project, but macOS case differences remain d
 });
 test("confirms only exact Node mismatch backed by an available check", () => {
   assert.equal(
-    compatibility(scan([runtime("20.0.0")]), doctor([check()]))[0].status,
+    compatibility(scan([runtime("20.0.0")]), doctor([check()]), t)[0].status,
     "incompatible",
   );
   assert.equal(
-    compatibility(scan([runtime("22.0.0")]), doctor([check()]))[0].status,
+    compatibility(scan([runtime("22.0.0")]), doctor([check()]), t)[0].status,
     "matches",
   );
 });
@@ -102,7 +106,7 @@ test("ranges, prereleases, references and malformed versions remain unverified",
     "*",
   ]) {
     assert.equal(
-      compatibility(scan([runtime(value)]), doctor([check()]))[0].status,
+      compatibility(scan([runtime(value)]), doctor([check()]), t)[0].status,
       "unverified",
     );
   }
@@ -110,7 +114,7 @@ test("ranges, prereleases, references and malformed versions remain unverified",
 test("missing, timeout, execution failure, malformed output and no diagnostic do not prove incompatibility", () => {
   for (const status of ["missing", "timeout", "execution_error"])
     assert.equal(
-      compatibility(scan([runtime("20.0.0")]), doctor([check(status)]))[0]
+      compatibility(scan([runtime("20.0.0")]), doctor([check(status)]), t)[0]
         .status,
       "unverified",
     );
@@ -118,11 +122,12 @@ test("missing, timeout, execution failure, malformed output and no diagnostic do
     compatibility(
       scan([runtime("20.0.0")]),
       doctor([check("available", "unknown")]),
+      t,
     )[0].status,
     "unverified",
   );
   assert.equal(
-    compatibility(scan([runtime("20.0.0")]), null)[0].status,
+    compatibility(scan([runtime("20.0.0")]), null, t)[0].status,
     "unverified",
   );
 });
@@ -131,18 +136,28 @@ test("Java target declarations are not compared against unrelated installed tool
     compatibility(
       scan([{ ...runtime("17"), name: "maven.compiler.target" }]),
       doctor([check()]),
+      t,
     )[0].status,
     "unverified",
   );
 });
 test("recommendations distinguish uncertainty and never declare Docker stopped from an error", () => {
-  assert.match(recommendation(check("timeout")), /não confirma ausência/);
+  assert.match(recommendation(check("timeout"), t), /não confirma ausência/);
   assert.match(
-    recommendation({ ...check("execution_error"), name: "docker-engine" }),
+    recommendation({ ...check("execution_error"), name: "docker-engine" }, t),
     /causa não foi confirmada/,
   );
-  assert.match(recommendation(check("missing")), /não confirma/);
+  assert.match(recommendation(check("missing"), t), /não confirma/);
 });
 test("a missing version is shown explicitly without inventing a version", () => {
-  assert.equal(checkSummary(check("available", "")), "Sem versão informada");
+  assert.equal(checkSummary(check("available", ""), t), "Sem versão informada");
+});
+
+test("model helpers speak the selected language", () => {
+  assert.match(recommendation(check("timeout"), tEn), /does not confirm absence/);
+  assert.equal(checkSummary(check("available", ""), tEn), "No version reported");
+  assert.match(
+    compatibility(scan([runtime("20.0.0")]), null, tEn)[0].reason,
+    /Comparison not performed/,
+  );
 });

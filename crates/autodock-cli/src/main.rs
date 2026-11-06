@@ -4,11 +4,25 @@ use std::{path::PathBuf, process::ExitCode};
 #[command(
     name = "autodock",
     version,
-    about = "Análise local de projetos e geração de Docker, com preview"
+    about = "Local project analysis and Docker generation, with preview"
 )]
 struct Cli {
+    /// Language of the messages: en or pt (default: from LC_ALL/LANG, English otherwise)
+    #[arg(long, global = true)]
+    lang: Option<String>,
     #[command(subcommand)]
     command: Commands,
+}
+
+/// `say!("português", "english")` picks the message for the current language.
+macro_rules! say {
+    ($pt:literal, $en:literal $(, $($arg:tt)*)?) => {
+        if autodock_core::i18n::current() == autodock_core::i18n::Lang::Pt {
+            format!($pt $(, $($arg)*)?)
+        } else {
+            format!($en $(, $($arg)*)?)
+        }
+    };
 }
 #[derive(Subcommand)]
 enum Commands {
@@ -21,8 +35,8 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Cria um projeto com o instalador oficial do framework, dentro do Docker.
-    /// Sem --run apenas mostra o comando.
+    /// Creates a project with the framework's official installer, inside Docker.
+    /// Without --run it only shows the command.
     Scaffold {
         path: PathBuf,
         /// laravel, django, vite-react ou vite-vue
@@ -33,7 +47,7 @@ enum Commands {
         #[arg(long)]
         run: bool,
     },
-    /// Gera Dockerfile e docker-compose.yml. Sem --write apenas mostra o preview.
+    /// Generates Dockerfile and docker-compose.yml. Without --write it only previews.
     Generate {
         path: PathBuf,
         /// nodejs, spring-boot, python ou laravel
@@ -41,7 +55,7 @@ enum Commands {
         stack: String,
         #[arg(long)]
         port: u16,
-        /// postgres, mysql, mongodb, redis, rabbitmq, adminer, mailhog (repetível)
+        /// postgres, mysql, mongodb, redis, rabbitmq, adminer, mailhog (repeatable)
         #[arg(long = "service")]
         services: Vec<String>,
         #[arg(long)]
@@ -49,7 +63,7 @@ enum Commands {
         /// npm, pnpm ou yarn (Node.js)
         #[arg(long)]
         package_manager: Option<String>,
-        /// Script npm usado como comando de início (Node.js)
+        /// npm script used as the start command (Node.js)
         #[arg(long)]
         start_script: Option<String>,
         /// fastapi, django ou flask (Python)
@@ -57,10 +71,10 @@ enum Commands {
         python_framework: Option<String>,
         #[arg(long)]
         python_module: Option<String>,
-        /// Cria um projeto inicial em pasta vazia antes dos arquivos Docker
+        /// Creates a starter project in an empty folder before the Docker files
         #[arg(long = "new")]
         new_project: bool,
-        /// Grava os arquivos novos; nunca sobrescreve existentes
+        /// Writes the new files; never overwrites existing ones
         #[arg(long)]
         write: bool,
     },
@@ -94,36 +108,62 @@ fn generate_command(
         "pythonModule": python_module,
         "newProject": new_project,
     });
-    let request: autodock_core::generate::GenerateRequest =
-        serde_json::from_value(request).map_err(|e| format!("Opção inválida: {e}"))?;
+    let request: autodock_core::generate::GenerateRequest = serde_json::from_value(request)
+        .map_err(|e| say!("Opção inválida: {e}", "Invalid option: {e}"))?;
     let plan = autodock_core::generate::preview(&request)?;
     if !write {
         for file in &plan.files {
             let state = if file.exists {
-                " (já existe, não será gravado)"
+                &say!(
+                    " (já existe, não será gravado)",
+                    " (already exists, will not be written)"
+                )
             } else {
                 ""
             };
             println!("===== {}{state} =====\n{}", file.name, file.content);
         }
         for note in &plan.notes {
-            eprintln!("Nota: {note}");
+            eprintln!("{}", say!("Nota: {note}", "Note: {note}"));
         }
-        eprintln!("Preview apenas. Use --write para gravar.");
+        eprintln!(
+            "{}",
+            say!(
+                "Preview apenas. Use --write para gravar.",
+                "Preview only. Use --write to write the files."
+            )
+        );
         return Ok(());
     }
     let names: Vec<String> = plan.files.iter().map(|f| f.name.clone()).collect();
     let report = autodock_core::generate::apply(&request, &names)?;
     for name in &report.written {
-        println!("Gravado: {name}");
+        println!("{}", say!("Gravado: {name}", "Written: {name}"));
     }
     for skipped in &report.skipped {
-        eprintln!("Ignorado: {} ({})", skipped.name, skipped.reason);
+        eprintln!(
+            "{}",
+            say!(
+                "Ignorado: {} ({})",
+                "Skipped: {} ({})",
+                skipped.name,
+                skipped.reason
+            )
+        );
     }
     Ok(())
 }
 fn main() -> ExitCode {
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    let lang = match cli.lang.as_deref() {
+        Some(value) => autodock_core::i18n::Lang::parse(Some(value)),
+        None => autodock_core::i18n::Lang::from_environment(),
+    };
+    autodock_core::i18n::with_lang(lang, move || run(cli.command))
+}
+
+fn run(command: Commands) -> ExitCode {
+    match command {
         Commands::Scaffold {
             path,
             framework,
@@ -137,15 +177,21 @@ fn main() -> ExitCode {
                     "projectName": name,
                 }),
             )
-            .map_err(|e| format!("Opção inválida: {e}"))
+            .map_err(|e| say!("Opção inválida: {e}", "Invalid option: {e}"))
             .and_then(|request| {
                 let plan = autodock_core::scaffold::plan(&request)?;
                 println!("{}\n{}", plan.title, plan.command);
                 for note in &plan.notes {
-                    eprintln!("Nota: {note}");
+                    eprintln!("{}", say!("Nota: {note}", "Note: {note}"));
                 }
                 if !run {
-                    eprintln!("Preview apenas. Use --run para executar.");
+                    eprintln!(
+                        "{}",
+                        say!(
+                            "Preview apenas. Use --run para executar.",
+                            "Preview only. Use --run to run it."
+                        )
+                    );
                     return Ok(true);
                 }
                 let report = autodock_core::scaffold::run(&request)?;
@@ -156,7 +202,7 @@ fn main() -> ExitCode {
                 Ok(true) => ExitCode::SUCCESS,
                 Ok(false) => ExitCode::FAILURE,
                 Err(error) => {
-                    eprintln!("Erro: {error}");
+                    eprintln!("{}", say!("Erro: {error}", "Error: {error}"));
                     ExitCode::FAILURE
                 }
             }
@@ -188,7 +234,7 @@ fn main() -> ExitCode {
         ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("Erro: {error}");
+                eprintln!("{}", say!("Erro: {error}", "Error: {error}"));
                 ExitCode::FAILURE
             }
         },
@@ -200,15 +246,21 @@ fn main() -> ExitCode {
                         serde_json::to_string_pretty(&report).expect("report serializable")
                     );
                 } else {
-                    println!("Projeto: {}", report.project);
+                    println!("{}", say!("Projeto: {}", "Project: {}", report.project));
                     if report.components.is_empty() {
-                        println!("Nenhuma tecnologia reconhecida.");
+                        println!(
+                            "{}",
+                            say!(
+                                "Nenhuma tecnologia reconhecida.",
+                                "No technology recognized."
+                            )
+                        );
                     }
                     for c in report.components {
                         println!("- {}: {} [{}]", c.path, c.technology, c.evidence.join(", "));
                     }
                     for warning in report.warnings {
-                        eprintln!("Aviso: {warning}");
+                        eprintln!("{}", say!("Aviso: {warning}", "Warning: {warning}"));
                     }
                 }
                 ExitCode::SUCCESS
@@ -217,7 +269,7 @@ fn main() -> ExitCode {
                 if json {
                     println!("{}", serde_json::json!({"error": error}));
                 } else {
-                    eprintln!("Erro: {error}");
+                    eprintln!("{}", say!("Erro: {error}", "Error: {error}"));
                 }
                 ExitCode::FAILURE
             }
@@ -245,7 +297,7 @@ fn main() -> ExitCode {
                     );
                 }
                 for note in report.notes {
-                    println!("Nota: {note}");
+                    println!("{}", say!("Nota: {note}", "Note: {note}"));
                 }
             }
             if healthy {

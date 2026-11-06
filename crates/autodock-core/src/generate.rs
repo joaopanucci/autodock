@@ -156,7 +156,11 @@ pub(crate) fn root_of(path: &str) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("{path}: {e}"))?;
     if !root.is_dir() {
-        return Err(format!("Não é diretório: {}", root.display()));
+        return Err(tr!(
+            "Não é diretório: {}",
+            "Not a directory: {}",
+            root.display()
+        ));
     }
     Ok(root)
 }
@@ -235,7 +239,10 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
         if text.contains("org.springframework.boot") {
             found.push(Suggestion {
                 stack: Stack::SpringBoot,
-                evidence: "pom.xml (referência a org.springframework.boot)".into(),
+                evidence: tr!(
+                    "pom.xml (referência a org.springframework.boot)",
+                    "pom.xml (reference to org.springframework.boot)"
+                ),
                 scripts: vec![],
                 package_manager: None,
                 python_framework: None,
@@ -315,8 +322,9 @@ fn runtime_version(stack: Stack, requested: &Option<String>) -> Result<String, S
     if allowed.contains(&version) {
         Ok(version.to_string())
     } else {
-        Err(format!(
+        Err(tr!(
             "Versão não suportada: {version}. Use: {}.",
+            "Unsupported version: {version}. Use: {}.",
             allowed.join(", ")
         ))
     }
@@ -350,13 +358,13 @@ fn service_ports(service: Service) -> &'static [(&'static str, u16, u16)] {
 
 fn display_name(service: Service) -> &'static str {
     match service {
-        Service::Postgres => "o PostgreSQL",
-        Service::Mysql => "o MySQL",
-        Service::Mongodb => "o MongoDB",
-        Service::Redis => "o Redis",
-        Service::Rabbitmq => "o RabbitMQ",
-        Service::Adminer => "o Adminer",
-        Service::Mailhog => "o MailHog",
+        Service::Postgres => "PostgreSQL",
+        Service::Mysql => "MySQL",
+        Service::Mongodb => "MongoDB",
+        Service::Redis => "Redis",
+        Service::Rabbitmq => "RabbitMQ",
+        Service::Adminer => "Adminer",
+        Service::Mailhog => "MailHog",
     }
 }
 
@@ -396,7 +404,7 @@ struct Resolved {
 
 fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
     if request.port == 0 {
-        return Err("Porta inválida.".into());
+        return Err(tr!("Porta inválida.", "Invalid port."));
     }
     let mut version = runtime_version(request.stack, &request.runtime_version)?;
     if request.stack == Stack::Laravel {
@@ -413,7 +421,10 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
                 {
                     version = required;
                 } else {
-                    return Err(format!("As dependências do projeto exigem PHP {required} ou superior. Escolha uma versão mais nova."));
+                    return Err(tr!(
+                        "As dependências do projeto exigem PHP {required} ou superior. Escolha uma versão mais nova.",
+                        "The project dependencies require PHP {required} or newer. Pick a newer version."
+                    ));
                 }
             }
         }
@@ -439,7 +450,7 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
     };
     let start_script = match &request.start_script {
         Some(script) if !valid_script(script) => {
-            return Err("Nome de script inválido.".into());
+            return Err(tr!("Nome de script inválido.", "Invalid script name."));
         }
         Some(script) => script.clone(),
         None => "start".into(),
@@ -449,18 +460,21 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         match (request.stack, framework) {
             (Stack::Laravel, _) => {
                 return Err(
-                    "Projeto novo em Laravel ainda não está disponível. Use composer create-project e depois o assistente.".into(),
+                    tr!("Projeto novo em Laravel ainda não está disponível. Use composer create-project e depois o assistente.", "New Laravel projects are not available here yet. Use composer create-project and then the assistant."),
                 )
             }
             (Stack::Python, PythonFramework::Django) => {
                 return Err(
-                    "Projeto novo em Django ainda não está disponível. Use django-admin startproject e depois o assistente.".into(),
+                    tr!("Projeto novo em Django ainda não está disponível. Use django-admin startproject e depois o assistente.", "New Django projects are not available here yet. Use django-admin startproject and then the assistant."),
                 )
             }
             _ => {}
         }
         if !folder_is_empty(&request.path)? {
-            return Err("A pasta não está vazia. Projeto novo só é criado em pasta vazia.".into());
+            return Err(tr!(
+                "A pasta não está vazia. Projeto novo só é criado em pasta vazia.",
+                "The folder is not empty. A new project is only created in an empty folder."
+            ));
         }
     }
     let module = match (&request.python_module, framework) {
@@ -469,7 +483,10 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
             _ => "app".to_string(),
         },
         (Some(module), _) if !valid_module(module) => {
-            return Err("Módulo Python inválido (use formato modulo:objeto).".into());
+            return Err(tr!(
+                "Módulo Python inválido (use formato modulo:objeto).",
+                "Invalid Python module (use the module:object format)."
+            ));
         }
         (Some(module), _) => module.clone(),
         (None, PythonFramework::Fastapi) => "main:app".into(),
@@ -479,21 +496,33 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
     match request.stack {
         _ if request.new_project => {}
         Stack::Nodejs if !regular_file(root, "package.json") => {
-            return Err("package.json não encontrado na raiz do projeto.".into());
+            return Err(tr!(
+                "package.json não encontrado na raiz do projeto.",
+                "package.json not found at the project root."
+            ));
         }
         Stack::SpringBoot if !regular_file(root, "pom.xml") => {
-            return Err("pom.xml não encontrado na raiz. Gradle ainda não é suportado.".into());
+            return Err(tr!(
+                "pom.xml não encontrado na raiz. Gradle ainda não é suportado.",
+                "pom.xml not found at the root. Gradle is not supported yet."
+            ));
         }
         Stack::Python => {
             if regular_file(root, "requirements.txt") {
             } else if regular_file(root, "pyproject.toml") {
                 python_uses_pyproject = true;
             } else {
-                return Err("requirements.txt ou pyproject.toml não encontrado na raiz.".into());
+                return Err(tr!(
+                    "requirements.txt ou pyproject.toml não encontrado na raiz.",
+                    "requirements.txt or pyproject.toml not found at the root."
+                ));
             }
         }
         Stack::Laravel if !regular_file(root, "composer.json") => {
-            return Err("composer.json não encontrado na raiz do projeto.".into());
+            return Err(tr!(
+                "composer.json não encontrado na raiz do projeto.",
+                "composer.json not found at the project root."
+            ));
         }
         _ => {}
     }
@@ -517,9 +546,10 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
             && script_runs_vite(root, &start_script_value),
         project_name: match &request.project_name {
             Some(name) if !crate::scaffold::valid_project_name(name) => {
-                return Err(
-                    "Nome do projeto inválido (use letras minúsculas, números e hífen).".into(),
-                );
+                return Err(tr!(
+                    "Nome do projeto inválido (use letras minúsculas, números e hífen).",
+                    "Invalid project name (use lowercase letters, numbers and hyphens)."
+                ));
             }
             Some(name) => name.clone(),
             None => project_name(root),
@@ -617,11 +647,12 @@ fn project_name(root: &Path) -> String {
         .to_string()
 }
 
-fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
+fn starter_files(r: &Resolved) -> Vec<(&'static str, String, String)> {
     let name = &r.project_name;
     let port = r.port;
     let host = host_port(r, "app");
-    let mut files: Vec<(&'static str, String, &'static str)> = vec![];
+    let running = tr!("está no ar", "is up and running");
+    let mut files: Vec<(&'static str, String, String)> = vec![];
     match r.stack {
         Stack::Nodejs => {
             files.push((
@@ -629,14 +660,14 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
                 format!(
                     "{{\n  \"name\": \"{name}\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {{\n    \"start\": \"node index.js\",\n    \"dev\": \"node --watch index.js\"\n  }},\n  \"dependencies\": {{\n    \"express\": \"^4.21.2\"\n  }}\n}}\n"
                 ),
-                "Manifesto do projeto Node.js com Express.",
+                tr!("Manifesto do projeto Node.js com Express.", "Node.js project manifest with Express."),
             ));
             files.push((
                 "index.js",
                 format!(
-                    "const express = require(\"express\");\n\nconst app = express();\nconst port = process.env.PORT || {port};\n\napp.get(\"/\", (_req, res) => {{\n  res.json({{ message: \"{name} está no ar\" }});\n}});\n\napp.get(\"/health\", (_req, res) => {{\n  res.json({{ status: \"ok\" }});\n}});\n\napp.listen(port, process.env.HOST || \"0.0.0.0\", () => {{\n  console.log(`Servidor em http://localhost:${{port}}`);\n}});\n"
+                    "const express = require(\"express\");\n\nconst app = express();\nconst port = process.env.PORT || {port};\n\napp.get(\"/\", (_req, res) => {{\n  res.json({{ message: \"{name} {running}\" }});\n}});\n\napp.get(\"/health\", (_req, res) => {{\n  res.json({{ status: \"ok\" }});\n}});\n\napp.listen(port, process.env.HOST || \"0.0.0.0\", () => {{\n  console.log(`Servidor em http://localhost:${{port}}`);\n}});\n"
                 ),
-                "Servidor HTTP de exemplo.",
+                tr!("Servidor HTTP de exemplo.", "Example HTTP server."),
             ));
         }
         Stack::SpringBoot => {
@@ -646,19 +677,19 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
                 format!(
                     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project xmlns=\"http://maven.apache.org/POM/4.0.0\"\n         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\">\n  <modelVersion>4.0.0</modelVersion>\n  <parent>\n    <groupId>org.springframework.boot</groupId>\n    <artifactId>spring-boot-starter-parent</artifactId>\n    <version>3.3.5</version>\n    <relativePath/>\n  </parent>\n  <groupId>com.example</groupId>\n  <artifactId>{name}</artifactId>\n  <version>0.0.1</version>\n  <name>{name}</name>\n  <properties>\n    <java.version>{java}</java.version>\n  </properties>\n  <dependencies>\n    <dependency>\n      <groupId>org.springframework.boot</groupId>\n      <artifactId>spring-boot-starter-web</artifactId>\n    </dependency>\n  </dependencies>\n  <build>\n    <plugins>\n      <plugin>\n        <groupId>org.springframework.boot</groupId>\n        <artifactId>spring-boot-maven-plugin</artifactId>\n      </plugin>\n    </plugins>\n  </build>\n</project>\n"
                 ),
-                "Projeto Maven com Spring Boot.",
+                tr!("Projeto Maven com Spring Boot.", "Maven project with Spring Boot."),
             ));
             files.push((
                 "src/main/java/com/example/app/Application.java",
                 "package com.example.app;\n\nimport org.springframework.boot.SpringApplication;\nimport org.springframework.boot.autoconfigure.SpringBootApplication;\n\n@SpringBootApplication\npublic class Application {\n    public static void main(String[] args) {\n        SpringApplication.run(Application.class, args);\n    }\n}\n".to_string(),
-                "Classe principal.",
+                tr!("Classe principal.", "Main class."),
             ));
             files.push((
                 "src/main/java/com/example/app/HelloController.java",
                 format!(
-                    "package com.example.app;\n\nimport java.util.Map;\nimport org.springframework.web.bind.annotation.GetMapping;\nimport org.springframework.web.bind.annotation.RestController;\n\n@RestController\npublic class HelloController {{\n    @GetMapping(\"/\")\n    public Map<String, String> hello() {{\n        return Map.of(\"message\", \"{name} está no ar\");\n    }}\n\n    @GetMapping(\"/health\")\n    public Map<String, String> health() {{\n        return Map.of(\"status\", \"ok\");\n    }}\n}}\n"
+                    "package com.example.app;\n\nimport java.util.Map;\nimport org.springframework.web.bind.annotation.GetMapping;\nimport org.springframework.web.bind.annotation.RestController;\n\n@RestController\npublic class HelloController {{\n    @GetMapping(\"/\")\n    public Map<String, String> hello() {{\n        return Map.of(\"message\", \"{name} {running}\");\n    }}\n\n    @GetMapping(\"/health\")\n    public Map<String, String> health() {{\n        return Map.of(\"status\", \"ok\");\n    }}\n}}\n"
                 ),
-                "Endpoints de exemplo.",
+                tr!("Endpoints de exemplo.", "Example endpoints."),
             ));
         }
         Stack::Python => {
@@ -666,27 +697,27 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
                 files.push((
                     "requirements.txt",
                     "flask==3.0.3\n".to_string(),
-                    "Dependências Python.",
+                    tr!("Dependências Python.", "Python dependencies."),
                 ));
                 files.push((
                     "app.py",
                     format!(
-                        "from flask import Flask, jsonify\n\napp = Flask(__name__)\n\n\n@app.get(\"/\")\ndef root():\n    return jsonify(message=\"{name} está no ar\")\n\n\n@app.get(\"/health\")\ndef health():\n    return jsonify(status=\"ok\")\n"
+                        "from flask import Flask, jsonify\n\napp = Flask(__name__)\n\n\n@app.get(\"/\")\ndef root():\n    return jsonify(message=\"{name} {running}\")\n\n\n@app.get(\"/health\")\ndef health():\n    return jsonify(status=\"ok\")\n"
                     ),
-                    "Aplicação Flask de exemplo.",
+                    tr!("Aplicação Flask de exemplo.", "Example Flask application."),
                 ));
             } else {
                 files.push((
                     "requirements.txt",
                     "fastapi==0.115.5\nuvicorn[standard]==0.32.1\n".to_string(),
-                    "Dependências Python.",
+                    tr!("Dependências Python.", "Python dependencies."),
                 ));
                 files.push((
                     "main.py",
                     format!(
-                        "from fastapi import FastAPI\n\napp = FastAPI(title=\"{name}\")\n\n\n@app.get(\"/\")\ndef root():\n    return {{\"message\": \"{name} está no ar\"}}\n\n\n@app.get(\"/health\")\ndef health():\n    return {{\"status\": \"ok\"}}\n"
+                        "from fastapi import FastAPI\n\napp = FastAPI(title=\"{name}\")\n\n\n@app.get(\"/\")\ndef root():\n    return {{\"message\": \"{name} {running}\"}}\n\n\n@app.get(\"/health\")\ndef health():\n    return {{\"status\": \"ok\"}}\n"
                     ),
-                    "Aplicação FastAPI de exemplo.",
+                    tr!("Aplicação FastAPI de exemplo.", "Example FastAPI application."),
                 ));
             }
         }
@@ -701,14 +732,18 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
     files.push((
         ".gitignore",
         ignore.to_string(),
-        "Arquivos que o Git deve ignorar.",
+        tr!(
+            "Arquivos que o Git deve ignorar.",
+            "Files Git should ignore."
+        ),
     ));
     files.push((
         "README.md",
-        format!(
-            "# {name}\n\nProjeto criado com o AutoDock.\n\n## Rodar com Docker\n\n```bash\ndocker compose up --build\n```\n\nDepois acesse http://localhost:{host}.\n"
+        tr!(
+                "# {name}\n\nProjeto criado com o AutoDock.\n\n## Rodar com Docker\n\n```bash\ndocker compose up --build\n```\n\nDepois acesse http://localhost:{host}.\n",
+                "# {name}\n\nProject created with AutoDock.\n\n## Run with Docker\n\n```bash\ndocker compose up --build\n```\n\nThen open http://localhost:{host}.\n"
         ),
-        "Instruções para rodar o projeto.",
+        tr!("Instruções para rodar o projeto.", "Instructions to run the project."),
     ));
     files
 }
@@ -719,6 +754,14 @@ fn json_array(items: &[String]) -> String {
 }
 
 fn dockerfile(r: &Resolved) -> String {
+    let banner_dev = tr!(
+        "# Gerado pelo AutoDock. Ambiente de desenvolvimento.",
+        "# Generated by AutoDock. Development environment."
+    );
+    let banner_maven = tr!(
+        "# Gerado pelo AutoDock. Build em duas etapas (Maven).",
+        "# Generated by AutoDock. Two-stage build (Maven)."
+    );
     let port = r.port;
     let v = &r.version;
     match r.stack {
@@ -757,7 +800,7 @@ fn dockerfile(r: &Resolved) -> String {
             }
             let cmd = json_array(&command);
             format!(
-                "# Gerado pelo AutoDock. Ambiente de desenvolvimento.\n\
+                "{banner_dev}\n\
 FROM node:{v}-alpine\n\
 {setup}WORKDIR /app\n\
 {copy}\n\
@@ -768,7 +811,7 @@ CMD {cmd}\n"
             )
         }
         Stack::SpringBoot => format!(
-            "# Gerado pelo AutoDock. Build em duas etapas (Maven).\n\
+            "{banner_maven}\n\
 FROM maven:3.9-eclipse-temurin-{v} AS build\n\
 WORKDIR /workspace\n\
 COPY pom.xml ./\n\
@@ -825,7 +868,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"/app/app.jar\"]\n"
                 format!("{install}\n")
             };
             format!(
-                "# Gerado pelo AutoDock. Ambiente de desenvolvimento.\n\
+                "{banner_dev}\n\
 FROM python:{v}-slim\n\
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n\
 WORKDIR /app\n\
@@ -855,7 +898,7 @@ CMD {cmd}\n"
             let packages = packages.join(" ");
             let extensions = extensions.join(" ");
             format!(
-                "# Gerado pelo AutoDock. Ambiente de desenvolvimento.\n\
+                "{banner_dev}\n\
 FROM php:{v}-cli\n\
 RUN apt-get update \\\n    && apt-get install -y --no-install-recommends {packages} \\\n    && docker-php-ext-install {extensions} \\\n    && rm -rf /var/lib/apt/lists/*\n\
 {redis}\
@@ -891,7 +934,11 @@ fn dockerignore(stack: Stack) -> String {
         Stack::Python => vec!["__pycache__", "*.pyc", ".venv", ".pytest_cache"],
         Stack::Laravel => vec!["vendor", "node_modules", "storage/logs"],
     });
-    format!("# Gerado pelo AutoDock.\n{}\n", lines.join("\n"))
+    tr!(
+        "# Gerado pelo AutoDock.\n{}\n",
+        "# Generated by AutoDock.\n{}\n",
+        lines.join("\n")
+    )
 }
 
 fn host_port(r: &Resolved, name: &str) -> u16 {
@@ -1081,12 +1128,14 @@ fn app_environment(r: &Resolved, pw: &Passwords) -> (Vec<(String, String)>, Vec<
 /// Content of `.env.docker` (real passwords) or of the example file (placeholders).
 fn env_content(r: &Resolved, pw: &Passwords, example: bool) -> String {
     let mut out = if example {
-        String::from(
+        tr!(
             "# Gerado pelo AutoDock. Copie para .env.docker e troque cada \"change-me\" por uma senha forte.\n# Este arquivo é só um modelo, sem segredos, e pode ser versionado.\n",
+            "# Generated by AutoDock. Copy to .env.docker and replace each \"change-me\" with a strong password.\n# This file is only a template, has no secrets and can be committed.\n"
         )
     } else {
-        String::from(
+        tr!(
             "# Gerado pelo AutoDock. Contém senhas fortes: NÃO versione este arquivo.\n# Lido pelo docker-compose.yml (env_file).\n",
+            "# Generated by AutoDock. Contains strong passwords: DO NOT commit this file.\n# Read by docker-compose.yml (env_file).\n"
         )
     };
     let (_, secret) = app_environment(r, pw);
@@ -1134,8 +1183,9 @@ fn service_block(r: &Resolved, service: Service) -> String {
 fn compose(r: &Resolved) -> String {
     let pw = passwords(r);
     let (plain, _) = app_environment(r, &pw);
-    let mut out = format!(
-        "# Gerado pelo AutoDock. Revise antes de usar.\n# Nenhuma senha fica neste arquivo: elas estão em {ENV_FILE} (não versione).\nservices:\n  app:\n    build: .\n"
+    let mut out = tr!(
+        "# Gerado pelo AutoDock. Revise antes de usar.\n# Nenhuma senha fica neste arquivo: elas estão em {ENV_FILE} (não versione).\nservices:\n  app:\n    build: .\n",
+        "# Generated by AutoDock. Review before use.\n# No password lives in this file: they are in {ENV_FILE} (do not commit).\nservices:\n  app:\n    build: .\n"
     );
     out.push_str(&format!(
         "    ports:\n      - \"{}:{}\"\n",
@@ -1201,69 +1251,92 @@ fn compose(r: &Resolved) -> String {
 }
 
 fn notes(r: &Resolved) -> Vec<String> {
-    let mut notes =
-        vec!["Nada foi gravado ainda. Revise os arquivos antes de confirmar.".to_string()];
+    let mut notes = vec![tr!(
+        "Nada foi gravado ainda. Revise os arquivos antes de confirmar.",
+        "Nothing has been written yet. Review the files before confirming."
+    )];
     if r.new_project {
-        notes.push("Um projeto inicial mínimo será criado nesta pasta vazia, já pronto para rodar no Docker.".to_string());
+        notes.push(tr!(
+            "Um projeto inicial mínimo será criado nesta pasta vazia, já pronto para rodar no Docker.",
+            "A minimal starter project will be created in this empty folder, ready to run in Docker."
+        ));
     }
     for assigned in &r.ports {
         if assigned.host_port != assigned.preferred_port {
-            let who = if assigned.name == "app" {
-                "a aplicação".to_string()
-            } else {
-                SERVICE_ORDER
-                    .iter()
-                    .find(|s| assigned.name.starts_with(name_of(**s)))
-                    .map(|s| display_name(*s).to_string())
-                    .unwrap_or_else(|| assigned.name.clone())
+            let service = SERVICE_ORDER
+                .iter()
+                .find(|s| assigned.name.starts_with(name_of(**s)))
+                .map(|s| display_name(*s));
+            let who = match (assigned.name.as_str(), service) {
+                ("app", _) => tr!("a aplicação", "the application"),
+                (_, Some(name)) => tr!("o {name}", "{name}"),
+                (other, None) => other.to_string(),
             };
-            notes.push(format!(
+            notes.push(tr!(
                 "A porta {} está em uso ou reservada por outro projeto: {who} usará a {} no seu computador (dentro do Docker continua {}).",
-                assigned.preferred_port, assigned.host_port, assigned.container_port
+                "Port {} is in use or reserved by another project: {who} will use {} on your computer (inside Docker it stays {}).",
+                assigned.preferred_port,
+                assigned.host_port,
+                assigned.container_port
             ));
         }
     }
-    notes.push(format!(
+    notes.push(tr!(
         "Depois de subir, acesse a aplicação em http://localhost:{}.",
+        "Once it is up, open the application at http://localhost:{}.",
         host_port(r, "app")
     ));
-    notes.push("Os serviços auxiliares publicam portas apenas em 127.0.0.1.".to_string());
+    notes.push(tr!(
+        "Os serviços auxiliares publicam portas apenas em 127.0.0.1.",
+        "Auxiliary services publish ports on 127.0.0.1 only."
+    ));
     match r.stack {
-        Stack::Nodejs => notes.push(format!(
+        Stack::Nodejs => notes.push(tr!(
             "A aplicação precisa escutar em 0.0.0.0 e na porta da variável PORT ({}), senão não ficará acessível fora do container.",
+            "The application must listen on 0.0.0.0 and on the port in the PORT variable ({}), otherwise it will not be reachable outside the container.",
             r.port
         )),
-        Stack::SpringBoot => notes.push(
-            "O build usa Maven e espera um único JAR executável em target/. Projetos multimódulo podem exigir ajuste.".into(),
-        ),
+        Stack::SpringBoot => notes.push(tr!(
+            "O build usa Maven e espera um único JAR executável em target/. Projetos multimódulo podem exigir ajuste.",
+            "The build uses Maven and expects a single executable JAR in target/. Multi-module projects may need adjusting."
+        )),
         Stack::Python => {
             if r.framework == PythonFramework::Fastapi {
-                notes.push("FastAPI usa uvicorn: confirme que ele está nas dependências.".into());
+                notes.push(tr!(
+                    "FastAPI usa uvicorn: confirme que ele está nas dependências.",
+                    "FastAPI uses uvicorn: make sure it is in your dependencies."
+                ));
             }
         }
-        Stack::Laravel => notes.push(
-            "Crie o .env do Laravel (copie .env.example) e rode php artisan key:generate dentro do container.".into(),
-        ),
+        Stack::Laravel => notes.push(tr!(
+            "Crie o .env do Laravel (copie .env.example) e rode php artisan key:generate dentro do container.",
+            "Create Laravel's .env (copy .env.example) and run php artisan key:generate inside the container."
+        )),
     }
     if r.services.contains(&Service::Adminer)
         && !r.services.contains(&Service::Postgres)
         && !r.services.contains(&Service::Mysql)
     {
-        notes.push("Adminer foi incluído sem banco SQL no plano.".into());
+        notes.push(tr!(
+            "Adminer foi incluído sem banco SQL no plano.",
+            "Adminer was included without a SQL database in the plan."
+        ));
     }
     if r.services.contains(&Service::Postgres) && r.services.contains(&Service::Mysql) {
-        notes.push(
-            "Com Postgres e MySQL, DATABASE_URL aponta para o Postgres; o MySQL fica em MYSQL_URL."
-                .into(),
-        );
+        notes.push(tr!(
+            "Com Postgres e MySQL, DATABASE_URL aponta para o Postgres; o MySQL fica em MYSQL_URL.",
+            "With Postgres and MySQL, DATABASE_URL points to Postgres; MySQL is in MYSQL_URL."
+        ));
     }
     if has_secrets(&r.services) {
-        notes.push(format!(
-            "Senhas fortes de 32 caracteres foram geradas agora e ficam em {ENV_FILE} (permissão restrita). Não versione esse arquivo."
+        notes.push(tr!(
+            "Senhas fortes de 32 caracteres foram geradas agora e ficam em {ENV_FILE} (permissão restrita). Não versione esse arquivo.",
+            "Strong 32-character passwords were just generated and live in {ENV_FILE} (restricted permissions). Do not commit that file."
         ));
         if !r.new_project && !r.gitignore_covers_env {
-            notes.push(format!(
-                "Adicione {ENV_FILE} ao seu .gitignore para não versionar as senhas."
+            notes.push(tr!(
+                "Adicione {ENV_FILE} ao seu .gitignore para não versionar as senhas.",
+                "Add {ENV_FILE} to your .gitignore so the passwords are not committed."
             ));
         }
     }
@@ -1289,7 +1362,7 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
         for (name, content, description) in starter_files(&resolved) {
             files.push(file(
                 name,
-                description,
+                &description,
                 content,
                 present(&root, name),
                 false,
@@ -1298,21 +1371,30 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
     }
     files.push(file(
         DOCKERFILE,
-        "Como a imagem da aplicação é construída.",
+        &tr!(
+            "Como a imagem da aplicação é construída.",
+            "How the application image is built."
+        ),
         dockerfile(&resolved),
         present(&root, DOCKERFILE),
         false,
     ));
     files.push(file(
         COMPOSE_FILE,
-        "Orquestra a aplicação e os serviços escolhidos. Não contém senhas.",
+        &tr!(
+            "Orquestra a aplicação e os serviços escolhidos. Não contém senhas.",
+            "Runs the application and the chosen services. Contains no passwords."
+        ),
         compose(&resolved),
         compose_exists,
         false,
     ));
     files.push(file(
         DOCKERIGNORE,
-        "Evita copiar arquivos desnecessários ou sensíveis para a imagem.",
+        &tr!(
+            "Evita copiar arquivos desnecessários ou sensíveis para a imagem.",
+            "Keeps unneeded or sensitive files out of the image."
+        ),
         dockerignore(resolved.stack),
         present(&root, DOCKERIGNORE),
         false,
@@ -1321,14 +1403,20 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
         let real = passwords(&resolved);
         files.push(file(
             ENV_FILE,
-            "Senhas fortes de 32 caracteres geradas agora. Não versione este arquivo.",
+            &tr!(
+                "Senhas fortes de 32 caracteres geradas agora. Não versione este arquivo.",
+                "Strong 32-character passwords generated now. Do not commit this file."
+            ),
             env_content(&resolved, &real, false),
             present(&root, ENV_FILE),
             true,
         ));
         files.push(file(
             ENV_EXAMPLE,
-            "Modelo das variáveis, sem segredos, para quem clonar o projeto.",
+            &tr!(
+                "Modelo das variáveis, sem segredos, para quem clonar o projeto.",
+                "Variable template without secrets, for whoever clones the project."
+            ),
             env_content(&resolved, &placeholder_passwords(&real), true),
             present(&root, ENV_EXAMPLE),
             false,
@@ -1363,13 +1451,16 @@ fn create_new(path: &Path, content: &str, private: bool) -> std::io::Result<()> 
 /// skipped, never overwritten.
 pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyReport, String> {
     if selected.is_empty() {
-        return Err("Nenhum arquivo selecionado.".into());
+        return Err(tr!("Nenhum arquivo selecionado.", "No file selected."));
     }
     let plan = preview(request)?;
     let root = root_of(&request.path)?;
     for name in selected {
         if !plan.files.iter().any(|f| &f.name == name) {
-            return Err(format!("Arquivo fora do plano: {name}"));
+            return Err(tr!(
+                "Arquivo fora do plano: {name}",
+                "File outside the plan: {name}"
+            ));
         }
     }
     let mut report = ApplyReport {
@@ -1383,7 +1474,10 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
         if file.exists {
             report.skipped.push(SkippedFile {
                 name: file.name.clone(),
-                reason: "Já existe; não foi sobrescrito.".into(),
+                reason: tr!(
+                    "Já existe; não foi sobrescrito.",
+                    "Already exists; not overwritten."
+                ),
             });
             continue;
         }
@@ -1392,7 +1486,10 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
             if let Err(e) = fs::create_dir_all(root.join(parent)) {
                 report.skipped.push(SkippedFile {
                     name: file.name.clone(),
-                    reason: format!("Falha ao criar pasta: {e}"),
+                    reason: tr!(
+                        "Falha ao criar pasta: {e}",
+                        "Could not create the folder: {e}"
+                    ),
                 });
                 continue;
             }
@@ -1402,12 +1499,15 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 report.skipped.push(SkippedFile {
                     name: file.name.clone(),
-                    reason: "Já existe; não foi sobrescrito.".into(),
+                    reason: tr!(
+                        "Já existe; não foi sobrescrito.",
+                        "Already exists; not overwritten."
+                    ),
                 })
             }
             Err(e) => report.skipped.push(SkippedFile {
                 name: file.name.clone(),
-                reason: format!("Falha ao gravar: {e}"),
+                reason: tr!("Falha ao gravar: {e}", "Could not write: {e}"),
             }),
         }
     }
@@ -1892,7 +1992,8 @@ mod tests {
         assert!(plan
             .notes
             .iter()
-            .any(|n| n.contains(&format!("A porta {busy} está em uso"))));
+            .any(|n| n.contains(&format!("A porta {busy} está em uso"))
+                || n.contains(&format!("Port {busy} is in use"))));
         assert!(plan
             .notes
             .iter()
@@ -1909,7 +2010,7 @@ mod tests {
                 .unwrap()
                 .notes
                 .iter()
-                .any(|n| n.contains("ao seu .gitignore"))
+                .any(|n| n.contains(".gitignore"))
         };
         assert!(advice(&project(&[("package.json", "{}")])));
         assert!(advice(&project(&[
@@ -1934,6 +2035,86 @@ mod tests {
         assert!(file(&plan, "README.md")
             .content
             .contains(&format!("http://localhost:{}", host(&plan, "app"))));
+    }
+
+    const PORTUGUESE_MARKS: &str = "áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ";
+
+    fn assert_english(text: &str, what: &str) {
+        let accented: Vec<char> = text
+            .chars()
+            .filter(|c| PORTUGUESE_MARKS.contains(*c))
+            .collect();
+        assert!(
+            accented.is_empty(),
+            "Portuguese text in English output ({what}): {accented:?}"
+        );
+    }
+
+    #[test]
+    fn english_output_has_no_portuguese_and_portuguese_output_is_still_available() {
+        use crate::i18n::{with_lang, Lang};
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy = listener.local_addr().unwrap().port();
+        for stack in [
+            Stack::Nodejs,
+            Stack::SpringBoot,
+            Stack::Python,
+            Stack::Laravel,
+        ] {
+            let dir = project(&[
+                ("package.json", "{}"),
+                ("pom.xml", "<project/>"),
+                ("requirements.txt", ""),
+                ("composer.json", "{}"),
+            ]);
+            let mut req = request(&dir, stack);
+            req.port = busy;
+            req.services = all_services();
+            let english = with_lang(Lang::En, || preview(&req).unwrap());
+            let portuguese = with_lang(Lang::Pt, || preview(&req).unwrap());
+            for note in &english.notes {
+                assert_english(note, "note");
+            }
+            for f in &english.files {
+                assert_english(&f.description, &f.name);
+                assert_english(&f.content, &f.name);
+            }
+            assert!(portuguese
+                .notes
+                .iter()
+                .any(|n| n.contains("Nada foi gravado")));
+            assert!(english
+                .notes
+                .iter()
+                .any(|n| n.contains("Nothing has been written")));
+            assert_ne!(english.notes, portuguese.notes);
+        }
+        // new projects, starters included
+        for stack in [Stack::Nodejs, Stack::SpringBoot, Stack::Python] {
+            let dir = project(&[]);
+            let mut req = request(&dir, stack);
+            req.new_project = true;
+            let english = with_lang(Lang::En, || preview(&req).unwrap());
+            for f in &english.files {
+                assert_english(&f.description, &f.name);
+                assert_english(&f.content, &f.name);
+            }
+            let portuguese = with_lang(Lang::Pt, || preview(&req).unwrap());
+            assert!(portuguese
+                .files
+                .iter()
+                .any(|f| f.content.contains("está no ar")));
+        }
+        // errors
+        let dir = project(&[]);
+        let mut req = request(&dir, Stack::Nodejs);
+        let message = |req: &GenerateRequest, lang| with_lang(lang, || preview(req).unwrap_err());
+        assert_english(&message(&req, Lang::En), "missing manifest");
+        assert!(message(&req, Lang::Pt).contains("não encontrado"));
+        req.port = 0;
+        assert_eq!(message(&req, Lang::En), "Invalid port.");
+        assert_eq!(message(&req, Lang::Pt), "Porta inválida.");
+        drop(listener);
     }
 
     #[test]

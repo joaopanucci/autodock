@@ -64,12 +64,22 @@ O AutoDock altera arquivos do usuário, então a confiança vem primeiro (veja t
 
 Cada mudança no core deve vir com testes. Para validar de verdade, gere o projeto e suba com `docker compose up --build` (a CLI ajuda: `autodock generate … --write`).
 
+## Traduções (EN / PT-BR)
+
+O app é bilíngue (inglês e português do Brasil). **Todo texto visível precisa existir nos dois idiomas.**
+
+- **Interface (React):** os textos ficam em `apps/desktop/src/i18n/pt.ts` e `en.ts`. Use `const { t } = useI18n()` e `t("chave", { param })`; plurais usam o par `chave.one` / `chave.other` com `tn("chave", n)`. O TypeScript falha se uma chave existir só em um idioma, e `npm test` confere também os parâmetros `{x}`.
+- **Núcleo (Rust):** mensagens usam `tr!("texto em português", "english text")`, com os dois textos lado a lado, então não compila sem a tradução. O idioma vem do comando (`lang`) e do `--lang` da CLI.
+- **Novo idioma:** copie `en.ts` para `<idioma>.ts`, registre em `i18n/core.ts` (`LANGUAGES`) e abra uma PR. Para o Rust, estenda `Lang` em `crates/autodock-core/src/i18n.rs`.
+- Ao mexer em textos, rode `npm --prefix apps/desktop test` e o teste de UI em inglês (`tests/ui/i18n.spec.ts`).
+
 ## Atualizando os screenshots do README
 
 ```bash
 cargo build -p autodock-cli
 npm --prefix apps/desktop run dev &
-node scripts/screenshots.mjs
+node scripts/screenshots.mjs                 # português -> docs/screenshots
+AUTODOCK_LANG=en node scripts/screenshots.mjs  # inglês -> docs/screenshots/en
 ```
 
 ## Código de conduta

@@ -49,7 +49,11 @@ pub fn scan(path: &Path) -> Result<ScanReport, String> {
         .canonicalize()
         .map_err(|e| format!("{}: {e}", path.display()))?;
     if !root.is_dir() {
-        return Err(format!("Não é diretório: {}", root.display()));
+        return Err(tr!(
+            "Não é diretório: {}",
+            "Not a directory: {}",
+            root.display()
+        ));
     }
     let mut report = ScanReport {
         schema_version: 1,
@@ -62,9 +66,10 @@ pub fn scan(path: &Path) -> Result<ScanReport, String> {
     let mut visited = 0;
     while let Some((dir, depth)) = pending.pop() {
         if visited >= MAX_DIRS {
-            report
-                .warnings
-                .push("Limite de 10000 diretórios atingido; análise parcial.".into());
+            report.warnings.push(tr!(
+                "Limite de 10000 diretórios atingido; análise parcial.",
+                "Limit of 10000 directories reached; partial analysis."
+            ));
             break;
         }
         visited += 1;
@@ -87,9 +92,11 @@ pub fn scan(path: &Path) -> Result<ScanReport, String> {
                 }
             };
             if meta.file_type().is_symlink() || !meta.is_file() {
-                report
-                    .warnings
-                    .push(format!("{}: marcador não regular ignorado", file.display()));
+                report.warnings.push(tr!(
+                    "{}: marcador não regular ignorado",
+                    "{}: non-regular marker ignored",
+                    file.display()
+                ));
                 continue;
             }
             if marker != "package.json" && marker != "pom.xml" {
@@ -164,12 +171,14 @@ pub fn scan(path: &Path) -> Result<ScanReport, String> {
                         ));
                         add("nodejs", relative);
                     }
-                    Ok(_) => report
-                        .warnings
-                        .push(format!("{relative}: esperado objeto JSON")),
-                    Err(e) => report
-                        .warnings
-                        .push(format!("{relative}: JSON inválido: {e}")),
+                    Ok(_) => report.warnings.push(tr!(
+                        "{relative}: esperado objeto JSON",
+                        "{relative}: expected a JSON object"
+                    )),
+                    Err(e) => report.warnings.push(tr!(
+                        "{relative}: JSON inválido: {e}",
+                        "{relative}: invalid JSON: {e}"
+                    )),
                 }
             } else {
                 match roxmltree::Document::parse(&text) {
@@ -219,12 +228,14 @@ pub fn scan(path: &Path) -> Result<ScanReport, String> {
                             }
                         }
                     }
-                    Ok(_) => report
-                        .warnings
-                        .push(format!("{relative}: raiz XML deve ser project")),
-                    Err(e) => report
-                        .warnings
-                        .push(format!("{relative}: XML inválido: {e}")),
+                    Ok(_) => report.warnings.push(tr!(
+                        "{relative}: raiz XML deve ser project",
+                        "{relative}: the XML root must be project"
+                    )),
+                    Err(e) => report.warnings.push(tr!(
+                        "{relative}: XML inválido: {e}",
+                        "{relative}: invalid XML: {e}"
+                    )),
                 }
             }
         }
@@ -246,9 +257,11 @@ pub fn scan(path: &Path) -> Result<ScanReport, String> {
                     if depth < MAX_DEPTH {
                         children.push((path, depth + 1));
                     } else {
-                        report
-                            .warnings
-                            .push(format!("{}: profundidade máxima atingida", path.display()));
+                        report.warnings.push(tr!(
+                            "{}: profundidade máxima atingida",
+                            "{}: maximum depth reached",
+                            path.display()
+                        ));
                     }
                 }
                 Ok(_) => {}

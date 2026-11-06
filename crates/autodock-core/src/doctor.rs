@@ -16,12 +16,12 @@ pub enum ToolStatus {
     ExecutionError,
 }
 impl ToolStatus {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Available => "Disponível",
-            Self::Missing => "Ausente",
-            Self::Timeout => "Timeout",
-            Self::ExecutionError => "Erro de execução",
+            Self::Available => tr!("Disponível", "Available"),
+            Self::Missing => tr!("Ausente", "Missing"),
+            Self::Timeout => tr!("Timeout", "Timeout"),
+            Self::ExecutionError => tr!("Erro de execução", "Execution error"),
         }
     }
 }
@@ -113,8 +113,10 @@ pub fn probe(name: &str, program: &str, args: &[&str], timeout: Duration) -> Too
         exit_code: None,
         stdout: String::new(),
         stderr: String::new(),
-        detail: "Não encontrado no PATH ou locais conhecidos; não prova ausência da instalação."
-            .into(),
+        detail: tr!(
+            "Não encontrado no PATH ou locais conhecidos; não prova ausência da instalação.",
+            "Not found in PATH or known locations; this does not prove the tool is not installed."
+        ),
         duration_ms: 0,
         truncated: false,
     };
@@ -140,9 +142,17 @@ pub fn probe(name: &str, program: &str, args: &[&str], timeout: Duration) -> Too
                     .unwrap_or(Path::new("."))
                     .join("node_modules/npm/bin/npm-cli.js");
                 if name != "npm" || !script.is_file() {
-                    return Err("Wrapper batch não suportado; executável nativo necessário.".into());
+                    return Err(tr!(
+                        "Wrapper batch não suportado; executável nativo necessário.",
+                        "Batch wrapper not supported; a native executable is required."
+                    ));
                 }
-                let node = resolve("node").ok_or("npm encontrado, mas node não resolvido")?;
+                let node = resolve("node").ok_or_else(|| {
+                    tr!(
+                        "npm encontrado, mas node não resolvido",
+                        "npm found, but node was not resolved"
+                    )
+                })?;
                 command = Command::new(node);
                 command.creation_flags(0x08000000);
                 command.arg(script);
@@ -178,12 +188,17 @@ pub fn probe(name: &str, program: &str, args: &[&str], timeout: Duration) -> Too
                     };
                     result.detail = match state {
                         Err(e) => e.to_string(),
-                        _ => format!("Prazo de {} ms excedido", timeout.as_millis()),
+                        _ => tr!(
+                            "Prazo de {} ms excedido",
+                            "Deadline of {} ms exceeded",
+                            timeout.as_millis()
+                        ),
                     };
                     if let Err(e) = child.kill() {
-                        result
-                            .detail
-                            .push_str(&format!("; falha ao encerrar grupo: {e}"));
+                        result.detail.push_str(&tr!(
+                            "; falha ao encerrar grupo: {e}",
+                            "; failed to stop the process group: {e}"
+                        ));
                     }
                     let cleanup = Instant::now();
                     while cleanup.elapsed() < Duration::from_secs(2) {
@@ -200,7 +215,10 @@ pub fn probe(name: &str, program: &str, args: &[&str], timeout: Duration) -> Too
                 > 2 * 1024 * 1024
             {
                 let _ = child.kill();
-                result.detail = "Saída excedeu 2 MiB; verificação interrompida.".into();
+                result.detail = tr!(
+                    "Saída excedeu 2 MiB; verificação interrompida.",
+                    "Output exceeded 2 MiB; check interrupted."
+                );
                 result.status = ToolStatus::ExecutionError;
                 let _ = child.try_wait();
                 break;
@@ -282,7 +300,7 @@ pub fn doctor() -> DoctorReport {
         tools.push(("xcode-tools", "xcode-select", vec!["-p"]));
     }
     DoctorReport { schema_version: 1, os: std::env::consts::OS.into(), checks: tools.into_iter().map(|(n,p,a)| probe(n,p,&a,Duration::from_secs(8))).collect(), notes: vec![
-        "Checks somente leitura; Docker CLI e acesso ao Engine são resultados distintos.".into(),
-        "MSBuild fora do PATH pode existir. O bootstrap Windows também consulta vswhere. WebView2, SDK e linker precisam de validação do build desktop.".into(),
+        tr!("Checks somente leitura; Docker CLI e acesso ao Engine são resultados distintos.", "Read-only checks; the Docker CLI and Engine access are separate results."),
+        tr!("MSBuild fora do PATH pode existir. O bootstrap Windows também consulta vswhere. WebView2, SDK e linker precisam de validação do build desktop.", "MSBuild may exist outside PATH. The Windows bootstrap also queries vswhere. WebView2, the SDK and the linker need validation by the desktop build."),
     ] }
 }

@@ -37,6 +37,7 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 - 🔌 **Sem conflito de portas.** O AutoDock testa quais portas estão livres e lembra as de outros projetos, então 10 projetos não disputam a 5432.
 - 🧰 **Sem instalar nada além do Docker.** Os instaladores oficiais dos frameworks rodam *dentro* de containers.
 - 🖥️ **Local e open source.** Seu código não sai do seu computador. Licença Apache-2.0.
+- 🌍 **Português e inglês.** A interface e as mensagens seguem o idioma do sistema e podem ser trocadas em Configurações.
 
 ## 🚀 O que ele faz
 
@@ -176,6 +177,7 @@ Detalhes em [`docs/SECURITY.md`](docs/SECURITY.md).
 Tudo que o assistente faz também está disponível no terminal (`cargo run -p autodock-cli -- …`):
 
 ```bash
+# a CLI segue o idioma do sistema; force com --lang pt ou --lang en
 # analisa um projeto e diagnostica o ambiente
 autodock scan ./meu-projeto
 autodock doctor
@@ -218,7 +220,7 @@ npm --prefix apps/desktop run tauri dev
 - [ ] Gradle e mais frameworks (Next.js, NestJS, Rails…)
 - [ ] Dockerfiles de produção (multi-stage)
 - [ ] Assinatura e notarização dos instaladores
-- [ ] Interface em inglês
+- [x] Interface em inglês e português
 
 ## 🤝 Contribuir
 
