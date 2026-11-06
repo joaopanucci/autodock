@@ -2261,3 +2261,22 @@ main:focus {
   justify-content: flex-end;
   gap: 6px;
 }
+
+/* Monitoring charts: area fill, tooltip and stats (issue #14) */
+.ad-monitor-stats {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px;
+  font-size: 12px; opacity: .75;
+}
+.ad-monitor-stats b { font-weight: 650; color: var(--text, #e9eef8); }
+.ad-monitor-plot { position: relative; }
+.ad-monitor-plot .ad-monitor-chart { outline-offset: 2px; border-radius: 8px; cursor: crosshair; }
+.ad-monitor-plot .ad-monitor-chart:focus-visible { outline: 2px solid var(--blue); }
+.ad-monitor-tooltip {
+  position: absolute; top: 4px; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 2px; pointer-events: none;
+  padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+  background: #1b2438; border: 1px solid rgba(145, 163, 190, .3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35); font-size: 13px;
+}
+.ad-monitor-tooltip small { opacity: .65; font-size: 11px; }
+.ad-monitor-caption { margin: 8px 0 0; font-size: 11px; opacity: .6; }
