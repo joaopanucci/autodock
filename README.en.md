@@ -24,6 +24,8 @@ Answer a few questions. AutoDock writes the `Dockerfile`, the `docker-compose.ym
 - **Existing project:** detects the stack from its manifests and generates `Dockerfile`, `docker-compose.yml`, `.dockerignore` and `.env.docker.example`.
 - **New project in an empty folder:** a clean starter, or the **official framework installer** (Laravel, Django, Vite + React/Vue) run *inside* Docker, so nothing but Docker has to be installed.
 - **Ready-made services:** PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer and MailHog, wired to your app with healthchecks.
+- **Strong secrets:** every service gets a random 32-character password (OS CSPRNG) stored in `.env.docker`; `docker-compose.yml` contains no passwords.
+- **No port clashes:** free host ports are picked automatically and remembered across your projects.
 - **Open in your IDE:** VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed or Sublime, whichever is installed.
 
 Supported stacks: **Node.js** (npm/pnpm/yarn, Vite), **Java/Spring Boot** (Maven), **Python** (FastAPI, Django, Flask) and **PHP/Laravel**.
@@ -36,7 +38,7 @@ The installers are **not code-signed yet**, so your OS shows a warning on first 
 
 ## Safety principles
 
-Preview before writing; never overwrites files; allowlisted inputs (no injection into Dockerfile/YAML/commands); no host shell; framework installers run in a throwaway container with only the empty folder mounted; service ports bound to `127.0.0.1`; never reads `.env` files or runs project scripts.
+Preview before writing (the previewed passwords are exactly what gets written); never overwrites files; passwords only in a private `.env.docker`; allowlisted inputs (no injection into Dockerfile/YAML/commands); no host shell; framework installers run in a throwaway container with only the empty folder mounted; service ports bound to `127.0.0.1`; never reads `.env` files or runs project scripts.
 
 ## CLI and development
 

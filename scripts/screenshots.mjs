@@ -14,23 +14,43 @@ const out = path.join(root, "docs/screenshots");
 const base = process.env.AUTODOCK_URL ?? "http://127.0.0.1:1420";
 const cli = path.join(root, "target/debug/autodock");
 
-// Arquivos Docker reais, gerados pelo próprio AutoDock para um projeto de exemplo.
-const sample = fs.mkdtempSync(path.join(os.tmpdir(), "loja-online-"));
-fs.writeFileSync(path.join(sample, "package.json"), JSON.stringify({ name: "loja-online", scripts: { dev: "node --watch index.js", start: "node index.js" } }));
-execFileSync(cli, ["generate", sample, "--stack", "nodejs", "--port", "3000", "--start-script", "start", "--service", "postgres", "--service", "redis", "--service", "adminer", "--write"], { stdio: "ignore" });
-const files = ["Dockerfile", "docker-compose.yml", ".dockerignore", ".env.docker.example"]
+// Docker files generated for real by AutoDock. Two sample projects share one port
+// registry, so the second one shows the automatic port adjustment.
+process.env.AUTODOCK_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "autodock-home-"));
+const services = ["postgres", "redis", "adminer"].flatMap((name) => ["--service", name]);
+const makeSample = (name) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, scripts: { dev: "node --watch index.js", start: "node index.js" } }));
+  execFileSync(cli, ["generate", dir, "--stack", "nodejs", "--port", "3000", "--start-script", "start", ...services, "--write"], { stdio: "ignore", env: process.env });
+  return dir;
+};
+const firstSample = makeSample("primeiro-projeto");
+const sample = makeSample("loja-online");
+const names = ["Dockerfile", "docker-compose.yml", ".dockerignore", ".env.docker", ".env.docker.example"];
+const descriptions = {
+  Dockerfile: "Como a imagem da aplicação é construída.",
+  "docker-compose.yml": "Orquestra a aplicação e os serviços escolhidos. Não contém senhas.",
+  ".dockerignore": "Evita copiar arquivos desnecessários ou sensíveis para a imagem.",
+  ".env.docker": "Senhas fortes de 32 caracteres geradas agora. Não versione este arquivo.",
+  ".env.docker.example": "Modelo das variáveis, sem segredos, para quem clonar o projeto.",
+};
+const files = names
   .filter((name) => fs.existsSync(path.join(sample, name)))
   .map((name) => ({
     name,
-    description: {
-      Dockerfile: "Como a imagem da aplicação é construída.",
-      "docker-compose.yml": "Orquestra a aplicação e os serviços escolhidos.",
-      ".dockerignore": "Evita copiar arquivos desnecessários ou sensíveis para a imagem.",
-      ".env.docker.example": "Exemplo de variáveis para senhas de desenvolvimento.",
-    }[name],
+    description: descriptions[name],
     content: fs.readFileSync(path.join(sample, name), "utf8"),
+    sensitive: name === ".env.docker",
     exists: false,
   }));
+// Real host ports taken from the generated compose file.
+const compose = fs.readFileSync(path.join(sample, "docker-compose.yml"), "utf8");
+const preferred = { app: 3000, postgres: 5432, redis: 6379, adminer: 8088 };
+const byContainer = { 3000: "app", 5432: "postgres", 6379: "redis", 8080: "adminer" };
+const ports = [...compose.matchAll(/- "(?:127\.0\.0\.1:)?(\d+):(\d+)"/g)].map(([, host, container]) => {
+  const name = byContainer[container];
+  return { name, containerPort: Number(container), hostPort: Number(host), preferredPort: preferred[name] };
+});
 
 const project = "/Users/maria/projetos/loja-online";
 const scan = {
@@ -68,7 +88,7 @@ const containers = {
 const browser = await chromium.launch({ channel: process.env.AUTODOCK_BROWSER_CHANNEL ?? "chrome" });
 const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark", locale: "pt-BR" });
 const page = await context.newPage();
-await page.addInitScript(({ scan, doctor, containers, files, project }) => {
+await page.addInitScript(({ scan, doctor, containers, files, project, ports }) => {
   window.__TAURI_INTERNALS__ = {
     transformCallback: () => 1,
     invoke: async (command) => {
@@ -79,14 +99,14 @@ await page.addInitScript(({ scan, doctor, containers, files, project }) => {
         case "list_docker_containers": return containers;
         case "detect_stacks": return [{ stack: "nodejs", evidence: "package.json", scripts: ["dev", "start"], packageManager: "npm", pythonFramework: null, vite: false }];
         case "inspect_folder": return false;
-        case "preview_docker_setup": return { schemaVersion: 1, project, files, notes: ["Nada foi gravado ainda. Revise os arquivos antes de confirmar.", "Os serviços auxiliares publicam portas apenas em 127.0.0.1."] };
+        case "preview_docker_setup": return { schemaVersion: 1, project, files, seed: "0".repeat(64), ports, notes: ["Nada foi gravado ainda. Revise os arquivos antes de confirmar.", "Senhas fortes de 32 caracteres foram geradas agora e ficam em .env.docker (permissão restrita). Não versione esse arquivo."] };
         case "apply_docker_setup": return { written: files.map((f) => f.name), skipped: [] };
         case "detect_ides": return [{ id: "vscode", label: "VS Code" }, { id: "cursor", label: "Cursor" }, { id: "intellij", label: "IntelliJ IDEA" }];
         default: throw new Error(`IPC ${command}`);
       }
     },
   };
-}, { scan, doctor, containers, files, project });
+}, { scan, doctor, containers, files, project, ports });
 
 const shot = async (name) => {
   await page.waitForTimeout(250);
@@ -135,4 +155,4 @@ await nav("Contribuir");
 await shot("10-contribuir");
 
 await browser.close();
-fs.rmSync(sample, { recursive: true, force: true });
+for (const dir of [sample, firstSample]) fs.rmSync(dir, { recursive: true, force: true });

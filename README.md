@@ -33,6 +33,8 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 - 🧭 **Guiado.** Pergunta o que importa (tecnologia, porta, versão, bancos, cache) e cuida do resto.
 - 👀 **Transparente.** Mostra cada arquivo e cada comando **antes** de qualquer alteração.
 - 🛡️ **Seguro por padrão.** Nunca sobrescreve arquivos, nunca lê o seu `.env`, nunca executa scripts do seu projeto.
+- 🔐 **Senhas fortes de verdade.** Cada serviço ganha uma senha aleatória de 32 caracteres (gerador criptográfico do sistema), guardada em `.env.docker`. O `docker-compose.yml` não contém nenhuma senha.
+- 🔌 **Sem conflito de portas.** O AutoDock testa quais portas estão livres e lembra as de outros projetos, então 10 projetos não disputam a 5432.
 - 🧰 **Sem instalar nada além do Docker.** Os instaladores oficiais dos frameworks rodam *dentro* de containers.
 - 🖥️ **Local e open source.** Seu código não sai do seu computador. Licença Apache-2.0.
 
@@ -42,7 +44,7 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 |---|---|
 | **Projeto existente** | Detecta a tecnologia lendo os manifests e gera `Dockerfile`, `docker-compose.yml`, `.dockerignore` e `.env.docker.example`. |
 | **Projeto novo, em pasta vazia** | Cria um projeto *limpo* ou usa o **instalador oficial** do framework, tudo dentro do Docker. |
-| **Serviços prontos** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog, já conectados ao app por variáveis de ambiente, com healthchecks. |
+| **Serviços prontos** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog, já conectados ao app por variáveis de ambiente, com healthchecks, **senhas fortes geradas** e **portas livres escolhidas automaticamente**. |
 | **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
 | **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
 
@@ -160,6 +162,7 @@ O AutoDock mexe nos seus arquivos, então a confiança vem primeiro:
 
 - **Preview antes de gravar.** O conteúdo é gerado no backend a partir de opções validadas; a interface nunca envia o conteúdo dos arquivos.
 - **Nunca sobrescreve.** Criação exclusiva de arquivos; symlinks não são seguidos.
+- **Senhas fora do compose.** Senhas de 32 caracteres (CSPRNG do sistema) ficam em `.env.docker`, com permissão restrita, e a pré-visualização mostra exatamente o que será gravado. O arquivo `.env.docker.example` traz só os nomes das variáveis.
 - **Entradas por lista permitida.** Portas, versões, nomes e scripts são validados, então não há injeção em Dockerfile, YAML ou linha de comando.
 - **Sem shell.** Editores e instaladores são iniciados com argumentos fixos, nunca por texto montado.
 - **Instaladores de framework isolados.** Rodam em um container descartável com **apenas** a pasta vazia montada.
