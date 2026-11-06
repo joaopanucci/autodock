@@ -11,6 +11,8 @@ pub mod doctor;
 pub use console::{execute_console_operation, ConsoleOperation, ConsoleReport};
 pub use docker::{list_docker_containers, DockerContainer, DockerContainersReport};
 mod findings;
+pub mod generate;
+pub mod ide;
 pub use findings::Finding;
 mod scan;
 pub use doctor::{doctor, DoctorReport, ToolStatus};

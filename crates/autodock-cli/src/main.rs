@@ -4,7 +4,7 @@ use std::{path::PathBuf, process::ExitCode};
 #[command(
     name = "autodock",
     version,
-    about = "Análise local de projetos, somente leitura"
+    about = "Análise local de projetos e geração de Docker, com preview"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -21,9 +21,128 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Gera Dockerfile e docker-compose.yml. Sem --write apenas mostra o preview.
+    Generate {
+        path: PathBuf,
+        /// nodejs, spring-boot, python ou laravel
+        #[arg(long)]
+        stack: String,
+        #[arg(long)]
+        port: u16,
+        /// postgres, mysql, mongodb, redis, rabbitmq, adminer, mailhog (repetível)
+        #[arg(long = "service")]
+        services: Vec<String>,
+        #[arg(long)]
+        runtime_version: Option<String>,
+        /// npm, pnpm ou yarn (Node.js)
+        #[arg(long)]
+        package_manager: Option<String>,
+        /// Script npm usado como comando de início (Node.js)
+        #[arg(long)]
+        start_script: Option<String>,
+        /// fastapi, django ou flask (Python)
+        #[arg(long)]
+        python_framework: Option<String>,
+        #[arg(long)]
+        python_module: Option<String>,
+        /// Cria um projeto inicial em pasta vazia antes dos arquivos Docker
+        #[arg(long = "new")]
+        new_project: bool,
+        /// Grava os arquivos novos; nunca sobrescreve existentes
+        #[arg(long)]
+        write: bool,
+    },
+}
+fn enum_from(value: &str) -> Result<serde_json::Value, String> {
+    Ok(serde_json::Value::String(value.to_string()))
+}
+#[allow(clippy::too_many_arguments)]
+fn generate_command(
+    path: PathBuf,
+    stack: String,
+    port: u16,
+    services: Vec<String>,
+    runtime_version: Option<String>,
+    package_manager: Option<String>,
+    start_script: Option<String>,
+    python_framework: Option<String>,
+    python_module: Option<String>,
+    new_project: bool,
+    write: bool,
+) -> Result<(), String> {
+    let request = serde_json::json!({
+        "path": path.to_string_lossy(),
+        "stack": enum_from(&stack)?,
+        "port": port,
+        "services": services,
+        "runtimeVersion": runtime_version,
+        "packageManager": package_manager,
+        "startScript": start_script,
+        "pythonFramework": python_framework,
+        "pythonModule": python_module,
+        "newProject": new_project,
+    });
+    let request: autodock_core::generate::GenerateRequest =
+        serde_json::from_value(request).map_err(|e| format!("Opção inválida: {e}"))?;
+    let plan = autodock_core::generate::preview(&request)?;
+    if !write {
+        for file in &plan.files {
+            let state = if file.exists {
+                " (já existe, não será gravado)"
+            } else {
+                ""
+            };
+            println!("===== {}{state} =====\n{}", file.name, file.content);
+        }
+        for note in &plan.notes {
+            eprintln!("Nota: {note}");
+        }
+        eprintln!("Preview apenas. Use --write para gravar.");
+        return Ok(());
+    }
+    let names: Vec<String> = plan.files.iter().map(|f| f.name.clone()).collect();
+    let report = autodock_core::generate::apply(&request, &names)?;
+    for name in &report.written {
+        println!("Gravado: {name}");
+    }
+    for skipped in &report.skipped {
+        eprintln!("Ignorado: {} ({})", skipped.name, skipped.reason);
+    }
+    Ok(())
 }
 fn main() -> ExitCode {
     match Cli::parse().command {
+        Commands::Generate {
+            path,
+            stack,
+            port,
+            services,
+            runtime_version,
+            package_manager,
+            start_script,
+            python_framework,
+            python_module,
+            new_project,
+            write,
+        } => match generate_command(
+            path,
+            stack,
+            port,
+            services,
+            runtime_version,
+            package_manager,
+            start_script,
+            python_framework,
+            python_module,
+            new_project,
+            write,
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("Erro: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Commands::Scan { path, json } => match autodock_core::scan(&path) {
             Ok(report) => {
                 if json {

@@ -38,6 +38,8 @@ export type SessionProject = { scan: Scan; analyzedAt: string };
 export type Page =
   | "overview"
   | "projects"
+  | "setup"
+  | "contribute"
   | "environment"
   | "containers"
   | "monitoring"
@@ -108,3 +110,57 @@ export type LogsReport = {
   detail: string;
   durationMs: number;
 };
+
+export type StackId = "nodejs" | "spring-boot" | "python" | "laravel";
+export type ServiceId =
+  | "postgres"
+  | "mysql"
+  | "mongodb"
+  | "redis"
+  | "rabbitmq"
+  | "adminer"
+  | "mailhog";
+export type PackageManager = "npm" | "pnpm" | "yarn";
+export type PythonFramework = "fastapi" | "django" | "flask";
+
+export type StackSuggestion = {
+  stack: StackId;
+  evidence: string;
+  scripts: string[];
+  packageManager: PackageManager | null;
+  pythonFramework: PythonFramework | null;
+};
+
+export type GenerateRequest = {
+  path: string;
+  stack: StackId;
+  port: number;
+  runtimeVersion?: string;
+  packageManager?: PackageManager;
+  startScript?: string;
+  pythonFramework?: PythonFramework;
+  pythonModule?: string;
+  services: ServiceId[];
+  newProject?: boolean;
+};
+
+export type GeneratedFile = {
+  name: string;
+  description: string;
+  content: string;
+  exists: boolean;
+};
+
+export type GeneratePlan = {
+  schemaVersion: number;
+  project: string;
+  files: GeneratedFile[];
+  notes: string[];
+};
+
+export type ApplyReport = {
+  written: string[];
+  skipped: { name: string; reason: string }[];
+};
+
+export type IdeInfo = { id: string; label: string };

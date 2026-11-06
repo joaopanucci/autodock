@@ -6,6 +6,7 @@ import {
   Layers3,
   Info,
   AlertTriangle,
+  WandSparkles,
 } from "lucide-react";
 import type { Scan, SessionProject } from "../types";
 import {
@@ -25,6 +26,7 @@ export function Projects({
   select,
   analyze,
   inspect,
+  prepareDocker,
 }: {
   path: string;
   setPath: (value: string) => void;
@@ -34,6 +36,7 @@ export function Projects({
   select: () => void;
   analyze: () => void;
   inspect: (project: SessionProject) => void;
+  prepareDocker: () => void;
 }) {
   const modules = scan ? groupModules(scan) : [];
   return (
@@ -111,6 +114,10 @@ export function Projects({
               <h2>{projectName(scan.project)}</h2>
               <p className="mono path-text">{displayPath(scan.project)}</p>
             </div>
+            <button className="button primary" onClick={prepareDocker} disabled={busy}>
+              <WandSparkles size={16} aria-hidden="true" />
+              Preparar Docker deste projeto
+            </button>
             <Badge tone={scan.warnings.length ? "amber" : "green"}>
               {modules.length}{" "}
               {modules.length === 1
