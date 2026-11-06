@@ -207,6 +207,16 @@ fn docker_args(spec: &Spec, directory: &Path, container: &str) -> Vec<String> {
 fn checked(request: &ScaffoldRequest) -> Result<(Spec, std::path::PathBuf), String> {
     let spec = spec(request)?;
     let root = crate::generate::root_of(&request.path)?;
+    // The path is embedded in a comma-separated `--mount` value.
+    if root
+        .to_string_lossy()
+        .chars()
+        .any(|c| c == ',' || c == '"' || c.is_control())
+    {
+        return Err(
+            "O caminho da pasta não pode conter vírgula, aspas ou caracteres de controle. Renomeie a pasta ou escolha outra.".into(),
+        );
+    }
     if !crate::generate::folder_is_empty(&request.path)? {
         return Err("A pasta não está vazia. O instalador só roda em pasta vazia.".into());
     }
@@ -438,6 +448,22 @@ mod tests {
             r#"{"path":".","framework":"laravel","projectName":"a","command":"x"}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn refuses_paths_that_would_break_the_mount_option() {
+        let parent = tempfile::tempdir().unwrap();
+        for folder in ["a,b", "a,target=etc", "a,readonly"] {
+            let path = parent.path().join(folder);
+            fs::create_dir(&path).unwrap();
+            let request = ScaffoldRequest {
+                path: path.to_string_lossy().into(),
+                framework: Framework::Laravel,
+                project_name: "ok".into(),
+                runtime_version: None,
+            };
+            assert!(plan(&request).unwrap_err().contains("vírgula"), "{folder}");
+        }
     }
 
     #[test]
