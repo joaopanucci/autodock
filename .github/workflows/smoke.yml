@@ -1,19 +1,27 @@
 name: Smoke test installers
 
-# Installs the published installers on clean Windows and Linux runners, opens the
-# app, checks it keeps running and saves a screenshot as a workflow artifact.
+# Installs the published release on clean runners, opens the app, checks it keeps
+# running and (Windows/Linux) saves a screenshot as a workflow artifact.
+# Windows and macOS are installed through scripts/install.ps1 and scripts/install.sh,
+# so those scripts are tested here too (checksum verification included).
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag whose installers are tested
-        default: v0.1.2
+        description: Release tag to test (empty = latest release)
+        default: ''
+  push:
+    paths:
+      - 'scripts/install.sh'
+      - 'scripts/install.ps1'
+      - '.github/workflows/smoke.yml'
 
 permissions:
   contents: read
 
 env:
-  TAG: ${{ inputs.tag || 'v0.1.2' }}
+  # Empty means "latest release"; the install scripts resolve it themselves.
+  TAG: ${{ inputs.tag }}
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -22,16 +30,19 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 15
     steps:
-      - name: Download installer
-        shell: pwsh
-        run: gh release download $env:TAG --repo ${{ github.repository }} --pattern '*x64-setup.exe' --dir .
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - name: Install silently
+      - name: Install with scripts/install.ps1
         shell: pwsh
         run: |
-          $setup = Get-ChildItem -Filter *x64-setup.exe | Select-Object -First 1
-          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
-          Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter autodock-desktop.exe -ErrorAction SilentlyContinue | Select-Object -First 1 FullName
+          ./scripts/install.ps1 -Version $env:TAG -NoLaunch
+          # Downloads made by the script must carry no Mark of the Web (what triggers SmartScreen).
+          $installed = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter autodock-desktop.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installed) { throw 'autodock-desktop.exe not found after install' }
+          Write-Host "Installed: $($installed.FullName)"
 
       - name: Launch and capture
         shell: pwsh
@@ -64,7 +75,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Download installer
-        run: gh release download "$TAG" --repo ${{ github.repository }} --pattern '*amd64.deb' --dir .
+        run: |
+          TAG="${TAG:-$(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)}"
+          gh release download "$TAG" --repo ${{ github.repository }} --pattern '*amd64.deb' --dir .
 
       - name: Install package and tools
         timeout-minutes: 10
@@ -103,3 +116,33 @@ jobs:
             linux.png
             app.log
           if-no-files-found: warn
+
+  macos:
+    name: macOS (install script)
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install with scripts/install.sh
+        run: |
+          [ -z "$TAG" ] || export AUTODOCK_VERSION="$TAG"
+          AUTODOCK_NO_OPEN=1 bash scripts/install.sh
+
+      - name: Check the install and launch it
+        run: |
+          APP=/Applications/AutoDock.app
+          test -d "$APP"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist"
+          # No quarantine attribute is what keeps Gatekeeper from showing the warning.
+          if xattr -p com.apple.quarantine "$APP" 2>/dev/null; then
+            echo "Quarantine attribute present"; exit 1
+          fi
+          open "$APP"
+          sleep 12
+          pgrep -x autodock-desktop || { echo "App did not stay running"; exit 1; }
+          echo "App is running"
+          pkill -x autodock-desktop || true
