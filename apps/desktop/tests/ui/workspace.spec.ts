@@ -273,3 +273,28 @@ test("supports narrow layouts, keyboard navigation and reduced motion", async ({
     page.getByRole("heading", { name: "Permissões e operações" }),
   ).toBeVisible();
 });
+
+test("contribute tab explains the missing PIX setup instead of a broken QR", async ({
+  page,
+}) => {
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Contribuir", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "Contribuir", level: 1 })).toBeVisible();
+  await expect(page.getByText("Contribuição ainda não configurada")).toBeVisible();
+  await expect(page.getByRole("img", { name: /QR Code PIX/ })).toHaveCount(0);
+});
+
+test("docker assistant is reachable and starts at the project step", async ({
+  page,
+}) => {
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Assistente Docker", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Qual projeto você quer colocar no Docker?" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+});

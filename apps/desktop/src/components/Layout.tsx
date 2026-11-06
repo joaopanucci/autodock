@@ -9,6 +9,7 @@ import {
   Settings2,
   ShieldCheck,
   WandSparkles,
+  HeartHandshake,
   ChevronRight,
   ArrowUpRight,
   type LucideIcon,
@@ -30,6 +31,7 @@ export const navigation: {
   { id: "monitoring", label: "Monitoramento", icon: Activity },
   { id: "console", label: "Console", icon: TerminalSquare },
   { id: "settings", label: "Configurações", icon: Settings2 },
+  { id: "contribute", label: "Contribuir", icon: HeartHandshake },
 ];
 export function Layout({
   page,
@@ -101,6 +103,13 @@ export function Layout({
               <Settings2 size={19} aria-hidden="true" />
               <span>Configurações</span>
             </button>
+            <button
+              aria-current={page === "contribute" ? "page" : undefined}
+              onClick={() => navigate("contribute")}
+            >
+              <HeartHandshake size={19} aria-hidden="true" />
+              <span>Contribuir</span>
+            </button>
           </div>
         </nav>
         <div className="sidebar-note">
@@ -136,8 +145,8 @@ export function Layout({
           {children}
         </main>
         <footer className="workspace-footer">
-          <span>Análise local. Sem execução de scripts do projeto.</span>
-          <span>AutoDock · Etapa 002.3</span>
+          <span>Tudo local. Scripts do projeto nunca são executados.</span>
+          <span>AutoDock v0.1.0 · Open source</span>
         </footer>
       </div>
     </div>

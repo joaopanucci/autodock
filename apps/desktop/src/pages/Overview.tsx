@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   CircleHelp,
+  WandSparkles,
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
@@ -104,9 +105,17 @@ export function Overview({
               <FolderPlus size={17} aria-hidden="true" />
               Selecionar projeto
             </button>
+            <button
+              className="button secondary"
+              disabled={busy}
+              onClick={() => navigate("setup")}
+            >
+              <WandSparkles size={17} aria-hidden="true" />
+              Preparar Docker com o assistente
+            </button>
             <span className="micro-copy">
               <ShieldCheck size={13} aria-hidden="true" />
-              Nenhum arquivo será alterado
+              A análise não altera nada. O assistente só cria arquivos após sua confirmação
             </span>
           </div>
           <div className="flow">
@@ -120,6 +129,10 @@ export function Overview({
             <ArrowRight size={14} />
             <span>
               <b>03</b> Entenda
+            </span>
+            <ArrowRight size={14} />
+            <span>
+              <b>04</b> Dockerize
             </span>
           </div>
         </Panel>
@@ -221,8 +234,8 @@ export function Overview({
         >
           <ShieldCheck size={27} aria-hidden="true" />
           <p>
-            A análise lê manifests e reúne evidências. Você decide os próximos
-            passos.
+            A análise lê manifests e reúne evidências. O assistente mostra cada
+            arquivo antes de gravar. Você decide.
           </p>
           <ul className="check-list">
             <li>
@@ -235,7 +248,7 @@ export function Overview({
             </li>
             <li>
               <CheckCheck size={15} />
-              Sem alterações em containers
+              Sem sobrescrever arquivos existentes
             </li>
           </ul>
           <button className="text-button" onClick={() => navigate("settings")}>

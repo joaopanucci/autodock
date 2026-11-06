@@ -39,6 +39,7 @@ export type Page =
   | "overview"
   | "projects"
   | "setup"
+  | "contribute"
   | "environment"
   | "containers"
   | "monitoring"

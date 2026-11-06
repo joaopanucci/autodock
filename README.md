@@ -6,6 +6,10 @@ A interface oferece Visão geral, Projetos, Ambiente, Containers, Monitoramento,
 
 O scanner lê manifests e não executa scripts. O **Assistente Docker** gera `Dockerfile`, `docker-compose.yml`, `.dockerignore` e `.env.docker.example` para projetos existentes (Node.js, Java/Spring Boot com Maven, Python e PHP/Laravel), com serviços opcionais (PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog). Tudo passa por preview: nada é gravado sem confirmação e arquivos existentes nunca são sobrescritos. Também disponível na CLI: `autodock generate <pasta> --stack nodejs --port 3000 --service postgres` (preview; use `--write` para gravar).
 
+## Contribuir
+
+O AutoDock é gratuito. A aba **Contribuir** do app gera um QR Code PIX (offline, no seu computador) para apoio voluntário. Mantenedores configuram a chave em `apps/desktop/src/contribution.ts`. Issues e pull requests também ajudam: veja o [CONTRIBUTING](CONTRIBUTING.md).
+
 ## Pré-requisitos
 
 - Rust stable e Cargo; Windows usa toolchain MSVC.

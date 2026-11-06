@@ -226,6 +226,15 @@ export function Assistant({
     setCopied(false);
   }, [result]);
 
+  // O caminho pode chegar de fora (ex.: botão na tela de Projetos) ou ser digitado.
+  useEffect(() => {
+    const value = path.trim();
+    if (!value || stack || step !== 0) return;
+    const timer = window.setTimeout(() => void detect(value), 500);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, stack, step]);
+
   const grouped = useMemo(() => {
     const groups = new Map<string, typeof SERVICES>();
     for (const service of SERVICES) {
@@ -281,7 +290,6 @@ export function Assistant({
                 setSuggestions([]);
                 setPlan(null);
               }}
-              onBlur={() => path.trim() && !suggestions.length && void detect(path.trim())}
               placeholder="Selecione uma pasta ou informe o caminho absoluto"
             />
             <button type="button" className="button secondary" onClick={() => void selectFolder()} disabled={!!busy}>
