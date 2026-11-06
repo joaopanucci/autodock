@@ -74,7 +74,7 @@ jobs:
         run: |
           APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
           sudo apt-get $APT_OPTS update
-          sudo apt-get $APT_OPTS install -y ./AutoDock_*_amd64.deb xvfb scrot x11-utils
+          sudo apt-get $APT_OPTS install -y ./AutoDock_*_amd64.deb xvfb scrot x11-utils openbox
 
       - name: Launch and capture
         env:
@@ -85,6 +85,8 @@ jobs:
           GDK_BACKEND: x11
         run: |
           xvfb-run -a --server-args="-screen 0 1360x860x24" bash -c '
+            openbox > /dev/null 2>&1 &
+            sleep 2
             autodock-desktop > app.log 2>&1 &
             PID=$!
             sleep 25
