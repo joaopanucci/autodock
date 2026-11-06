@@ -47,7 +47,7 @@ const headings: Record<Page, { title: string; description: string }> = {
   containers: {
     title: "Containers",
     description:
-      "Um espaço para gerenciar seus ambientes, quando você autorizar.",
+      "Os containers do seu Docker local, agrupados por projeto.",
   },
   monitoring: {
     title: "Monitoramento",

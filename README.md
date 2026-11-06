@@ -1,81 +1,234 @@
+<div align="center">
+
+<img src="apps/desktop/src-tauri/icons/128x128@2x.png" alt="AutoDock" width="128" height="128" />
+
 # AutoDock
 
-Etapa 004.3: workspace desktop com análise local, diagnóstico, inventário/monitoramento Docker e consultas controladas de logs, compartilhando o core Rust com a CLI. Tauri 2 + React/TypeScript. Licença Apache-2.0.
+**Coloque qualquer projeto no Docker em poucos cliques.**<br/>
+Responda algumas perguntas. O AutoDock cria o `Dockerfile`, o `docker-compose.yml` e até o projeto, se você ainda não tiver um. Você revisa tudo antes de gravar.
 
-A interface oferece Visão geral, Projetos, Ambiente, Containers, Monitoramento, Console e Configurações. As operações Docker são somente leitura. No Console, a aba **Logs de containers** permite carregar a lista, selecionar um container e consultar as últimas 100, 300 ou 500 linhas. Logs ficam apenas na memória, separados do histórico de até 20 consultas do Console. Veja o [relatório atual da Etapa 004.3](docs/ETAPA-004-3.md), incluindo testes, arquivos alterados e limites.
+[![CI](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml/badge.svg?branch=feature%2F005-container-lifecycle)](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml)
+[![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=709fe5&label=vers%C3%A3o)](https://github.com/joaopanucci/autodock/releases/latest)
+[![Licença](https://img.shields.io/badge/licen%C3%A7a-Apache--2.0-7bc6a8)](LICENSE)
+![Plataformas](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-4d6fa8)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-core-CE422B?logo=rust&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+[![PRs bem-vindos](https://img.shields.io/badge/PRs-bem--vindos-7bc6a8)](CONTRIBUTING.md)
 
-O scanner lê manifests e não executa scripts. O **Assistente Docker** gera `Dockerfile`, `docker-compose.yml`, `.dockerignore` e `.env.docker.example` para projetos existentes (Node.js, Java/Spring Boot com Maven, Python e PHP/Laravel), com serviços opcionais (PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog). Tudo passa por preview: nada é gravado sem confirmação e arquivos existentes nunca são sobrescritos. Em uma pasta vazia, o assistente também cria um projeto novo: limpo (Node.js/Express, Spring Boot ou Python/FastAPI-Flask) ou com o instalador oficial do framework (Laravel, Django, Vite + React/Vue), executado dentro de um container Docker, sem instalar nada no computador, e já pronto para rodar no Docker, e ao final abre a pasta no editor instalado (VS Code, Cursor, JetBrains, Zed e outros). Também disponível na CLI: `autodock generate <pasta> --stack nodejs --port 3000 --service postgres` (preview; use `--write` para gravar e `--new` para criar o projeto inicial em pasta vazia) e `autodock scaffold <pasta> --framework laravel --name loja` (preview do comando; `--run` executa).
+[**Baixar**](#-baixar) · [**Passo a passo**](#-passo-a-passo) · [**CLI**](#-linha-de-comando) · [**Contribuir**](#-contribuir) · [English](README.en.md)
 
-## Contribuir
+<br/>
 
-O AutoDock é gratuito. A aba **Contribuir** do app gera um QR Code PIX (offline, no seu computador) para apoio voluntário. Mantenedores configuram a chave em `apps/desktop/src/contribution.ts`. Issues e pull requests também ajudam: veja o [CONTRIBUTING](CONTRIBUTING.md).
+<img src="docs/screenshots/06-assistente-revisao.png" alt="Assistente Docker do AutoDock mostrando o preview do docker-compose.yml" width="920" />
 
-## Pré-requisitos
+</div>
 
-- Rust stable e Cargo; Windows usa toolchain MSVC.
-- Node.js e npm para o frontend (verificado com Node 24.20.0).
-- Desktop Windows: ferramentas C++, Windows SDK e WebView2. macOS: ferramentas Xcode e SDK do sistema. Consulte os [pré-requisitos oficiais do Tauri 2](https://v2.tauri.app/start/prerequisites/).
-- Docker Engine e `docker compose` são diagnosticados, mas não são necessários para analisar projetos. O produto visa Compose v2; o ambiente desta entrega possui Compose v5.6.1, somente consultado.
+<br/>
 
-## Bootstrap Windows
+## ✨ Por que o AutoDock?
 
-Dentro desta distribuição completa (o script não é autônomo):
+Configurar Docker para um projeto local é repetitivo: qual imagem base, qual porta, como ligar o banco, o que ignorar na imagem. O AutoDock transforma isso em uma conversa.
 
-```powershell
-cd C:\projetos\autodock
-pwsh -NoProfile -File .\bootstrap-autodock.ps1
+- 🧭 **Guiado.** Pergunta o que importa (tecnologia, porta, versão, bancos, cache) e cuida do resto.
+- 👀 **Transparente.** Mostra cada arquivo e cada comando **antes** de qualquer alteração.
+- 🛡️ **Seguro por padrão.** Nunca sobrescreve arquivos, nunca lê o seu `.env`, nunca executa scripts do seu projeto.
+- 🧰 **Sem instalar nada além do Docker.** Os instaladores oficiais dos frameworks rodam *dentro* de containers.
+- 🖥️ **Local e open source.** Seu código não sai do seu computador. Licença Apache-2.0.
+
+## 🚀 O que ele faz
+
+| | |
+|---|---|
+| **Projeto existente** | Detecta a tecnologia lendo os manifests e gera `Dockerfile`, `docker-compose.yml`, `.dockerignore` e `.env.docker.example`. |
+| **Projeto novo, em pasta vazia** | Cria um projeto *limpo* ou usa o **instalador oficial** do framework, tudo dentro do Docker. |
+| **Serviços prontos** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog, já conectados ao app por variáveis de ambiente, com healthchecks. |
+| **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
+| **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
+
+### Tecnologias
+
+| Tecnologia | Projeto existente | Projeto novo (limpo) | Projeto novo (framework oficial) |
+|---|:---:|:---:|:---:|
+| **Node.js** | ✅ npm · pnpm · yarn, Vite | ✅ Express | ✅ Vite + React · Vite + Vue (TypeScript) |
+| **Java / Spring Boot** | ✅ Maven | ✅ Spring Boot + Maven | 🔜 Spring Initializr |
+| **Python** | ✅ FastAPI · Django · Flask | ✅ FastAPI · Flask | ✅ Django |
+| **PHP / Laravel** | ✅ Composer | — | ✅ Laravel |
+
+## 📦 Baixar
+
+Pegue o instalador da sua plataforma na [página de releases](https://github.com/joaopanucci/autodock/releases/latest):
+
+| Sistema | Arquivo | Como instalar |
+|---|---|---|
+| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.1.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.1.0/AutoDock_0.1.0_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
+| 🪟 **Windows** (64 bits) | [`AutoDock_0.1.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.1.0/AutoDock_0.1.0_x64-setup.exe) | Execute o instalador. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.1.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.1.0/AutoDock_0.1.0_amd64.deb) | `sudo apt install ./AutoDock_0.1.0_amd64.deb` |
+| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.1.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.1.0/AutoDock_0.1.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+
+> **Requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução para criar e rodar os ambientes.
+
+<details>
+<summary><b>⚠️ "App de desenvolvedor não identificado"? É esperado, e aqui está o porquê</b></summary>
+
+<br/>
+
+O AutoDock é um projeto open source e os instaladores **ainda não são assinados** (assinar exige contas pagas na Apple e na Microsoft). Por isso o sistema mostra um aviso na primeira abertura. O código é público e cada release traz um `SHA256SUMS.txt` para você conferir o arquivo baixado.
+
+- **macOS:** abra o app uma vez, depois vá em **Ajustes do Sistema → Privacidade e Segurança** e clique em **Abrir mesmo assim**. Alternativa no terminal: `xattr -dr com.apple.quarantine /Applications/AutoDock.app`.
+- **Windows:** na tela do SmartScreen, clique em **Mais informações** e depois em **Executar assim mesmo**.
+- **Linux:** não há aviso.
+
+Conferir a integridade do arquivo:
+
+```bash
+shasum -a 256 AutoDock_0.1.0_universal.dmg   # compare com o SHA256SUMS.txt
 ```
 
-A estrutura é preparada antes das verificações. `bootstrap-files.json` lista os fontes distribuídos. Por padrão preserva o próprio checkout; `-Destination <pasta>` permite preparar outra cópia quando solicitado. Arquivos existentes diferentes são preservados e reportados. Não instala ferramentas nem executa Git. Não copia caches, builds ou node_modules. Cada execução gera JSON e Markdown em `.autodock-bootstrap/<execução>/`, inclusive com dependências faltantes. Prazo padrão de 8 segundos por check; alterável com `-TimeoutMs`.
+</details>
 
-Saída: 0 = checks disponíveis, 1 = erro na preparação, 2 = estrutura preparada com pendências. Isso não certifica um build Tauri.
+> 🧪 **Status das plataformas:** a CI compila e testa o núcleo em macOS, Windows e Linux, e gera os três instaladores a cada versão. Os testes manuais do aplicativo completo foram feitos no macOS; relatos de Windows e Linux são muito bem-vindos.
 
-## CLI
+## 🎬 Passo a passo
 
-```powershell
-cargo run -p autodock-cli -- scan ./fixtures/node-basic
-cargo run -p autodock-cli -- scan ./fixtures/spring-boot-basic --json
-cargo run -p autodock-cli -- doctor --json
+### 1. Escolha a pasta do projeto
+
+Selecione a pasta. O AutoDock lê **apenas** os arquivos de configuração (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`) para sugerir a tecnologia. Nenhum código seu é executado.
+
+<img src="docs/screenshots/03-assistente-projeto.png" alt="Passo 1: escolher a pasta e detectar a tecnologia" width="820" />
+
+> 💡 **Pasta vazia?** O assistente oferece **Criar projeto novo**: você escolhe a tecnologia, define o nome e decide entre um projeto **limpo** ou o **instalador oficial** do framework (Laravel, Django, Vite + React/Vue). Antes de rodar, ele mostra o comando exato.
+
+### 2. Confirme a tecnologia e responda o essencial
+
+Porta, versão do runtime, gerenciador de pacotes, script de início. Tudo com valores padrão sensatos.
+
+<img src="docs/screenshots/04-assistente-tecnologia.png" alt="Passo 2: tecnologia, porta e versão" width="820" />
+
+### 3. Escolha os serviços
+
+Marque o que o projeto precisa. Cada item vira um container ao lado do seu app, já conectado.
+
+<img src="docs/screenshots/05-assistente-servicos.png" alt="Passo 3: serviços como PostgreSQL, Redis e Adminer" width="820" />
+
+### 4. Revise antes de criar
+
+Veja o conteúdo de cada arquivo. Nada foi gravado ainda. Arquivos que já existem **nunca** são sobrescritos.
+
+<img src="docs/screenshots/06-assistente-revisao.png" alt="Passo 4: revisão dos arquivos gerados" width="820" />
+
+### 5. Pronto: abra na sua IDE e suba o ambiente
+
+Um clique abre o projeto no editor que você tem instalado. Depois, é só rodar:
+
+```bash
+docker compose up --build
 ```
 
-O binário se chama `autodock`: `autodock scan <caminho> [--json]` e `autodock doctor [--json]`. Scan retorna 0 para relatório concluído (avisos podem indicar análise parcial) e 1 para entrada inválida. Em JSON, erros são objetos `{"error":"..."}`. Doctor retorna 2 quando há qualquer check indisponível, inclusive ferramentas opcionais para scan; isso não impede a análise. Estados: `available`, `missing`, `timeout`, `execution_error`. `missing` significa não resolvido nas buscas realizadas, não prova ausência da instalação.
+<img src="docs/screenshots/07-assistente-pronto.png" alt="Passo 5: projeto criado, botões para abrir na IDE" width="820" />
 
-## Desktop
+### Além do assistente
 
-```powershell
+<table>
+<tr>
+<td width="50%"><b>Analise um projeto</b><br/>Tecnologias, módulos e evidências, com a origem de cada informação.<br/><img src="docs/screenshots/02-analise.png" alt="Análise de projeto" /></td>
+<td width="50%"><b>Veja seus containers</b><br/>Inventário do Docker local, agrupado por projeto, com estado e saúde.<br/><img src="docs/screenshots/08-containers.png" alt="Lista de containers" /></td>
+</tr>
+<tr>
+<td width="50%"><b>Diagnostique o ambiente</b><br/>Node, Git, Docker, Compose e Engine, sem supor nada.<br/><img src="docs/screenshots/09-ambiente.png" alt="Diagnóstico do ambiente" /></td>
+<td width="50%"><b>Visão geral</b><br/>Seus projetos e o estado do ambiente em um só lugar.<br/><img src="docs/screenshots/01-visao-geral.png" alt="Visão geral" /></td>
+</tr>
+</table>
+
+## 🔄 Como funciona
+
+```mermaid
+flowchart LR
+  A[Pasta do projeto] --> B{O que há nela?}
+  B -->|Projeto existente| C[Detecta a tecnologia<br/>lendo só manifests]
+  B -->|Pasta vazia| D[Projeto novo<br/>limpo ou framework oficial<br/>dentro do Docker]
+  C --> E[Perguntas: porta, versão, serviços]
+  D --> E
+  E --> F[Preview de cada arquivo]
+  F -->|você confirma| G[Dockerfile · docker-compose.yml<br/>.dockerignore · .env.docker.example]
+  G --> H[Abrir na IDE<br/>docker compose up]
+```
+
+## 🛡️ Princípios de segurança
+
+O AutoDock mexe nos seus arquivos, então a confiança vem primeiro:
+
+- **Preview antes de gravar.** O conteúdo é gerado no backend a partir de opções validadas; a interface nunca envia o conteúdo dos arquivos.
+- **Nunca sobrescreve.** Criação exclusiva de arquivos; symlinks não são seguidos.
+- **Entradas por lista permitida.** Portas, versões, nomes e scripts são validados, então não há injeção em Dockerfile, YAML ou linha de comando.
+- **Sem shell.** Editores e instaladores são iniciados com argumentos fixos, nunca por texto montado.
+- **Instaladores de framework isolados.** Rodam em um container descartável com **apenas** a pasta vazia montada.
+- **Portas dos serviços só em `127.0.0.1`.** Bancos e filas não ficam expostos na sua rede.
+- **Nunca lê `.env`** nem executa scripts dos projetos analisados.
+
+Detalhes em [`docs/SECURITY.md`](docs/SECURITY.md).
+
+## ⌨️ Linha de comando
+
+Tudo que o assistente faz também está disponível no terminal (`cargo run -p autodock-cli -- …`):
+
+```bash
+# analisa um projeto e diagnostica o ambiente
+autodock scan ./meu-projeto
+autodock doctor
+
+# mostra o preview (nada é gravado)...
+autodock generate ./meu-projeto --stack nodejs --port 3000 --service postgres --service redis
+# ...e grava só os arquivos novos
+autodock generate ./meu-projeto --stack nodejs --port 3000 --service postgres --write
+
+# projeto novo em pasta vazia
+autodock generate ./novo --new --stack python --port 8000 --write
+autodock scaffold ./novo --framework laravel --name loja          # só mostra o comando
+autodock scaffold ./novo --framework laravel --name loja --run    # executa
+```
+
+## 🧱 Arquitetura
+
+```
+crates/autodock-core   Núcleo em Rust: scanner, gerador, instaladores, IDEs, Docker (sem UI)
+crates/autodock-cli    Linha de comando (Clap)
+apps/desktop           Interface React + Vite, empacotada com Tauri 2
+docs/                  Arquitetura, segurança, roadmap e guia de desenvolvimento
+```
+
+Rodar a partir do código-fonte: veja o [guia de desenvolvimento](docs/DEVELOPMENT.md).
+
+```bash
 npm --prefix apps/desktop ci
 npm --prefix apps/desktop run tauri dev
 ```
 
-Selecionar pasta → analisar → consultar tecnologias, evidências e avisos. O diagnóstico aparece em tabela. Operações Rust rodam fora da thread da interface. O seletor usa o [plugin oficial Dialog](https://v2.tauri.app/plugin/dialog/) com `dialog:allow-open`.
+## 🗺️ Roadmap
 
-```powershell
-npm --prefix apps/desktop run build       # TypeScript + bundle web
-npm --prefix apps/desktop run tauri build # aplicativo nativo, requer Rust/SDK
-```
+- [x] Assistente Docker para projetos existentes (Node.js, Spring Boot, Python, Laravel)
+- [x] Serviços: PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer, MailHog
+- [x] Projeto novo: limpo ou com instalador oficial (Laravel, Django, Vite)
+- [x] Abrir o projeto na IDE instalada
+- [x] Instaladores para macOS, Windows e Linux
+- [ ] Spring Initializr (escolher dependências)
+- [ ] Gradle e mais frameworks (Next.js, NestJS, Rails…)
+- [ ] Dockerfiles de produção (multi-stage)
+- [ ] Assinatura e notarização dos instaladores
+- [ ] Interface em inglês
 
-O bundle web isolado não possui comandos Tauri ou seletor nativo: o fluxo completo precisa do desktop. Instaladores estão desativados nesta etapa.
+## 🤝 Contribuir
 
-## Validação
+O AutoDock é feito de forma aberta e toda ajuda conta:
 
-```powershell
-cargo test -p autodock-core -p autodock-cli
-cargo fmt --all -- --check
-cargo check -p autodock-desktop
-pwsh -NoProfile -File tests/Diagnostics.Tests.ps1
-pwsh -NoProfile -File tests/Bootstrap.Tests.ps1
-npm --prefix apps/desktop run build
-npm --prefix apps/desktop test
-npm --prefix apps/desktop run test:ui
-```
+- ⭐ **Dê uma estrela** para ajudar outras pessoas a encontrarem o projeto.
+- 🐛 **Relate problemas** e 💡 **sugira ideias** nas [issues](https://github.com/joaopanucci/autodock/issues).
+- 🔧 **Envie um pull request.** Leia o [CONTRIBUTING](CONTRIBUTING.md) e o [guia de desenvolvimento](docs/DEVELOPMENT.md).
+- 🧪 **Teste no Windows e no Linux** e conte como foi.
+- 💙 **Apoie com um PIX.** O app tem uma aba **Contribuir** com um QR Code. É voluntário e nenhum recurso depende dele.
 
-Os testes PowerShell exigem Windows e deixam artefatos em `.autodock-bootstrap`. Testes de modelo frontend usam Node 22.18+; UI usa Playwright com Edge instalado (canal configurável por AUTODOCK_BROWSER_CHANNEL). Veja o [relatório atual](docs/ETAPA-002-3.md) e o [histórico da Etapa 001](docs/ETAPA-001.md). Rust, build nativo e integração WebView2 foram validados no Windows na Etapa 002.3; macOS ainda requer validação.
+## 📄 Licença
 
-## Organização
+[Apache-2.0](LICENSE) © AutoDock contributors.
 
-- `crates/autodock-core`: scanner e doctor independentes de interface.
-- `crates/autodock-cli`: parsing Clap e apresentação.
-- `apps/desktop`: React/Vite e adaptador Tauri.
-- `fixtures`: manifests pequenos e inertes.
-- `scripts` e `tests`: infraestrutura e regressões do bootstrap.
-- `docs`: arquitetura, investigação, limites e entrega.
+<div align="center"><sub>Feito com 🦀 Rust, ⚛️ React e 🐳 Docker.</sub></div>

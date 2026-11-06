@@ -110,15 +110,22 @@ jobs:
           path: installers
           merge-multiple: true
 
-      - name: Checksums
-        run: cd installers && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Collect files and checksums
+        run: |
+          mkdir release-files
+          find installers -type f -exec cp {} release-files/ \;
+          cd release-files && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
 
-      - name: Create draft release
+      - name: Create draft release or attach to the existing one
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
-          gh release create "$TAG" installers/* --repo "$REPO" --draft --verify-tag \
-            --title "AutoDock $TAG" \
-            --notes "Instaladores não assinados. Veja o README para instruções de instalação e verifique o SHA256SUMS.txt."
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-files/* --repo "$REPO" --clobber
+          else
+            gh release create "$TAG" release-files/* --repo "$REPO" --draft --verify-tag \
+              --title "AutoDock $TAG" \
+              --notes "Instaladores não assinados. Veja o README para instruções de instalação e verifique o SHA256SUMS.txt."
+          fi
