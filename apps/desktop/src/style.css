@@ -2184,3 +2184,41 @@ main:focus {
   color: var(--muted);
   font-size: 12px;
 }
+
+.empty-folder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px dashed #526888;
+  border-radius: 9px;
+  background: #151c26;
+}
+.empty-folder > svg {
+  color: var(--blue);
+  flex: none;
+}
+.empty-folder > div {
+  flex: 1;
+  min-width: 220px;
+}
+.empty-folder p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.open-title {
+  margin: 12px 0 8px;
+}
+.open-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.choice:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

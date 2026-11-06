@@ -9,12 +9,16 @@ import {
   CheckCircle2,
   Copy,
   FolderOpen,
+  FolderSearch,
   LoaderCircle,
+  Sparkles,
+  SquareArrowOutUpRight,
 } from "lucide-react";
 import type {
   ApplyReport,
   GeneratePlan,
   GenerateRequest,
+  IdeInfo,
   PackageManager,
   PythonFramework,
   ServiceId,
@@ -111,6 +115,10 @@ export function Assistant({
   const [busy, setBusy] = useState<"detect" | "preview" | "apply" | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [emptyFolder, setEmptyFolder] = useState(false);
+  const [newProject, setNewProject] = useState(false);
+  const [ides, setIdes] = useState<IdeInfo[]>([]);
+  const [opened, setOpened] = useState("");
 
   const meta = STACKS.find((s) => s.id === stack);
   const detected = (id: StackId) => suggestions.find((s) => s.stack === id);
@@ -125,10 +133,13 @@ export function Assistant({
       port: number,
       runtimeVersion: version,
       packageManager: stack === "nodejs" ? packageManager : undefined,
-      startScript: stack === "nodejs" ? startScript.trim() || undefined : undefined,
+      startScript:
+        stack === "nodejs" && !newProject ? startScript.trim() || undefined : undefined,
       pythonFramework: stack === "python" ? framework : undefined,
-      pythonModule: stack === "python" && module.trim() ? module.trim() : undefined,
+      pythonModule:
+        stack === "python" && !newProject && module.trim() ? module.trim() : undefined,
       services,
+      newProject: newProject || undefined,
     };
   }
 
@@ -138,11 +149,18 @@ export function Assistant({
     try {
       const found = await invoke<StackSuggestion[]>("detect_stacks", { path: value });
       setSuggestions(found);
-      if (found.length) chooseStack(found[0].stack, found);
-      else setStack(null);
+      setNewProject(false);
+      if (found.length) {
+        setEmptyFolder(false);
+        chooseStack(found[0].stack, found);
+      } else {
+        setStack(null);
+        setEmptyFolder(await invoke<boolean>("inspect_folder", { path: value }));
+      }
     } catch (e) {
       setSuggestions([]);
       setStack(null);
+      setEmptyFolder(false);
       setError(message(e));
     } finally {
       setBusy(null);
@@ -170,6 +188,8 @@ export function Assistant({
       const picked = await open({ directory: true, multiple: false, title: "Selecionar projeto" });
       if (typeof picked === "string") {
         setPath(picked);
+        setEmptyFolder(false);
+        setNewProject(false);
         setPlan(null);
         setResult(null);
         await detect(picked);
@@ -208,13 +228,46 @@ export function Assistant({
     }
   }
 
+  function startNewProject() {
+    setNewProject(true);
+    setPlan(null);
+    setResult(null);
+    chooseStack("nodejs", []);
+    setStep(1);
+  }
+
+  async function openIn(id: string) {
+    setError("");
+    try {
+      await invoke("open_in_ide", { id, path });
+      setOpened(id);
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  async function reveal() {
+    setError("");
+    try {
+      await invoke("reveal_folder", { path });
+      setOpened("folder");
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
   async function apply() {
     const body = request();
     if (!body || !selected.length) return;
     setBusy("apply");
     setError("");
     try {
-      setResult(await invoke<ApplyReport>("apply_docker_setup", { request: body, files: selected }));
+      const report = await invoke<ApplyReport>("apply_docker_setup", { request: body, files: selected });
+      setResult(report);
+      if (report.written.length) {
+        setOpened("");
+        setIdes(await invoke<IdeInfo[]>("detect_ides").catch(() => []));
+      }
     } catch (e) {
       setError(message(e));
     } finally {
@@ -288,6 +341,8 @@ export function Assistant({
                 setPath(e.target.value);
                 setStack(null);
                 setSuggestions([]);
+                setEmptyFolder(false);
+                setNewProject(false);
                 setPlan(null);
               }}
               placeholder="Selecione uma pasta ou informe o caminho absoluto"
@@ -301,10 +356,25 @@ export function Assistant({
               <LoaderCircle className="spin" size={13} aria-hidden="true" /> Procurando a tecnologia do projeto…
             </p>
           )}
-          {!busy && path.trim() && !suggestions.length && !error && (
+          {!busy && path.trim() && !suggestions.length && !emptyFolder && !error && (
             <p className="field-hint">
               Nenhuma tecnologia reconhecida automaticamente. Você ainda pode escolher uma no próximo passo.
             </p>
+          )}
+          {!busy && emptyFolder && (
+            <div className="empty-folder" role="status">
+              <Sparkles size={22} aria-hidden="true" />
+              <div>
+                <strong>Esta pasta está vazia.</strong>
+                <p>
+                  Quer que o AutoDock crie um projeto novo aqui? Ele monta um projeto inicial
+                  mínimo, já pronto para rodar no Docker.
+                </p>
+              </div>
+              <button type="button" className="button primary" onClick={startNewProject}>
+                Criar projeto novo
+              </button>
+            </div>
           )}
           {suggestions.length > 0 && (
             <p className="wizard-detected">
@@ -318,7 +388,10 @@ export function Assistant({
       )}
 
       {step === 1 && (
-        <Panel title="Como o projeto é feito?" eyebrow="PASSO 2 DE 4">
+        <Panel
+          title={newProject ? "Com que tecnologia você quer criar o projeto?" : "Como o projeto é feito?"}
+          eyebrow="PASSO 2 DE 4"
+        >
           <div className="choice-grid" role="radiogroup" aria-label="Tecnologia">
             {STACKS.map((s) => (
               <button
@@ -327,10 +400,12 @@ export function Assistant({
                 role="radio"
                 aria-checked={stack === s.id}
                 className={`choice ${stack === s.id ? "selected" : ""}`}
+                disabled={newProject && s.id === "laravel"}
                 onClick={() => chooseStack(s.id)}
               >
                 <strong>{s.title}</strong>
                 <span>{s.hint}</span>
+                {newProject && s.id === "laravel" && <Badge>Em breve para projeto novo</Badge>}
                 {detected(s.id) && <Badge tone="green">Detectado</Badge>}
               </button>
             ))}
@@ -373,6 +448,7 @@ export function Assistant({
                       <option>yarn</option>
                     </select>
                   </label>
+                  {!newProject && (
                   <label className="question">
                     <span>Script que inicia o app</span>
                     {nodeScripts.length ? (
@@ -386,6 +462,7 @@ export function Assistant({
                     )}
                     <small>Será executado como “{packageManager} run {startScript || "start"}”.</small>
                   </label>
+                  )}
                 </>
               )}
               {stack === "python" && (
@@ -394,11 +471,13 @@ export function Assistant({
                     <span>Framework</span>
                     <select value={framework} onChange={(e) => setFramework(e.target.value as PythonFramework)}>
                       <option value="fastapi">FastAPI</option>
-                      <option value="django">Django</option>
+                      <option value="django" disabled={newProject}>
+                        Django{newProject ? " (em breve para projeto novo)" : ""}
+                      </option>
                       <option value="flask">Flask</option>
                     </select>
                   </label>
-                  {framework !== "django" && (
+                  {framework !== "django" && !newProject && (
                     <label className="question">
                       <span>Módulo da aplicação</span>
                       <input
@@ -443,7 +522,7 @@ export function Assistant({
       )}
 
       {step === 3 && plan && (
-        <Panel title="Revise antes de criar" eyebrow="PASSO 4 DE 4">
+        <Panel title={newProject ? "Revise o projeto novo antes de criar" : "Revise antes de criar"} eyebrow="PASSO 4 DE 4">
           <p className="section-description">
             Nada foi gravado ainda. Estes arquivos serão criados em{" "}
             <span className="mono">{displayPath(plan.project)}</span>. Arquivos que já existem nunca são sobrescritos.
@@ -500,6 +579,29 @@ export function Assistant({
                 ))}
                 {result.written.length > 0 && (
                   <>
+                    <p className="open-title">Abrir o projeto em:</p>
+                    <div className="open-actions">
+                      {ides.map((ide) => (
+                        <button
+                          key={ide.id}
+                          type="button"
+                          className="button secondary"
+                          onClick={() => void openIn(ide.id)}
+                        >
+                          <SquareArrowOutUpRight size={15} aria-hidden="true" />
+                          {ide.label}
+                          {opened === ide.id && <Check size={14} aria-hidden="true" />}
+                        </button>
+                      ))}
+                      <button type="button" className="button secondary" onClick={() => void reveal()}>
+                        <FolderSearch size={15} aria-hidden="true" />
+                        Mostrar na pasta
+                        {opened === "folder" && <Check size={14} aria-hidden="true" />}
+                      </button>
+                    </div>
+                    {!ides.length && (
+                      <p className="field-hint">Nenhum editor conhecido foi encontrado neste computador.</p>
+                    )}
                     <p>Para subir o ambiente, rode na pasta do projeto:</p>
                     <p className="command">
                       <code>{command}</code>

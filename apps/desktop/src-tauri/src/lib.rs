@@ -26,6 +26,30 @@ async fn detect_stacks(path: String) -> Result<Vec<autodock_core::generate::Sugg
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn inspect_folder(path: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::generate::folder_is_empty(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn detect_ides() -> Result<Vec<autodock_core::ide::IdeInfo>, String> {
+    tauri::async_runtime::spawn_blocking(autodock_core::ide::detect_ides)
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+async fn open_in_ide(id: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::ide::open_in_ide(&id, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn reveal_folder(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || autodock_core::ide::reveal_folder(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn preview_docker_setup(
     request: autodock_core::generate::GenerateRequest,
 ) -> Result<autodock_core::generate::GeneratePlan, String> {
@@ -71,6 +95,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scan_project,
             detect_stacks,
+            inspect_folder,
+            detect_ides,
+            open_in_ide,
+            reveal_folder,
             preview_docker_setup,
             apply_docker_setup,
             doctor_environment,
