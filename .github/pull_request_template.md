@@ -1,19 +1,19 @@
-## O que muda e por quê
+## What changes and why
 
-<!-- Explique em poucas linhas. Link para a issue, se houver: Closes #123 -->
+<!-- Explain in a few lines. Link the issue if there is one: Closes #123 -->
 
-## Como foi testado
+## How it was tested
 
 - [ ] `cargo fmt --all -- --check`
 - [ ] `cargo test -p autodock-core -p autodock-cli --locked`
-- [ ] `npm --prefix apps/desktop run typecheck` e `npm --prefix apps/desktop test`
-- [ ] Testei o fluxo na prática (ex.: gerei o projeto e rodei `docker compose up --build`)
+- [ ] `npm --prefix apps/desktop run typecheck` and `npm --prefix apps/desktop test`
+- [ ] I tried the flow in practice (e.g. generated the project and ran `docker compose up --build`)
 
-Sistemas em que testei manualmente: <!-- macOS / Windows / Linux -->
+Systems I tested manually on: <!-- macOS / Windows / Linux -->
 
-## Checklist de segurança
+## Security checklist
 
-- [ ] Não sobrescreve arquivos existentes nem segue symlinks
-- [ ] Valores que entram em Dockerfile/YAML/comandos são validados (lista permitida)
-- [ ] Não lê `.env` nem executa scripts de projetos analisados
-- [ ] Não depende de suposições de um único sistema operacional
+- [ ] Does not overwrite existing files or follow symlinks
+- [ ] Values that end up in a Dockerfile/YAML/commands are validated (allowlist)
+- [ ] Does not read `.env` or run scripts of analyzed projects
+- [ ] Does not rely on assumptions about a single operating system

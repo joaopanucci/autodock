@@ -1,31 +1,33 @@
-# Política de segurança
+🌐 **English** · [Português (Brasil)](SECURITY.pt-BR.md)
 
-## Como relatar uma vulnerabilidade
+# Security policy
 
-**Não abra uma issue pública.** Use o [relato privado de vulnerabilidades](https://github.com/joaopanucci/autodock/security/advisories/new) do GitHub. Inclua:
+## How to report a vulnerability
 
-- a versão do AutoDock e o seu sistema operacional;
-- os passos para reproduzir e o impacto que você enxerga;
-- se possível, uma sugestão de correção.
+**Do not open a public issue.** Use GitHub's [private vulnerability reporting](https://github.com/joaopanucci/autodock/security/advisories/new). Please include:
 
-Respondemos assim que possível e combinamos a divulgação depois da correção.
+- the AutoDock version and your operating system;
+- the steps to reproduce and the impact you see;
+- if possible, a suggested fix.
 
-## Escopo
+We reply as soon as we can and agree on disclosure after the fix.
 
-O AutoDock gera arquivos Docker, roda instaladores de frameworks dentro de containers e abre editores no seu computador. São especialmente relevantes:
+## Scope
 
-- sobrescrita ou escrita fora da pasta escolhida (path traversal, symlinks);
-- injeção em Dockerfile, YAML ou linhas de comando a partir de entradas do usuário ou de arquivos do projeto;
-- execução de código dos projetos analisados;
-- leitura de arquivos sensíveis (`.env`, chaves);
-- exposição de serviços fora de `127.0.0.1`.
+AutoDock generates Docker files, runs framework installers inside containers and opens editors on your computer. Especially relevant are:
 
-Os princípios de segurança do projeto estão em [`docs/SECURITY.md`](docs/SECURITY.md).
+- overwriting or writing outside the chosen folder (path traversal, symlinks);
+- injection into a Dockerfile, YAML or command line from user input or project files;
+- execution of code from analyzed projects;
+- reading sensitive files (`.env`, keys);
+- exposing services outside `127.0.0.1`.
 
-## Versões suportadas
+The project's security principles are in [`docs/SECURITY.md`](docs/SECURITY.md).
 
-Apenas a versão mais recente publicada em [Releases](https://github.com/joaopanucci/autodock/releases) recebe correções.
+## Supported versions
 
-## Sobre os instaladores
+Only the latest version published in [Releases](https://github.com/joaopanucci/autodock/releases) receives fixes.
 
-Os instaladores **ainda não são assinados** (Apple/Microsoft). Confira sempre o `SHA256SUMS.txt` de cada release e baixe somente do repositório oficial.
+## About the installers
+
+The installers are **not code-signed yet** (Apple/Microsoft). Always check the `SHA256SUMS.txt` of each release and download only from the official repository. The one-command install scripts (`scripts/install.sh`, `scripts/install.ps1`) verify the checksum for you.
