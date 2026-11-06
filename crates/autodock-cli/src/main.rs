@@ -45,6 +45,9 @@ enum Commands {
         python_framework: Option<String>,
         #[arg(long)]
         python_module: Option<String>,
+        /// Cria um projeto inicial em pasta vazia antes dos arquivos Docker
+        #[arg(long = "new")]
+        new_project: bool,
         /// Grava os arquivos novos; nunca sobrescreve existentes
         #[arg(long)]
         write: bool,
@@ -64,6 +67,7 @@ fn generate_command(
     start_script: Option<String>,
     python_framework: Option<String>,
     python_module: Option<String>,
+    new_project: bool,
     write: bool,
 ) -> Result<(), String> {
     let request = serde_json::json!({
@@ -76,6 +80,7 @@ fn generate_command(
         "startScript": start_script,
         "pythonFramework": python_framework,
         "pythonModule": python_module,
+        "newProject": new_project,
     });
     let request: autodock_core::generate::GenerateRequest =
         serde_json::from_value(request).map_err(|e| format!("Opção inválida: {e}"))?;
@@ -117,6 +122,7 @@ fn main() -> ExitCode {
             start_script,
             python_framework,
             python_module,
+            new_project,
             write,
         } => match generate_command(
             path,
@@ -128,6 +134,7 @@ fn main() -> ExitCode {
             start_script,
             python_framework,
             python_module,
+            new_project,
             write,
         ) {
             Ok(()) => ExitCode::SUCCESS,

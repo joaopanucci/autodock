@@ -141,6 +141,7 @@ export type GenerateRequest = {
   pythonFramework?: PythonFramework;
   pythonModule?: string;
   services: ServiceId[];
+  newProject?: boolean;
 };
 
 export type GeneratedFile = {
@@ -161,3 +162,5 @@ export type ApplyReport = {
   written: string[];
   skipped: { name: string; reason: string }[];
 };
+
+export type IdeInfo = { id: string; label: string };

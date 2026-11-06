@@ -83,6 +83,9 @@ export default function App() {
   useEffect(() => {
     if (previousPage.current === page) return;
     previousPage.current = page;
+    // Mensagens de uma tela não devem aparecer em outra.
+    setMessage("");
+    setError("");
     document.getElementById("content")?.focus({ preventScroll: true });
     window.scrollTo(0, 0);
   }, [page]);

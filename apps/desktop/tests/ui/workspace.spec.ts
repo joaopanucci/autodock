@@ -109,6 +109,22 @@ test.beforeEach(async ({ page }) => {
             return scan;
           }
           if (command === "doctor_environment") return diagnostic;
+          if (command === "detect_stacks") return [];
+          if (command === "inspect_folder") return true;
+          if (command === "preview_docker_setup")
+            return {
+              schemaVersion: 1,
+              project: "C:\\work\\sample-project",
+              notes: ["Nada foi gravado ainda."],
+              files: [
+                { name: "index.js", description: "Servidor.", content: "x", exists: false },
+                { name: "Dockerfile", description: "Imagem.", content: "FROM node", exists: false },
+              ],
+            };
+          if (command === "apply_docker_setup")
+            return { written: ["index.js", "Dockerfile"], skipped: [] };
+          if (command === "detect_ides") return [{ id: "vscode", label: "VS Code" }];
+          if (command === "open_in_ide") return null;
           throw new Error(`Unexpected IPC ${command}`);
         },
       };
@@ -300,4 +316,26 @@ test("docker assistant is reachable and starts at the project step", async ({
     page.getByRole("heading", { name: "Qual projeto você quer colocar no Docker?" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+});
+
+test("empty folder offers a new project and then opens it in the detected IDE", async ({
+  page,
+}) => {
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Assistente Docker", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Selecionar pasta" }).last().click();
+  await expect(page.getByText("Esta pasta está vazia.")).toBeVisible();
+  await page.getByRole("button", { name: "Criar projeto novo" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Com que tecnologia você quer criar o projeto?" }),
+  ).toBeVisible();
+  await expect(page.getByRole("radio", { name: /PHP \/ Laravel/ })).toBeDisabled();
+  await page.getByRole("button", { name: /Continuar/ }).click();
+  await page.getByRole("button", { name: /Gerar preview/ }).click();
+  await expect(page.getByText("Revise o projeto novo antes de criar")).toBeVisible();
+  await page.getByRole("button", { name: /Criar 2 arquivo/ }).click();
+  await page.getByRole("button", { name: "VS Code" }).click();
+  expect(await page.evaluate(() => (window as any).testCalls)).toContain("open_in_ide");
 });

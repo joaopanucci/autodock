@@ -78,6 +78,9 @@ pub struct GenerateRequest {
     pub python_module: Option<String>,
     #[serde(default)]
     pub services: Vec<Service>,
+    /// Creates a starter project in an empty folder before the Docker files.
+    #[serde(default)]
+    pub new_project: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -133,6 +136,22 @@ fn root_of(path: &str) -> Result<PathBuf, String> {
         return Err(format!("Não é diretório: {}", root.display()));
     }
     Ok(root)
+}
+
+/// Entries that do not make a folder "non-empty" for starting a new project.
+const IGNORABLE_ENTRIES: [&str; 3] = [".git", ".DS_Store", "Thumbs.db"];
+
+/// True when the folder holds nothing but harmless entries (see above).
+pub fn folder_is_empty(path: &str) -> Result<bool, String> {
+    let root = root_of(path)?;
+    let entries = fs::read_dir(&root).map_err(|e| format!("{}: {e}", root.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !IGNORABLE_ENTRIES.contains(&entry.file_name().to_string_lossy().as_ref()) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn regular_file(root: &Path, name: &str) -> bool {
@@ -321,6 +340,8 @@ struct Resolved {
     module: String,
     services: Vec<Service>,
     python_uses_pyproject: bool,
+    new_project: bool,
+    project_name: String,
 }
 
 fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
@@ -352,7 +373,29 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         None => "start".into(),
     };
     let framework = request.python_framework.unwrap_or(PythonFramework::Fastapi);
+    if request.new_project {
+        match (request.stack, framework) {
+            (Stack::Laravel, _) => {
+                return Err(
+                    "Projeto novo em Laravel ainda não está disponível. Use composer create-project e depois o assistente.".into(),
+                )
+            }
+            (Stack::Python, PythonFramework::Django) => {
+                return Err(
+                    "Projeto novo em Django ainda não está disponível. Use django-admin startproject e depois o assistente.".into(),
+                )
+            }
+            _ => {}
+        }
+        if !folder_is_empty(&request.path)? {
+            return Err("A pasta não está vazia. Projeto novo só é criado em pasta vazia.".into());
+        }
+    }
     let module = match (&request.python_module, framework) {
+        _ if request.new_project => match framework {
+            PythonFramework::Fastapi => "main:app".to_string(),
+            _ => "app".to_string(),
+        },
         (Some(module), _) if !valid_module(module) => {
             return Err("Módulo Python inválido (use formato modulo:objeto).".into());
         }
@@ -362,6 +405,7 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
     };
     let mut python_uses_pyproject = false;
     match request.stack {
+        _ if request.new_project => {}
         Stack::Nodejs if !regular_file(root, "package.json") => {
             return Err("package.json não encontrado na raiz do projeto.".into());
         }
@@ -391,7 +435,128 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         module,
         services,
         python_uses_pyproject,
+        new_project: request.new_project,
+        project_name: project_name(root),
     })
+}
+
+/// Folder name reduced to a safe lowercase identifier for manifests.
+fn project_name(root: &Path) -> String {
+    let raw = root
+        .file_name()
+        .map(|n| n.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let mut name: String = raw
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    name = name.trim_matches('-').to_string();
+    while name.contains("--") {
+        name = name.replace("--", "-");
+    }
+    if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
+        name = format!("app-{name}").trim_end_matches('-').to_string();
+    }
+    name.chars()
+        .take(40)
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_string()
+}
+
+fn starter_files(r: &Resolved) -> Vec<(&'static str, String, &'static str)> {
+    let name = &r.project_name;
+    let port = r.port;
+    let mut files: Vec<(&'static str, String, &'static str)> = vec![];
+    match r.stack {
+        Stack::Nodejs => {
+            files.push((
+                "package.json",
+                format!(
+                    "{{\n  \"name\": \"{name}\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {{\n    \"start\": \"node index.js\",\n    \"dev\": \"node --watch index.js\"\n  }},\n  \"dependencies\": {{\n    \"express\": \"^4.21.2\"\n  }}\n}}\n"
+                ),
+                "Manifesto do projeto Node.js com Express.",
+            ));
+            files.push((
+                "index.js",
+                format!(
+                    "const express = require(\"express\");\n\nconst app = express();\nconst port = process.env.PORT || {port};\n\napp.get(\"/\", (_req, res) => {{\n  res.json({{ message: \"{name} está no ar\" }});\n}});\n\napp.get(\"/health\", (_req, res) => {{\n  res.json({{ status: \"ok\" }});\n}});\n\napp.listen(port, process.env.HOST || \"0.0.0.0\", () => {{\n  console.log(`Servidor em http://localhost:${{port}}`);\n}});\n"
+                ),
+                "Servidor HTTP de exemplo.",
+            ));
+        }
+        Stack::SpringBoot => {
+            let java = &r.version;
+            files.push((
+                "pom.xml",
+                format!(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project xmlns=\"http://maven.apache.org/POM/4.0.0\"\n         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\">\n  <modelVersion>4.0.0</modelVersion>\n  <parent>\n    <groupId>org.springframework.boot</groupId>\n    <artifactId>spring-boot-starter-parent</artifactId>\n    <version>3.3.5</version>\n    <relativePath/>\n  </parent>\n  <groupId>com.example</groupId>\n  <artifactId>{name}</artifactId>\n  <version>0.0.1</version>\n  <name>{name}</name>\n  <properties>\n    <java.version>{java}</java.version>\n  </properties>\n  <dependencies>\n    <dependency>\n      <groupId>org.springframework.boot</groupId>\n      <artifactId>spring-boot-starter-web</artifactId>\n    </dependency>\n  </dependencies>\n  <build>\n    <plugins>\n      <plugin>\n        <groupId>org.springframework.boot</groupId>\n        <artifactId>spring-boot-maven-plugin</artifactId>\n      </plugin>\n    </plugins>\n  </build>\n</project>\n"
+                ),
+                "Projeto Maven com Spring Boot.",
+            ));
+            files.push((
+                "src/main/java/com/example/app/Application.java",
+                "package com.example.app;\n\nimport org.springframework.boot.SpringApplication;\nimport org.springframework.boot.autoconfigure.SpringBootApplication;\n\n@SpringBootApplication\npublic class Application {\n    public static void main(String[] args) {\n        SpringApplication.run(Application.class, args);\n    }\n}\n".to_string(),
+                "Classe principal.",
+            ));
+            files.push((
+                "src/main/java/com/example/app/HelloController.java",
+                format!(
+                    "package com.example.app;\n\nimport java.util.Map;\nimport org.springframework.web.bind.annotation.GetMapping;\nimport org.springframework.web.bind.annotation.RestController;\n\n@RestController\npublic class HelloController {{\n    @GetMapping(\"/\")\n    public Map<String, String> hello() {{\n        return Map.of(\"message\", \"{name} está no ar\");\n    }}\n\n    @GetMapping(\"/health\")\n    public Map<String, String> health() {{\n        return Map.of(\"status\", \"ok\");\n    }}\n}}\n"
+                ),
+                "Endpoints de exemplo.",
+            ));
+        }
+        Stack::Python => {
+            if r.framework == PythonFramework::Flask {
+                files.push((
+                    "requirements.txt",
+                    "flask==3.0.3\n".to_string(),
+                    "Dependências Python.",
+                ));
+                files.push((
+                    "app.py",
+                    format!(
+                        "from flask import Flask, jsonify\n\napp = Flask(__name__)\n\n\n@app.get(\"/\")\ndef root():\n    return jsonify(message=\"{name} está no ar\")\n\n\n@app.get(\"/health\")\ndef health():\n    return jsonify(status=\"ok\")\n"
+                    ),
+                    "Aplicação Flask de exemplo.",
+                ));
+            } else {
+                files.push((
+                    "requirements.txt",
+                    "fastapi==0.115.5\nuvicorn[standard]==0.32.1\n".to_string(),
+                    "Dependências Python.",
+                ));
+                files.push((
+                    "main.py",
+                    format!(
+                        "from fastapi import FastAPI\n\napp = FastAPI(title=\"{name}\")\n\n\n@app.get(\"/\")\ndef root():\n    return {{\"message\": \"{name} está no ar\"}}\n\n\n@app.get(\"/health\")\ndef health():\n    return {{\"status\": \"ok\"}}\n"
+                    ),
+                    "Aplicação FastAPI de exemplo.",
+                ));
+            }
+        }
+        Stack::Laravel => {}
+    }
+    let ignore = match r.stack {
+        Stack::Nodejs => "node_modules/\n.env\n",
+        Stack::SpringBoot => "target/\n.idea/\n*.iml\n.env\n",
+        Stack::Python => "__pycache__/\n*.pyc\n.venv/\n.env\n",
+        Stack::Laravel => ".env\n",
+    };
+    files.push((
+        ".gitignore",
+        ignore.to_string(),
+        "Arquivos que o Git deve ignorar.",
+    ));
+    files.push((
+        "README.md",
+        format!(
+            "# {name}\n\nProjeto criado com o AutoDock.\n\n## Rodar com Docker\n\n```bash\ndocker compose up --build\n```\n\nDepois acesse http://localhost:{port}.\n"
+        ),
+        "Instruções para rodar o projeto.",
+    ));
+    files
 }
 
 fn json_array(items: &[String]) -> String {
@@ -769,10 +934,12 @@ fn env_example(r: &Resolved) -> String {
 }
 
 fn notes(r: &Resolved) -> Vec<String> {
-    let mut notes = vec![
-        "Nada foi gravado ainda. Revise os arquivos antes de confirmar.".to_string(),
-        "Os serviços auxiliares publicam portas apenas em 127.0.0.1.".to_string(),
-    ];
+    let mut notes =
+        vec!["Nada foi gravado ainda. Revise os arquivos antes de confirmar.".to_string()];
+    if r.new_project {
+        notes.push("Um projeto inicial mínimo será criado nesta pasta vazia, já pronto para rodar no Docker.".to_string());
+    }
+    notes.extend(["Os serviços auxiliares publicam portas apenas em 127.0.0.1.".to_string()]);
     match r.stack {
         Stack::Nodejs => notes.push(format!(
             "A aplicação precisa escutar em 0.0.0.0 e na porta da variável PORT ({}), senão não ficará acessível fora do container.",
@@ -815,7 +982,18 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
     let root = root_of(&request.path)?;
     let resolved = resolve(request, &root)?;
     let compose_exists = COMPOSE_NAMES.iter().any(|name| present(&root, name));
-    let mut files = vec![
+    let mut files: Vec<GeneratedFile> = vec![];
+    if resolved.new_project {
+        for (name, content, description) in starter_files(&resolved) {
+            files.push(GeneratedFile {
+                name: name.into(),
+                description: description.into(),
+                content,
+                exists: present(&root, name),
+            });
+        }
+    }
+    files.extend(vec![
         GeneratedFile {
             name: DOCKERFILE.into(),
             description: "Como a imagem da aplicação é construída.".into(),
@@ -834,7 +1012,7 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
             content: dockerignore(resolved.stack),
             exists: present(&root, DOCKERIGNORE),
         },
-    ];
+    ]);
     if !secrets(&resolved.services).is_empty() {
         files.push(GeneratedFile {
             name: ENV_EXAMPLE.into(),
@@ -892,6 +1070,16 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
             });
             continue;
         }
+        if let Some(parent) = Path::new(&file.name).parent() {
+            // File names come from the plan (fixed, relative, no "..").
+            if let Err(e) = fs::create_dir_all(root.join(parent)) {
+                report.skipped.push(SkippedFile {
+                    name: file.name.clone(),
+                    reason: format!("Falha ao criar pasta: {e}"),
+                });
+                continue;
+            }
+        }
         match create_new(&root.join(&file.name), &file.content) {
             Ok(()) => report.written.push(file.name.clone()),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -932,6 +1120,7 @@ mod tests {
             python_framework: None,
             python_module: None,
             services: vec![],
+            new_project: false,
         }
     }
 
@@ -1024,6 +1213,79 @@ mod tests {
             r#"{"path":".","stack":"nodejs","port":1,"content":"x"}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn empty_folder_detection_ignores_only_harmless_entries() {
+        let dir = project(&[(".DS_Store", "")]);
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        assert!(folder_is_empty(&dir.path().to_string_lossy()).unwrap());
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        assert!(!folder_is_empty(&dir.path().to_string_lossy()).unwrap());
+    }
+
+    #[test]
+    fn new_project_creates_starter_and_docker_files_only_in_empty_folders() {
+        for (stack, expected) in [
+            (Stack::Nodejs, "index.js"),
+            (
+                Stack::SpringBoot,
+                "src/main/java/com/example/app/Application.java",
+            ),
+            (Stack::Python, "main.py"),
+        ] {
+            let dir = project(&[]);
+            let mut req = request(&dir, stack);
+            req.new_project = true;
+            req.port = 8080;
+            req.services = vec![Service::Postgres];
+            let plan = preview(&req).unwrap();
+            assert!(plan.files.iter().any(|f| f.name == expected), "{stack:?}");
+            assert!(plan.files.iter().any(|f| f.name == DOCKERFILE));
+            let names: Vec<String> = plan.files.iter().map(|f| f.name.clone()).collect();
+            let report = apply(&req, &names).unwrap();
+            assert_eq!(
+                report.written.len(),
+                names.len(),
+                "{stack:?} {:?}",
+                report.skipped
+            );
+            assert!(dir.path().join(expected).is_file());
+            // the folder is no longer empty: a second run is refused, nothing is overwritten
+            assert!(preview(&req).is_err());
+        }
+        // non-empty folder, and unsupported scaffolds, are refused
+        let dir = project(&[("keep.txt", "x")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.new_project = true;
+        assert!(preview(&req).is_err());
+        let dir = project(&[]);
+        let mut req = request(&dir, Stack::Laravel);
+        req.new_project = true;
+        assert!(preview(&req).is_err());
+        let mut req = request(&dir, Stack::Python);
+        req.new_project = true;
+        req.python_framework = Some(PythonFramework::Django);
+        assert!(preview(&req).is_err());
+    }
+
+    #[test]
+    fn project_names_are_sanitized_for_manifests() {
+        for (folder, expected) in [
+            ("Meu App!", "meu-app"),
+            ("123abc", "app-123abc"),
+            ("a\"b", "a-b"),
+            ("___", "app"),
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let path = parent.path().join(folder);
+            fs::create_dir(&path).unwrap();
+            assert_eq!(
+                project_name(&path.canonicalize().unwrap()),
+                expected,
+                "{folder}"
+            );
+        }
     }
 
     #[test]
