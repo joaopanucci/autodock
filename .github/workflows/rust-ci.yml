@@ -44,11 +44,14 @@ jobs:
         run: cargo fmt --all -- --check
 
       # Check the full Tauri workspace, without building or launching the app.
+      # A stalled mirror must fail fast and retry instead of hanging the job.
       - name: Install Linux Tauri prerequisites
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          sudo apt-get $APT_OPTS update
+          sudo apt-get $APT_OPTS install --no-install-recommends -y \
             build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev \
             libxdo-dev libayatana-appindicator3-dev librsvg2-dev
 
