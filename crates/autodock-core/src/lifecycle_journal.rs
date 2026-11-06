@@ -51,8 +51,6 @@ impl PendingOperation {
 const MAX_PENDING_RECORD_BYTES: u64 = 4096;
 
 fn validate_journal_directory(directory: &Path) -> Result<(), String> {
-    use std::path::Component;
-
     if directory.as_os_str().is_empty() {
         return Err("Caminho do journal vazio.".into());
     }
@@ -65,16 +63,16 @@ fn validate_journal_directory(directory: &Path) -> Result<(), String> {
             .join(directory)
     };
 
+    if crate::lifecycle_fs::has_relative_navigation(&absolute) {
+        return Err("Caminho do journal contem navegacao relativa.".into());
+    }
+
     let mut current = PathBuf::new();
 
     for component in absolute.components() {
-        if matches!(component, Component::ParentDir) {
-            return Err("Caminho do journal contem navegacao relativa.".into());
-        }
-
         current.push(component.as_os_str());
         // A Windows drive/UNC prefix alone is not an absolute directory yet.
-        if matches!(component, Component::Prefix(_)) {
+        if matches!(component, std::path::Component::Prefix(_)) {
             continue;
         }
 
@@ -277,10 +275,31 @@ mod tests {
             .canonicalize()
             .expect("Diretorio temporario indisponivel");
 
-        tempfile::Builder::new()
-            .prefix("autodock-journal-test-")
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("autodock-journal-test-");
+        // Default tempdir mode follows the umask (0775 on Ubuntu runners).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            builder.permissions(fs::Permissions::from_mode(0o700));
+        }
+        builder
             .tempdir_in(base)
             .expect("Falha ao criar diretorio temporario")
+    }
+
+    /// A journal must not sit directly in a shared parent such as /tmp (the
+    /// sibling lock would live there). Use a private subdirectory of the
+    /// private fixture root, as the application's own storage does.
+    fn journal_dir(dir: &tempfile::TempDir) -> PathBuf {
+        let path = dir.path().join("pending");
+        fs::create_dir(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        path
     }
 
     fn sample() -> PendingOperation {
@@ -382,7 +401,7 @@ mod tests {
     #[test]
     fn refuses_to_overwrite_existing_record() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
         let record = sample();
 
         journal.record(&record).unwrap();
@@ -393,7 +412,11 @@ mod tests {
     #[test]
     fn rejects_invalid_identifiers_and_actions() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
+
+        // Positive control: the fixture is accepted, so rejections below are
+        // caused by the invalid fields and not by the journal location.
+        assert!(journal.list().unwrap().is_empty());
 
         let mut record = sample();
         record.container_id = "../invalid".into();
@@ -411,9 +434,13 @@ mod tests {
     #[test]
     fn corrupted_records_fail_closed() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
 
-        fs::write(dir.path().join(format!("{}.json", "a".repeat(32))), b"{bad").unwrap();
+        fs::write(
+            journal.directory().join(format!("{}.json", "a".repeat(32))),
+            b"{bad",
+        )
+        .unwrap();
 
         assert!(journal.list().is_err());
     }
@@ -429,7 +456,7 @@ mod tests {
     #[test]
     fn refuses_duplicate_container_in_same_context() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
 
         let first = sample();
         journal.record(&first).unwrap();
@@ -445,7 +472,7 @@ mod tests {
     #[test]
     fn allows_same_container_in_different_contexts() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
 
         let first = sample();
         journal.record(&first).unwrap();
@@ -461,10 +488,10 @@ mod tests {
     #[test]
     fn oversized_record_fails_closed() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
 
         fs::write(
-            dir.path().join(format!("{}.json", "e".repeat(32))),
+            journal.directory().join(format!("{}.json", "e".repeat(32))),
             vec![b'x'; 4097],
         )
         .unwrap();
@@ -475,16 +502,16 @@ mod tests {
     #[test]
     fn unexpected_directory_entry_fails_closed() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
 
-        fs::create_dir(dir.path().join("unexpected")).unwrap();
+        fs::create_dir(journal.directory().join("unexpected")).unwrap();
         assert!(journal.list().is_err());
     }
 
     #[test]
     fn duplicate_records_on_disk_fail_closed() {
         let dir = secure_test_tempdir();
-        let journal = LifecycleJournal::new(dir.path().to_path_buf());
+        let journal = LifecycleJournal::new(journal_dir(&dir));
 
         let first = sample();
         journal.record(&first).unwrap();
@@ -493,7 +520,9 @@ mod tests {
         second.operation_id = "f".repeat(32);
 
         fs::write(
-            dir.path().join(format!("{}.json", second.operation_id)),
+            journal
+                .directory()
+                .join(format!("{}.json", second.operation_id)),
             serde_json::to_vec(&second).unwrap(),
         )
         .unwrap();
@@ -648,6 +677,34 @@ mod tests {
             .is_file());
         drop(transaction);
         assert!(journal.list().is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_journal_placed_directly_in_shared_parent() {
+        use std::os::unix::fs::PermissionsExt;
+        // Shared parents (like /tmp: not ours, group/world writable) must be
+        // refused: the sibling lock file would live there.
+        let dir = secure_test_tempdir();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o775)).unwrap();
+        let journal = LifecycleJournal::new(dir.path().join("pending"));
+        assert!(journal.record(&sample()).is_err());
+        assert!(journal.list().is_err());
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        journal.record(&sample()).unwrap();
+    }
+
+    #[test]
+    fn rejects_parent_navigation_with_existing_target_and_verbatim_prefix() {
+        let dir = secure_test_tempdir();
+        let real = journal_dir(&dir);
+        // `pending/../pending` resolves to a valid, existing journal; it must
+        // still be refused. canonicalize() yields a verbatim path on Windows.
+        let path = real.join("..").join("pending");
+        let journal = LifecycleJournal::new(path);
+        assert!(journal.list().is_err());
+        assert!(journal.record(&sample()).is_err());
+        assert!(LifecycleJournal::new(real).list().unwrap().is_empty());
     }
 
     #[cfg(unix)]
