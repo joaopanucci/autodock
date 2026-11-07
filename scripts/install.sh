@@ -12,7 +12,7 @@
 # unnotarized, and you can read this whole script before running it.
 #
 # Options (environment variables):
-#   AUTODOCK_VERSION  release tag to install, e.g. v0.2.0 (default: latest)
+#   AUTODOCK_VERSION  release tag to install, e.g. v0.3.0 (default: latest)
 #   AUTODOCK_DEST     folder to install into (default: /Applications)
 #   AUTODOCK_NO_OPEN  set to anything to skip opening the app afterwards
 set -euo pipefail
