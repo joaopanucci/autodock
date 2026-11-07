@@ -54,7 +54,7 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 | **Vários apps (monorepos, microsserviços)** | Encontra cada app da pasta (backend, front end, mobile…), escreve **um Dockerfile por app** e **um compose** que roda todos juntos com os serviços compartilhados, já ligados entre si (o front end recebe o endereço do backend). Dockerfiles e compose que já existem são reaproveitados, nunca sobrescritos. |
 | **Subir tudo** | Um botão (depois da sua confirmação) roda `docker compose up -d --build`, mostra o estado de cada serviço e permite parar ou remover os containers. Os volumes (seus dados) nunca são removidos. |
 | **Expo: aviso de SDK e atualização** | Mostra o SDK dos seus projetos Expo e avisa quando sai um SDK **estável** mais novo ("seu projeto está no SDK 57, mas o Expo lançou o SDK 58: atualizar?"). A atualização segue os passos oficiais (`expo install`, `expo install --fix`, `expo-doctor`) **dentro do Docker**, um SDK por vez, com backup do `package.json` e do arquivo de lock que volta sozinho se algo falhar. |
-| **Java: atualização de projeto legado** | Lê um projeto Maven antigo (Java 6/7/8, Spring Boot 1.x/2.x) e cria, **ao lado dele**, uma cópia atualizada para o **Java 25 e o Spring Boot 4**: sobe a cópia um passo por vez (Spring Boot 2.7, Java 17, Spring Boot 3.5 com `javax` → `jakarta`, Spring Boot 4, Java 25) com o [OpenRewrite](https://docs.openrewrite.org/) **dentro do Docker**, compila depois de cada passo, adiciona as dependências das APIs que o JDK deixou de trazer (JAXB, `javax.annotation`…) e roda os testes do próprio projeto. O seu projeto nunca é alterado. |
+| **Java: atualização de projeto legado** | Lê um projeto Maven antigo (Java 6/7/8, Spring Boot 1.x/2.x) e cria, **ao lado dele** (ou na pasta que você escolher), uma cópia atualizada para o **Java 25 e o Spring Boot 4**: sobe a cópia um passo por vez (Spring Boot 2.7, Java 17, Spring Boot 3.5 com `javax` → `jakarta`, Spring Boot 4, Java 25) com o [OpenRewrite](https://docs.openrewrite.org/) **dentro do Docker**, compila depois de cada passo, adiciona as dependências das APIs que o JDK deixou de trazer (JAXB, `javax.annotation`…) e roda os testes do próprio projeto. O seu projeto nunca é alterado. |
 | **Atualização dentro do app** | Quando sai uma versão nova, o AutoDock avisa e se atualiza com um clique (sem baixar de novo). A atualização é **verificada por assinatura** antes de ser instalada, nada é instalado sem o seu clique, e a verificação (uma vez por dia, uma requisição ao GitHub) pode ser desligada em Configurações. |
 | **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
 | **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
@@ -186,7 +186,7 @@ Adicione seus projetos Expo e o AutoDock avisa quando sai um SDK **estável** ma
 
 ### ☕ Java: atualização de projeto legado
 
-Escolha um projeto Maven e o AutoDock mostra o nível do Java e a versão do Spring Boot, monta o plano e, depois da sua confirmação, cria uma cópia atualizada ao lado da pasta (`<nome>-java25`). Cada passo é compilado: se algo quebrar, o relatório diz em qual passo e mostra os erros do compilador. Projetos Spring Boot sobem uma linha principal por vez; projetos sem Spring só mudam o nível do Java. Gradle ainda não é suportado. [Mais detalhes nas notas de segurança](docs/SECURITY.md).
+Escolha um projeto Maven e o AutoDock mostra o nível do Java e a versão do Spring Boot, monta o plano e, depois da sua confirmação, cria uma cópia atualizada (`<nome>-java25`) ao lado da pasta, ou na pasta que você escolher. Cada passo é compilado: se algo quebrar, o relatório diz em qual passo e mostra os erros do compilador. Projetos Spring Boot sobem uma linha principal por vez; projetos sem Spring só mudam o nível do Java. Gradle ainda não é suportado. [Mais detalhes nas notas de segurança](docs/SECURITY.md).
 
 ### 🌗 Claro e escuro
 
@@ -272,6 +272,7 @@ autodock expo upgrade ./app --yes                      # executa no Docker, com 
 autodock java inspect ./app-antigo                     # nível do Java, Spring Boot, APIs que o JDK removeu (só lê)
 autodock java plan ./app-antigo                        # os passos, as dependências a adicionar e onde a cópia vai
 autodock java upgrade ./app-antigo --yes               # cria ./app-antigo-java25 no Docker; o original nunca é alterado
+autodock java upgrade ./app-antigo --into ~/backups --yes # o mesmo, com a cópia criada dentro de ~/backups
 ```
 
 ## 🧱 Arquitetura

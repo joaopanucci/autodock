@@ -270,9 +270,13 @@ async fn java_inspect(
 #[tauri::command]
 async fn java_upgrade_plan(
     path: String,
+    destination: Option<String>,
     lang: Option<String>,
 ) -> Result<autodock_core::java_upgrade::UpgradePlan, String> {
-    localized(lang, move || autodock_core::java_upgrade::plan(&path)).await?
+    localized(lang, move || {
+        autodock_core::java_upgrade::plan_in(&path, destination.as_deref())
+    })
+    .await?
 }
 
 #[tauri::command]

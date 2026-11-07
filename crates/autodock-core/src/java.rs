@@ -450,14 +450,23 @@ fn module_dirs(root: &Path, dir: &str, text: &str, depth: usize, out: &mut Vec<S
     }
 }
 
+/// Folders that never hold the project's own sources.
+const SKIPPED_SOURCE_DIRS: [&str; 4] = ["node_modules", ".git", ".idea", ".gradle"];
+
+/// Reads every `.java` file under `dir`, wherever the project keeps its sources (legacy
+/// projects often do not use `src/main/java`). Folders of other modules are left to their own
+/// scan, hidden folders and the `target` of a Maven folder are skipped, symbolic links are not
+/// followed.
 fn scan_sources(
     dir: &Path,
+    other_modules: &[std::path::PathBuf],
     files: &mut usize,
     found: &mut BTreeMap<&'static str, (usize, &'static Removed)>,
 ) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
+    let maven_folder = dir.join("pom.xml").is_file();
     for entry in entries.flatten() {
         let Ok(meta) = fs::symlink_metadata(entry.path()) else {
             continue;
@@ -465,11 +474,17 @@ fn scan_sources(
         if meta.file_type().is_symlink() {
             continue;
         }
+        let name = entry.file_name().to_string_lossy().into_owned();
         if meta.is_dir() {
-            scan_sources(&entry.path(), files, found);
+            let skipped = SKIPPED_SOURCE_DIRS.contains(&name.as_str())
+                || (maven_folder && name == "target")
+                || other_modules.iter().any(|module| *module == entry.path());
+            if !skipped {
+                scan_sources(&entry.path(), other_modules, files, found);
+            }
         } else if meta.is_file()
             && meta.len() <= MAX_SOURCE_BYTES
-            && entry.path().extension().is_some_and(|e| e == "java")
+            && name.ends_with(".java")
             && *files < MAX_SOURCE_FILES
         {
             *files += 1;
@@ -489,6 +504,7 @@ pub(crate) fn scan_modules(root: &Path) -> Vec<ModuleScan> {
         module_dirs(root, "", &text, 0, &mut dirs);
     }
     let mut files = 0;
+    let module_dirs_all = dirs.clone();
     dirs.into_iter()
         .map(|dir| {
             let base = if dir.is_empty() {
@@ -504,9 +520,12 @@ pub(crate) fn scan_modules(root: &Path) -> Vec<ModuleScan> {
                 })
                 .unwrap_or_else(|| "jar".into());
             let mut apis = BTreeMap::new();
-            for source_root in ["src/main/java", "src/test/java"] {
-                scan_sources(&base.join(source_root), &mut files, &mut apis);
-            }
+            let other_modules: Vec<std::path::PathBuf> = module_dirs_all
+                .iter()
+                .filter(|other| !other.is_empty() && **other != dir)
+                .map(|other| root.join(other))
+                .collect();
+            scan_sources(&base, &other_modules, &mut files, &mut apis);
             ModuleScan {
                 dir,
                 packaging,
@@ -851,5 +870,38 @@ mod tests {
         let p = inspect(inner.to_str().unwrap()).unwrap().unwrap();
         assert!(!p.upgrade_supported);
         assert!(p.unsupported_reason.unwrap().contains("pom"));
+    }
+    #[test]
+    fn sources_are_found_wherever_the_project_keeps_them() {
+        // A legacy layout: sources straight in `src/` and in `java/`, none in src/main/java.
+        let pom = "<project><artifactId>old</artifactId><packaging>pom</packaging><modules><module>web</module></modules></project>";
+        let module = "<project><artifactId>web</artifactId></project>";
+        let dir = project(&[
+            ("pom.xml", pom),
+            (
+                "src/com/acme/Main.java",
+                "import javax.xml.bind.JAXBContext;",
+            ),
+            (
+                "java/com/acme/Util.java",
+                "import javax.annotation.PostConstruct;",
+            ),
+            ("web/pom.xml", module),
+            ("web/src/Servlet.java", "import javax.xml.bind.JAXBContext;"),
+            ("target/generated/Gen.java", "import org.omg.CORBA.ORB;"),
+            ("node_modules/x/Fake.java", "import sun.misc.Unsafe;"),
+            (".git/Hidden.java", "import sun.misc.Unsafe;"),
+        ]);
+        let scans = scan_modules(dir.path());
+        let root = &scans[0];
+        let web = &scans[1];
+        assert_eq!(root.dir, "");
+        // the root sees its own folders, not the module's, `target`, `node_modules` or `.git`
+        let names = |m: &ModuleScan| m.apis.keys().copied().collect::<Vec<_>>();
+        assert_eq!(names(root), ["javax.annotation", "javax.xml.bind"]);
+        assert_eq!(root.apis["javax.xml.bind"].0, 1);
+        assert_eq!(web.dir, "web");
+        assert_eq!(names(web), ["javax.xml.bind"]);
+        assert_eq!(web.apis["javax.xml.bind"].0, 1);
     }
 }
