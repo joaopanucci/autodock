@@ -209,3 +209,84 @@ export type ScaffoldReport = {
   output: string;
   detail: string;
 };
+
+export type AppRole = "backend" | "frontend" | "mobile";
+
+export type AppCandidate = {
+  path: string;
+  name: string;
+  stack: StackId;
+  role: AppRole;
+  framework: string | null;
+  evidence: string;
+  port: number;
+  startScript: string | null;
+  packageManager: PackageManager | null;
+  pythonFramework: PythonFramework | null;
+  hasDockerfile: boolean;
+  selected: boolean;
+  note: string | null;
+};
+
+export type SkippedFolder = { path: string; reason: string };
+
+export type AppsReport = {
+  schemaVersion: number;
+  project: string;
+  projectName: string;
+  apps: AppCandidate[];
+  skipped: SkippedFolder[];
+  existingCompose: string | null;
+  warnings: string[];
+};
+
+export type MultiAppRequest = {
+  path: string;
+  name: string;
+  stack: StackId;
+  role: AppRole;
+  framework?: string | null;
+  port: number;
+  startScript?: string | null;
+  packageManager?: PackageManager | null;
+  pythonFramework?: PythonFramework | null;
+};
+
+export type MultiRequest = {
+  path: string;
+  projectName?: string;
+  apps: MultiAppRequest[];
+  services: ServiceId[];
+  seed?: string;
+  ports?: PortAssignment[];
+};
+
+export type ComposeAction = "up" | "stop" | "down";
+
+export type ComposeReport = {
+  schemaVersion: number;
+  action: ComposeAction;
+  command: string;
+  status: "available" | "missing" | "timeout" | "execution_error";
+  exitCode: number | null;
+  succeeded: boolean;
+  output: string;
+  detail: string;
+  durationMs: number;
+};
+
+export type ServiceState = {
+  service: string;
+  container: string;
+  state: string;
+  status: string;
+  health: string | null;
+  ports: string[];
+};
+
+export type ComposeStatus = {
+  schemaVersion: number;
+  services: ServiceState[];
+  status: "available" | "missing" | "timeout" | "execution_error";
+  detail: string;
+};

@@ -17,7 +17,7 @@ use std::{
 };
 
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
-const COMPOSE_NAMES: [&str; 4] = [
+pub(crate) const COMPOSE_NAMES: [&str; 4] = [
     "compose.yaml",
     "compose.yml",
     "docker-compose.yaml",
@@ -195,17 +195,17 @@ pub fn folder_is_empty(path: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-fn regular_file(root: &Path, name: &str) -> bool {
+pub(crate) fn regular_file(root: &Path, name: &str) -> bool {
     fs::symlink_metadata(root.join(name))
         .map(|m| m.is_file() && !m.file_type().is_symlink())
         .unwrap_or(false)
 }
 
-fn present(root: &Path, name: &str) -> bool {
+pub(crate) fn present(root: &Path, name: &str) -> bool {
     fs::symlink_metadata(root.join(name)).is_ok()
 }
 
-fn read_manifest(root: &Path, name: &str) -> Option<String> {
+pub(crate) fn read_manifest(root: &Path, name: &str) -> Option<String> {
     if !regular_file(root, name) {
         return None;
     }
@@ -356,7 +356,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
 
 /// Stem of the first `*.csproj` file at the root (regular files only, never
 /// symlinks). The stem becomes part of the Dockerfile, so it is validated.
-fn csproj_name(root: &Path) -> Option<String> {
+pub(crate) fn csproj_name(root: &Path) -> Option<String> {
     let mut names: Vec<String> = fs::read_dir(root)
         .ok()?
         .filter_map(Result::ok)
@@ -382,7 +382,7 @@ fn csproj_name(root: &Path) -> Option<String> {
 }
 
 /// True when the Gemfile declares the `rails` gem (comments are ignored).
-fn gemfile_has_rails(text: &str) -> bool {
+pub(crate) fn gemfile_has_rails(text: &str) -> bool {
     text.lines().map(str::trim).any(|line| {
         !line.starts_with('#')
             && (line.starts_with("gem \"rails\"") || line.starts_with("gem 'rails'"))
@@ -400,7 +400,7 @@ pub(crate) fn valid_script(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b":_.-".contains(&b))
 }
 
-fn valid_module(value: &str) -> bool {
+pub(crate) fn valid_module(value: &str) -> bool {
     let mut parts = value.splitn(2, ':');
     let ok = |part: &str| {
         !part.is_empty()
@@ -412,7 +412,7 @@ fn valid_module(value: &str) -> bool {
     ok(parts.next().unwrap_or("")) && parts.next().map(ok).unwrap_or(true)
 }
 
-fn runtime_version(stack: Stack, requested: &Option<String>) -> Result<String, String> {
+pub(crate) fn runtime_version(stack: Stack, requested: &Option<String>) -> Result<String, String> {
     let (allowed, default): (&[&str], &str) = match stack {
         Stack::Nodejs => (&["24", "22", "20"], "22"),
         Stack::SpringBoot => (&["21", "17"], "21"),
@@ -434,7 +434,7 @@ fn runtime_version(stack: Stack, requested: &Option<String>) -> Result<String, S
     }
 }
 
-const SERVICE_ORDER: [Service; 7] = [
+pub(crate) const SERVICE_ORDER: [Service; 7] = [
     Service::Postgres,
     Service::Mysql,
     Service::Mongodb,
@@ -445,7 +445,7 @@ const SERVICE_ORDER: [Service; 7] = [
 ];
 
 /// `(name, container port, preferred host port)` for every port a service publishes.
-fn service_ports(service: Service) -> &'static [(&'static str, u16, u16)] {
+pub(crate) fn service_ports(service: Service) -> &'static [(&'static str, u16, u16)] {
     match service {
         Service::Postgres => &[("postgres", 5432, 5432)],
         Service::Mysql => &[("mysql", 3306, 3306)],
@@ -460,7 +460,7 @@ fn service_ports(service: Service) -> &'static [(&'static str, u16, u16)] {
     }
 }
 
-fn display_name(service: Service) -> &'static str {
+pub(crate) fn display_name(service: Service) -> &'static str {
     match service {
         Service::Postgres => "PostgreSQL",
         Service::Mysql => "MySQL",
@@ -472,7 +472,7 @@ fn display_name(service: Service) -> &'static str {
     }
 }
 
-fn name_of(service: Service) -> &'static str {
+pub(crate) fn name_of(service: Service) -> &'static str {
     match service {
         Service::Postgres => "postgres",
         Service::Mysql => "mysql",
@@ -486,26 +486,26 @@ fn name_of(service: Service) -> &'static str {
 
 // --------------------------------------------------------------- generation
 
-struct Resolved {
-    stack: Stack,
-    port: u16,
-    version: String,
-    package_manager: PackageManager,
-    start_script: String,
-    framework: PythonFramework,
-    module: String,
-    services: Vec<Service>,
-    python_uses_pyproject: bool,
-    new_project: bool,
-    project_name: String,
+pub(crate) struct Resolved {
+    pub(crate) stack: Stack,
+    pub(crate) port: u16,
+    pub(crate) version: String,
+    pub(crate) package_manager: PackageManager,
+    pub(crate) start_script: String,
+    pub(crate) framework: PythonFramework,
+    pub(crate) module: String,
+    pub(crate) services: Vec<Service>,
+    pub(crate) python_uses_pyproject: bool,
+    pub(crate) new_project: bool,
+    pub(crate) project_name: String,
     /// Assembly (project file) name of a .NET application, empty for other stacks.
-    dotnet_project: String,
+    pub(crate) dotnet_project: String,
     /// The chosen npm script runs the Vite dev server, which must bind 0.0.0.0.
-    vite: bool,
-    seed: Seed,
-    ports: Vec<PortAssignment>,
+    pub(crate) vite: bool,
+    pub(crate) seed: Seed,
+    pub(crate) ports: Vec<PortAssignment>,
     /// `.gitignore` already keeps `.env.docker` out of version control.
-    gitignore_covers_env: bool,
+    pub(crate) gitignore_covers_env: bool,
 }
 
 fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
@@ -554,6 +554,37 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         Some(hex) => secrets::seed_from_hex(hex)?,
         None => secrets::new_seed()?,
     };
+    resolve_core(request, root, version, services, assigned_ports, seed)
+}
+
+/// Resolves one application of a multi-app project. The ports and the seed are
+/// decided once for the whole project, so they are passed in.
+pub(crate) fn resolve_app(
+    request: &GenerateRequest,
+    app_root: &Path,
+    ports: Vec<PortAssignment>,
+    seed: secrets::Seed,
+) -> Result<Resolved, String> {
+    if request.port == 0 {
+        return Err(tr!("Porta inválida.", "Invalid port."));
+    }
+    let version = runtime_version(request.stack, &request.runtime_version)?;
+    let services: Vec<Service> = SERVICE_ORDER
+        .iter()
+        .copied()
+        .filter(|s| request.services.contains(s))
+        .collect();
+    resolve_core(request, app_root, version, services, ports, seed)
+}
+
+fn resolve_core(
+    request: &GenerateRequest,
+    root: &Path,
+    version: String,
+    services: Vec<Service>,
+    assigned_ports: Vec<PortAssignment>,
+    seed: secrets::Seed,
+) -> Result<Resolved, String> {
     let start_script = match &request.start_script {
         Some(script) if !valid_script(script) => {
             return Err(tr!("Nome de script inválido.", "Invalid script name."));
@@ -737,7 +768,7 @@ fn laravel_min_php_minor(root: &Path) -> Option<u32> {
 }
 
 /// Whether `.gitignore` already ignores `.env.docker` (reads that file only).
-fn gitignore_covers_env(root: &Path) -> bool {
+pub(crate) fn gitignore_covers_env(root: &Path) -> bool {
     read_manifest(root, ".gitignore")
         .map(|text| {
             text.lines().map(str::trim).any(|line| {
@@ -750,7 +781,7 @@ fn gitignore_covers_env(root: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn script_runs_vite(root: &Path, script: &str) -> bool {
+pub(crate) fn script_runs_vite(root: &Path, script: &str) -> bool {
     read_manifest(root, "package.json")
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
         .and_then(|v| v.get("scripts")?.get(script)?.as_str().map(str::to_owned))
@@ -759,7 +790,7 @@ fn script_runs_vite(root: &Path, script: &str) -> bool {
 }
 
 /// Folder name reduced to a safe lowercase identifier for manifests.
-fn project_name(root: &Path) -> String {
+pub(crate) fn project_name(root: &Path) -> String {
     let raw = root
         .file_name()
         .map(|n| n.to_string_lossy().to_ascii_lowercase())
@@ -957,12 +988,12 @@ app.MapGet("/health", () => new { status = "ok" });
 app.Run();
 "#;
 
-fn json_array(items: &[String]) -> String {
+pub(crate) fn json_array(items: &[String]) -> String {
     let quoted: Vec<String> = items.iter().map(|i| format!("\"{i}\"")).collect();
     format!("[{}]", quoted.join(", "))
 }
 
-fn dockerfile(r: &Resolved) -> String {
+pub(crate) fn dockerfile(r: &Resolved) -> String {
     let banner_dev = tr!(
         "# Gerado pelo AutoDock. Ambiente de desenvolvimento.",
         "# Generated by AutoDock. Development environment."
@@ -1190,7 +1221,7 @@ CMD [\"sh\", \"-c\", \"rm -f tmp/pids/server.pid && bin/rails server -b 0.0.0.0 
     }
 }
 
-fn dockerignore(stack: Stack) -> String {
+pub(crate) fn dockerignore(stack: Stack) -> String {
     let mut lines = vec![
         ".git",
         ".idea",
@@ -1226,7 +1257,7 @@ fn dockerignore(stack: Stack) -> String {
     )
 }
 
-fn host_port(r: &Resolved, name: &str) -> u16 {
+pub(crate) fn host_port(r: &Resolved, name: &str) -> u16 {
     r.ports
         .iter()
         .find(|p| p.name == name)
@@ -1235,7 +1266,7 @@ fn host_port(r: &Resolved, name: &str) -> u16 {
 }
 
 /// Services whose containers need a password.
-fn has_secrets(services: &[Service]) -> bool {
+pub(crate) fn has_secrets(services: &[Service]) -> bool {
     services.iter().any(|s| {
         matches!(
             s,
@@ -1244,10 +1275,10 @@ fn has_secrets(services: &[Service]) -> bool {
     })
 }
 
-type Passwords = BTreeMap<&'static str, String>;
+pub(crate) type Passwords = BTreeMap<&'static str, String>;
 
 /// Strong generated passwords, one per credential, derived from the seed.
-fn passwords(r: &Resolved) -> Passwords {
+pub(crate) fn passwords(r: &Resolved) -> Passwords {
     let mut map = BTreeMap::new();
     for service in &r.services {
         match service {
@@ -1270,7 +1301,7 @@ fn passwords(r: &Resolved) -> Passwords {
     map
 }
 
-fn placeholder_passwords(passwords: &Passwords) -> Passwords {
+pub(crate) fn placeholder_passwords(passwords: &Passwords) -> Passwords {
     passwords
         .keys()
         .map(|key| (*key, "change-me".to_string()))
@@ -1278,7 +1309,7 @@ fn placeholder_passwords(passwords: &Passwords) -> Passwords {
 }
 
 /// Variables the service containers read (names fixed by the official images).
-fn service_env_vars(r: &Resolved, pw: &Passwords) -> Vec<(String, String)> {
+pub(crate) fn service_env_vars(r: &Resolved, pw: &Passwords) -> Vec<(String, String)> {
     let mut vars = vec![];
     for service in &r.services {
         match service {
@@ -1302,7 +1333,10 @@ fn service_env_vars(r: &Resolved, pw: &Passwords) -> Vec<(String, String)> {
 /// Returns `(plain, secret)` variables for the application container. Secret ones
 /// embed a password, so they go to `.env.docker` and never into the compose file.
 #[allow(clippy::type_complexity)]
-fn app_environment(r: &Resolved, pw: &Passwords) -> (Vec<(String, String)>, Vec<(String, String)>) {
+pub(crate) fn app_environment(
+    r: &Resolved,
+    pw: &Passwords,
+) -> (Vec<(String, String)>, Vec<(String, String)>) {
     fn push(list: &mut Vec<(String, String)>, key: &str, value: &str) {
         list.push((key.into(), value.into()));
     }
@@ -1457,7 +1491,7 @@ fn env_content(r: &Resolved, pw: &Passwords, example: bool) -> String {
     out
 }
 
-fn service_block(r: &Resolved, service: Service) -> String {
+pub(crate) fn service_block(r: &Resolved, service: Service) -> String {
     let hp = |name: &str| host_port(r, name);
     match service {
         Service::Postgres => format!(
@@ -1770,7 +1804,7 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
     })
 }
 
-fn create_new(path: &Path, content: &str, private: bool) -> std::io::Result<()> {
+pub(crate) fn create_new(path: &Path, content: &str, private: bool) -> std::io::Result<()> {
     #[cfg(not(unix))]
     let _ = private; // permissões 0600/0644 só existem no Unix
     let mut options = fs::OpenOptions::new();
@@ -1795,6 +1829,16 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
     }
     let plan = preview(request)?;
     let root = root_of(&request.path)?;
+    write_plan(&root, &plan, selected)
+}
+
+/// Writes the selected files of a plan under `root`. Existing files are skipped,
+/// never overwritten, and the ports of the plan are reserved afterwards.
+pub(crate) fn write_plan(
+    root: &Path,
+    plan: &GeneratePlan,
+    selected: &[String],
+) -> Result<ApplyReport, String> {
     for name in selected {
         if !plan.files.iter().any(|f| &f.name == name) {
             return Err(tr!(
@@ -1853,7 +1897,7 @@ pub fn apply(request: &GenerateRequest, selected: &[String]) -> Result<ApplyRepo
     }
     if !report.written.is_empty() {
         // Best effort: reserving ports must never block writing the project files.
-        let _ = ports::register(&root, &plan.ports);
+        let _ = ports::register(root, &plan.ports);
     }
     Ok(report)
 }

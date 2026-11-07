@@ -102,6 +102,62 @@ async fn apply_docker_setup(
 }
 
 #[tauri::command]
+async fn detect_apps(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::apps::AppsReport, String> {
+    localized(lang, move || autodock_core::apps::detect_apps(&path)).await?
+}
+
+#[tauri::command]
+async fn preview_multi_setup(
+    request: autodock_core::multi::MultiRequest,
+    lang: Option<String>,
+) -> Result<autodock_core::generate::GeneratePlan, String> {
+    localized(lang, move || autodock_core::multi::preview(&request)).await?
+}
+
+#[tauri::command]
+async fn apply_multi_setup(
+    request: autodock_core::multi::MultiRequest,
+    files: Vec<String>,
+    lang: Option<String>,
+) -> Result<autodock_core::generate::ApplyReport, String> {
+    localized(lang, move || autodock_core::multi::apply(&request, &files)).await?
+}
+
+#[tauri::command]
+async fn compose_files(path: String, lang: Option<String>) -> Result<Vec<String>, String> {
+    localized(lang, move || {
+        autodock_core::compose_run::compose_files(&path)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn compose_status(
+    path: String,
+    file: String,
+    lang: Option<String>,
+) -> Result<autodock_core::compose_run::ComposeStatus, String> {
+    localized(lang, move || {
+        autodock_core::compose_run::compose_status(&path, &file)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn compose_run(
+    request: autodock_core::compose_run::ComposeRequest,
+    lang: Option<String>,
+) -> Result<autodock_core::compose_run::ComposeReport, String> {
+    localized(lang, move || {
+        autodock_core::compose_run::run_compose(request)
+    })
+    .await?
+}
+
+#[tauri::command]
 async fn scan_project(
     path: String,
     lang: Option<String>,
@@ -142,6 +198,12 @@ pub fn run() {
             reveal_folder,
             preview_docker_setup,
             apply_docker_setup,
+            detect_apps,
+            preview_multi_setup,
+            apply_multi_setup,
+            compose_files,
+            compose_status,
+            compose_run,
             doctor_environment,
             list_docker_containers,
             collect_container_metrics,
