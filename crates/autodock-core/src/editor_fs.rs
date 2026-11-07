@@ -362,6 +362,226 @@ pub fn write(
     })
 }
 
+// ───────────────────────────── search ─────────────────────────────
+
+/// Matches returned for one search (more are reported as `truncated`).
+pub const MAX_SEARCH_RESULTS: usize = 500;
+const MAX_SEARCH_FILES: usize = 20_000;
+const MAX_SEARCH_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_QUERY_CHARS: usize = 200;
+/// Characters of the matching line that are returned.
+const PREVIEW_CHARS: usize = 240;
+/// Characters of context kept before a match when its line is cut.
+const PREVIEW_BEFORE: usize = 60;
+/// Folders that hold dependencies, build output or tool files: skipped unless asked for.
+const SEARCH_SKIPPED_DIRS: [&str; 10] = [
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "target",
+    "build",
+    "dist",
+    ".gradle",
+    ".idea",
+    ".vscode",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchMatch {
+    /// Path inside the folder, with `/`.
+    pub path: String,
+    /// 1-based, like the editor.
+    pub line: u32,
+    /// 1-based, in UTF-16 units, like the editor.
+    pub column: u32,
+    /// The line (cut around the match when it is long).
+    pub preview: String,
+    /// Where the match starts inside `preview`, and how long it is, in characters.
+    pub preview_start: u32,
+    pub length: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchReport {
+    pub matches: Vec<SearchMatch>,
+    pub files_scanned: usize,
+    pub files_with_matches: usize,
+    /// Files that were not searched: too large, binary or not UTF-8.
+    pub files_skipped: usize,
+    /// There are more matches (or files) than were returned.
+    pub truncated: bool,
+}
+
+/// One character, folded the way a case-insensitive search compares it. It never changes the
+/// number of characters, so a column found in the folded line is the column of the real line.
+fn fold(c: char) -> char {
+    c.to_lowercase().next().unwrap_or(c)
+}
+
+/// Starts (in characters) of the non-overlapping occurrences of `needle` in `line`.
+fn find_all(line: &[char], needle: &[char], case_sensitive: bool) -> Vec<usize> {
+    let mut found = vec![];
+    if needle.is_empty() || line.len() < needle.len() {
+        return found;
+    }
+    let same = |a: char, b: char| {
+        if case_sensitive {
+            a == b
+        } else {
+            fold(a) == fold(b)
+        }
+    };
+    let mut start = 0;
+    while start + needle.len() <= line.len() {
+        if needle
+            .iter()
+            .enumerate()
+            .all(|(i, n)| same(line[start + i], *n))
+        {
+            found.push(start);
+            start += needle.len();
+        } else {
+            start += 1;
+        }
+    }
+    found
+}
+
+fn preview_of(line: &[char], start: usize, length: usize) -> (String, u32) {
+    // Leading indentation is noise in a list of results.
+    let indent = line
+        .iter()
+        .take_while(|c| c.is_whitespace())
+        .count()
+        .min(start);
+    let from = if line.len() > PREVIEW_CHARS + indent {
+        start.saturating_sub(PREVIEW_BEFORE).max(indent)
+    } else {
+        indent
+    };
+    let to = (from + PREVIEW_CHARS)
+        .min(line.len())
+        .max((start + length).min(line.len()));
+    (line[from..to].iter().collect(), (start - from) as u32)
+}
+
+/// Looks for `query` as plain text in every text file under the folder. Folders of dependencies
+/// and build output are skipped unless `include_ignored`; links are never followed.
+pub fn search(
+    root: &str,
+    query: &str,
+    case_sensitive: bool,
+    include_ignored: bool,
+) -> Result<SearchReport, String> {
+    let root = root_dir(root)?;
+    let needle: Vec<char> = query.chars().collect();
+    if needle.is_empty() || needle.len() > MAX_QUERY_CHARS || query.contains(['\n', '\r', '\0']) {
+        return Err(tr!(
+            "Digite de 1 a {MAX_QUERY_CHARS} caracteres, em uma só linha.",
+            "Type 1 to {MAX_QUERY_CHARS} characters, on a single line."
+        ));
+    }
+    let mut report = SearchReport {
+        matches: vec![],
+        files_scanned: 0,
+        files_with_matches: 0,
+        files_skipped: 0,
+        truncated: false,
+    };
+    // Depth first, in name order, so the same search always gives the same answer.
+    let mut pending: Vec<(PathBuf, String)> = vec![(root.clone(), String::new())];
+    while let Some((dir, prefix)) = pending.pop() {
+        let Ok(read) = fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut entries: Vec<_> = read.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        let mut subfolders = vec![];
+        for entry in entries {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Ok(meta) = fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if is_link(&meta) {
+                continue;
+            }
+            let relative = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            if meta.is_dir() {
+                if include_ignored || !SEARCH_SKIPPED_DIRS.contains(&name.as_str()) {
+                    subfolders.push((entry.path(), relative));
+                }
+                continue;
+            }
+            if !meta.is_file() {
+                continue;
+            }
+            if report.files_scanned >= MAX_SEARCH_FILES {
+                report.truncated = true;
+                break;
+            }
+            report.files_scanned += 1;
+            if meta.len() > MAX_SEARCH_FILE_BYTES {
+                report.files_skipped += 1;
+                continue;
+            }
+            let Ok(bytes) = fs::read(entry.path()) else {
+                report.files_skipped += 1;
+                continue;
+            };
+            if bytes.iter().take(BINARY_SNIFF).any(|b| *b == 0) {
+                report.files_skipped += 1;
+                continue;
+            }
+            let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+            let Ok(text) = std::str::from_utf8(body) else {
+                report.files_skipped += 1;
+                continue;
+            };
+            let mut found_here = false;
+            for (index, raw) in text.split('\n').enumerate() {
+                let line: Vec<char> = raw.trim_end_matches('\r').chars().collect();
+                for start in find_all(&line, &needle, case_sensitive) {
+                    if report.matches.len() >= MAX_SEARCH_RESULTS {
+                        report.truncated = true;
+                        break;
+                    }
+                    found_here = true;
+                    let column = line[..start].iter().map(|c| c.len_utf16()).sum::<usize>() + 1;
+                    let (preview, preview_start) = preview_of(&line, start, needle.len());
+                    report.matches.push(SearchMatch {
+                        path: relative.clone(),
+                        line: index as u32 + 1,
+                        column: column as u32,
+                        preview,
+                        preview_start,
+                        length: needle.len() as u32,
+                    });
+                }
+                if report.truncated && report.matches.len() >= MAX_SEARCH_RESULTS {
+                    break;
+                }
+            }
+            if found_here {
+                report.files_with_matches += 1;
+            }
+            if report.matches.len() >= MAX_SEARCH_RESULTS {
+                report.truncated = true;
+                return Ok(report);
+            }
+        }
+        // Folders are visited in name order too (the stack gives the last pushed first).
+        pending.extend(subfolders.into_iter().rev());
+    }
+    Ok(report)
+}
+
 // ───────────────────────────── create ─────────────────────────────
 
 /// Creates an empty file or a folder named `name` inside the folder `parent`. Never overwrites.
@@ -743,5 +963,194 @@ mod tests {
         // remove the junction itself, never what it points to
         fs::remove_dir(dir.path().join("out")).unwrap();
         assert!(outside.path().join("secret.txt").exists());
+    }
+    #[test]
+    fn a_search_finds_every_occurrence_with_its_line_and_column_in_name_order() {
+        let (_dir, root) = project(&[
+            ("b.txt", "nothing here\n"),
+            ("a.txt", "first needle\n  second needle and needle\n"),
+            (
+                "src/Main.java",
+                "class Main {\n\tString s = \"Needle\";\n}\n",
+            ),
+        ]);
+        let report = search(&root, "needle", false, false).unwrap();
+        let found: Vec<(&str, u32, u32)> = report
+            .matches
+            .iter()
+            .map(|m| (m.path.as_str(), m.line, m.column))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("a.txt", 1, 7),
+                ("a.txt", 2, 10),
+                ("a.txt", 2, 21),
+                ("src/Main.java", 2, 14)
+            ]
+        );
+        assert_eq!(
+            (
+                report.files_scanned,
+                report.files_with_matches,
+                report.files_skipped
+            ),
+            (3, 2, 0)
+        );
+        assert!(!report.truncated);
+        // the preview drops the indentation and says where the match is
+        let second = &report.matches[1];
+        assert_eq!(
+            (second.preview.as_str(), second.preview_start, second.length),
+            ("second needle and needle", 7, 6)
+        );
+        // case-sensitive: only the exact spelling
+        let exact = search(&root, "Needle", true, false).unwrap();
+        assert_eq!(exact.matches.len(), 1);
+        assert_eq!(exact.matches[0].path, "src/Main.java");
+        // the same search gives the same answer
+        assert_eq!(search(&root, "needle", false, false).unwrap(), report);
+    }
+
+    #[test]
+    fn columns_count_utf16_units_like_the_editor_and_folding_keeps_them() {
+        // an emoji takes two UTF-16 units; an accented capital folds to one character
+        let (_dir, root) = project(&[("u.txt", "😀 ação AÇÃO\n")]);
+        let report = search(&root, "ação", false, false).unwrap();
+        let columns: Vec<u32> = report.matches.iter().map(|m| m.column).collect();
+        assert_eq!(columns, [4, 9]);
+        assert_eq!(report.matches[0].length, 4);
+        assert_eq!(search(&root, "ação", true, false).unwrap().matches.len(), 1);
+    }
+
+    #[test]
+    fn dependency_and_build_folders_links_binary_big_and_non_utf8_files_are_not_searched() {
+        let (dir, root) = project(&[
+            ("src/App.java", "needle\n"),
+            ("node_modules/lib/index.js", "needle\n"),
+            ("target/classes/Gen.java", "needle\n"),
+            (".git/config", "needle\n"),
+            ("docs/build/notes.txt", "needle\n"),
+        ]);
+        fs::write(dir.path().join("image.bin"), [b'n', b'e', 0, b'e']).unwrap();
+        fs::write(
+            dir.path().join("latin1.txt"),
+            [b'n', b'e', b'e', b'd', b'l', b'e', 0xE9],
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("big.txt"),
+            vec![b'a'; (MAX_SEARCH_FILE_BYTES + 1) as usize],
+        )
+        .unwrap();
+        let report = search(&root, "needle", false, false).unwrap();
+        let files: Vec<&str> = report.matches.iter().map(|m| m.path.as_str()).collect();
+        assert_eq!(files, ["src/App.java"]);
+        assert_eq!(report.files_skipped, 3, "binary, non-UTF-8 and too big");
+        // asked to, the ignored folders are searched too
+        let all = search(&root, "needle", false, true).unwrap();
+        let mut files: Vec<&str> = all.matches.iter().map(|m| m.path.as_str()).collect();
+        files.sort_unstable();
+        assert_eq!(
+            files,
+            [
+                ".git/config",
+                "docs/build/notes.txt",
+                "node_modules/lib/index.js",
+                "src/App.java",
+                "target/classes/Gen.java"
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_search_never_follows_a_symbolic_link_out_of_the_folder() {
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("secret.txt"), "needle outside\n").unwrap();
+        let (dir, root) = project(&[("inside.txt", "needle inside\n")]);
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("out")).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret.txt"), dir.path().join("s.txt"))
+            .unwrap();
+        let report = search(&root, "needle", false, true).unwrap();
+        assert_eq!(
+            report
+                .matches
+                .iter()
+                .map(|m| m.path.as_str())
+                .collect::<Vec<_>>(),
+            ["inside.txt"]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_search_never_follows_a_junction_out_of_the_folder() {
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("secret.txt"), "needle outside\n").unwrap();
+        let (dir, root) = project(&[("inside.txt", "needle inside\n")]);
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(dir.path().join("out"))
+            .arg(outside.path())
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "mklink failed: {made:?}");
+        let report = search(&root, "needle", false, true).unwrap();
+        assert_eq!(
+            report
+                .matches
+                .iter()
+                .map(|m| m.path.as_str())
+                .collect::<Vec<_>>(),
+            ["inside.txt"]
+        );
+        fs::remove_dir(dir.path().join("out")).unwrap();
+    }
+
+    #[test]
+    fn too_many_matches_are_cut_and_said() {
+        let many = "x\n".repeat(MAX_SEARCH_RESULTS + 50);
+        let (_dir, root) = project(&[("a.txt", &many), ("b.txt", "x\n")]);
+        let report = search(&root, "x", true, false).unwrap();
+        assert_eq!(report.matches.len(), MAX_SEARCH_RESULTS);
+        assert!(report.truncated);
+        assert!(report.matches.iter().all(|m| m.path == "a.txt"));
+    }
+
+    #[test]
+    fn a_long_line_is_cut_around_the_match_and_crlf_and_bom_do_not_move_columns() {
+        let long = format!("{}needle{}", "a".repeat(300), "b".repeat(300));
+        let (dir, root) = project(&[("long.txt", &long), ("crlf.txt", "one\r\ntwo needle\r\n")]);
+        fs::write(
+            dir.path().join("bom.txt"),
+            [&[0xEF, 0xBB, 0xBF][..], b"needle\n"].concat(),
+        )
+        .unwrap();
+        let report = search(&root, "needle", false, false).unwrap();
+        let by = |name: &str| report.matches.iter().find(|m| m.path == name).unwrap();
+        let cut = by("long.txt");
+        assert_eq!(cut.column, 301);
+        assert!(cut.preview.chars().count() <= PREVIEW_CHARS);
+        let chars: Vec<char> = cut.preview.chars().collect();
+        let start = cut.preview_start as usize;
+        assert_eq!(chars[start..start + 6].iter().collect::<String>(), "needle");
+        let crlf = by("crlf.txt");
+        assert_eq!(
+            (crlf.line, crlf.column, crlf.preview.as_str()),
+            (2, 5, "two needle")
+        );
+        assert_eq!((by("bom.txt").line, by("bom.txt").column), (1, 1));
+    }
+
+    #[test]
+    fn a_bad_query_is_refused() {
+        let (_dir, root) = project(&[("a.txt", "x")]);
+        assert!(search(&root, "", true, false).is_err());
+        assert!(search(&root, "two\nlines", true, false).is_err());
+        assert!(search(&root, "nul\0", true, false).is_err());
+        assert!(search(&root, &"a".repeat(MAX_QUERY_CHARS + 1), true, false).is_err());
+        assert!(search("/nowhere/at/all", "x", true, false).is_err());
+        assert!(search(&root, &"a".repeat(MAX_QUERY_CHARS), true, false).is_ok());
     }
 }

@@ -17,6 +17,8 @@ export type CodeEditorHandle = {
   /** The current text is what is on disk. */
   markSaved: (id: string) => void;
   focus: () => void;
+  /** Selects a match and scrolls it into view (the file must be open). */
+  reveal: (id: string, line: number, column: number, length: number) => void;
 };
 
 type Props = {
@@ -168,6 +170,16 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
     },
     focus() {
       editorRef.current?.focus();
+    },
+    reveal(id, line, column, length) {
+      whenReady(() => {
+        const editor = editorRef.current!;
+        if (current.current !== id) return;
+        const range = { startLineNumber: line, startColumn: column, endLineNumber: line, endColumn: column + length };
+        editor.setSelection(range);
+        editor.revealRangeInCenterIfOutsideViewport(range);
+        editor.focus();
+      });
     },
   }));
 

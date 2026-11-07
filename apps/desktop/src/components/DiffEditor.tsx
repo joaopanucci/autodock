@@ -16,6 +16,8 @@ export type DiffEditorHandle = {
   /** Replaces the right side with what is on disk and treats it as saved. */
   replace: (id: string, text: string) => void;
   markSaved: (id: string) => void;
+  /** Selects a match on the right side and scrolls it into view (the file must be open). */
+  reveal: (id: string, line: number, column: number, length: number) => void;
 };
 
 type Props = {
@@ -178,6 +180,16 @@ export const DiffEditor = forwardRef<DiffEditorHandle, Props>(function DiffEdito
       if (!entry) return;
       entry.saved = entry.modified.getAlternativeVersionId();
       callbacks.current.onDirty(id, false);
+    },
+    reveal(id, line, column, length) {
+      whenReady(() => {
+        if (current.current !== id) return;
+        const modified = editorRef.current!.getModifiedEditor();
+        const range = { startLineNumber: line, startColumn: column, endLineNumber: line, endColumn: column + length };
+        modified.setSelection(range);
+        modified.revealRangeInCenterIfOutsideViewport(range);
+        modified.focus();
+      });
     },
   }));
 
