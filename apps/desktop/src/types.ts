@@ -443,6 +443,8 @@ export type JavaProject = {
   javaLevel: number | null;
   javaDeclared: string | null;
   springBoot: string | null;
+  /** BOM that pins the Spring Boot version: the upgrade then only changes Java. */
+  springBootPinnedBy: string | null;
   modules: string[];
   jdkApis: JavaApi[];
   upgradeAvailable: boolean;
@@ -503,9 +505,14 @@ export type JavaUpgradeReport = {
   toSpringBoot: string | null;
   hops: JavaHopResult[];
   failedHop: string | null;
+  /** A step failed and was undone: the copy is at the last step that worked. */
+  rolledBack: boolean;
+  reached: string | null;
   fixups: JavaFixup[];
   changes: JavaChanges;
   tests: JavaTests | null;
+  /** Some tests need Docker (Testcontainers): their errors do not come from the upgrade. */
+  testsNeedDocker: boolean;
   output: string;
   detail: string;
   durationMs: number;

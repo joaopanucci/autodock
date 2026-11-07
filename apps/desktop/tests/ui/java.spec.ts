@@ -45,7 +45,7 @@ const plan = {
   links: [{ label: "OpenRewrite recipes", url: "https://docs.openrewrite.org/recipes/java/migrate" }],
 };
 
-type Options = { project?: Record<string, unknown>; fail?: boolean; none?: boolean };
+type Options = { project?: Record<string, unknown>; fail?: boolean; partial?: boolean; none?: boolean };
 
 async function open(page: Page, options: Options = {}) {
   await page.addInitScript(
@@ -64,6 +64,22 @@ async function open(page: Page, options: Options = {}) {
                 ? { ...plan, destination: `${args.destination}/legacy-shop-java25` }
                 : plan;
             case "java_upgrade_run":
+              if (options.partial) {
+                return {
+                  schemaVersion: 1, succeeded: false, destination: plan.destination, fromJava: 7, toJava: 25,
+                  fromSpringBoot: "1.5.22.RELEASE", toSpringBoot: "4.0.x",
+                  hops: plan.hops.map((h: any, i: number) => ({
+                    id: h.id, label: h.label, status: i < 2 ? "ok" : i === 2 ? "failed" : "skipped",
+                    compiled: i === 1 ? true : i === 2 ? false : null,
+                  })),
+                  failedHop: "spring-boot-3.5", rolledBack: true, reached: "java-17",
+                  fixups: [], changes: { modified: ["pom.xml"], added: [], removed: [], truncated: false, total: 1 },
+                  tests: { run: 4, failures: 0, errors: 0, skipped: 1, passed: true }, testsNeedDocker: true,
+                  output: "CHECK spring-boot-3.5 failed\n[ERROR] 'dependencies.dependency.version' for org.ehcache:ehcache:jar:jakarta is missing",
+                  detail: "Step spring-boot-3.5 failed and was undone: the copy was left at the last step that worked (java-17). The original project was not modified.",
+                  durationMs: 600000, nextSteps: ["The copy is ready up to step java-17: you can use it as a starting point and do the rest by hand."],
+                };
+              }
               if (options.fail) {
                 return {
                   schemaVersion: 1, succeeded: false, destination: plan.destination, fromJava: 7, toJava: 25,
@@ -286,4 +302,31 @@ test("the chosen folder can be dropped to go back to the default place", async (
   await expect(page.getByRole("button", { name: "Back to next to the project" })).toHaveCount(0);
   const plans = await calls(page, "java_upgrade_plan");
   expect(plans[plans.length - 1]).toEqual({ path: "/Users/maria/legacy-shop", lang: "en" });
+});
+
+test("a step that fails is undone and the report says the copy is at the last step that worked", async ({ page }) => {
+  await open(page, { partial: true });
+  await choose(page);
+  await page.getByRole("button", { name: "Plan the upgrade" }).click();
+  await page.getByLabel(/I understand AutoDock will copy the project/).check();
+  await page.locator(".multi-run-actions").getByRole("button", { name: "Create the upgraded copy" }).click();
+  await expect(page.getByText("Partial upgrade: a step failed and was undone")).toBeVisible();
+  await expect(page.getByText(/was left at the last step that worked \(java-17\)/)).toBeVisible();
+  // the tests of the state that worked and what differs from the original are shown
+  await expect(page.getByText("4 tests, all passed (1 skipped)")).toBeVisible();
+  await expect(page.getByText(/Some tests need Docker \(Testcontainers\)/)).toBeVisible();
+  await expect(page.getByText("Files that differ from the original (1)")).toBeVisible();
+  await expect(page.getByText("The copy is ready up to step java-17")).toBeVisible();
+  await expect(page.getByText("ehcache:jar:jakarta is missing")).toBeVisible();
+  await expect(page.locator(".java-hops li").nth(2)).toContainText("failed");
+  await expect(page.locator(".java-hops li").nth(1)).toContainText("done");
+});
+
+test("a Spring Boot pinned by a third-party BOM is shown on the project", async ({ page }) => {
+  await open(page, {
+    project: { springBoot: "2.7.3", springBootPinnedBy: "tech.jhipster:jhipster-dependencies", javaDeclared: "11", javaLevel: 11 },
+  });
+  await choose(page);
+  await expect(page.locator(".expo-projects")).toContainText("Spring Boot 2.7.3");
+  await expect(page.locator(".expo-projects")).toContainText("Spring Boot pinned by tech.jhipster:jhipster-dependencies");
 });

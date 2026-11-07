@@ -4,7 +4,7 @@ import { useI18n, type TranslationKey } from "../i18n";
 
 const JOURNEY = [1, 2, 3, 4, 5] as const;
 const AUTO = [1, 2, 3, 4, 5, 6] as const;
-const MANUAL = [1, 2, 3, 4] as const;
+const MANUAL = [1, 2, 3, 4, 5] as const;
 const SAFE = [1, 2, 3, 4] as const;
 
 /**

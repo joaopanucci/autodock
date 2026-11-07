@@ -229,6 +229,11 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
                   {project.springBoot && (
                     <Badge tone="blue">{t("java.project.boot", { version: project.springBoot })}</Badge>
                   )}
+                  {project.springBootPinnedBy && (
+                    <Badge tone="amber">
+                      {t("java.project.pinned", { bom: project.springBootPinnedBy })}
+                    </Badge>
+                  )}
                   {project.modules.length > 0 && (
                     <Badge tone="neutral">{t("java.project.modules", { count: project.modules.length })}</Badge>
                   )}
@@ -442,7 +447,9 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
                   <strong>
                     {report.succeeded
                       ? t("java.upgrade.ok", { seconds: Math.max(1, Math.round(report.durationMs / 1000)) })
-                      : t("java.upgrade.failed")}
+                      : report.rolledBack && report.reached
+                        ? t("java.upgrade.partial")
+                        : t("java.upgrade.failed")}
                   </strong>
                   {report.detail && <p>{report.detail}</p>}
                 </div>
@@ -483,7 +490,7 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
                 </>
               )}
 
-              {report.succeeded && (
+              {(report.succeeded || (report.rolledBack && report.reached)) && (
                 <>
                   <p className="field-label">{t("java.report.tests")}</p>
                   <p
@@ -503,6 +510,9 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
                             errors: report.tests.errors,
                           })}
                   </p>
+                  {report.testsNeedDocker && (
+                    <p className="field-hint">{t("java.report.testsDocker")}</p>
+                  )}
                   <details>
                     <summary>{t("java.report.changes", { total: report.changes.total })}</summary>
                     {(

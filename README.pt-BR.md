@@ -186,7 +186,7 @@ Adicione seus projetos Expo e o AutoDock avisa quando sai um SDK **estável** ma
 
 ### ☕ Java: atualização de projeto legado
 
-Escolha um projeto Maven e o AutoDock mostra o nível do Java e a versão do Spring Boot, monta o plano e, depois da sua confirmação, cria uma cópia atualizada (`<nome>-java25`) ao lado da pasta, ou na pasta que você escolher. Cada passo é compilado: se algo quebrar, o relatório diz em qual passo e mostra os erros do compilador. Projetos Spring Boot sobem uma linha principal por vez; projetos sem Spring só mudam o nível do Java. Gradle ainda não é suportado. [Mais detalhes nas notas de segurança](docs/SECURITY.md).
+Escolha um projeto Maven e o AutoDock mostra o nível do Java e a versão do Spring Boot, monta o plano e, depois da sua confirmação, cria uma cópia atualizada (`<nome>-java25`) ao lado da pasta, ou na pasta que você escolher. Cada passo é compilado: se algo quebrar, o relatório diz em qual passo e mostra os erros do compilador, e **aquele passo é desfeito**: a cópia fica no último passo que funcionou (com os testes do projeto rodando ali). Projetos com o Spring Boot fixado por um BOM de terceiros (o JHipster, por exemplo) só têm o nível do Java atualizado, porque as receitas do Spring Boot não conseguem subir esse BOM. Projetos Spring Boot sobem uma linha principal por vez; projetos sem Spring só mudam o nível do Java. Gradle ainda não é suportado. [Mais detalhes nas notas de segurança](docs/SECURITY.md).
 
 ### 🌗 Claro e escuro
 

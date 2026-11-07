@@ -12,7 +12,7 @@ use crate::{
     expo_upgrade::{host_ids, quote, PlanLink},
     generate::{self, regular_file},
     java::{
-        self, boot_line, hops_for, scan_modules, Hop, JavaProject, ModuleScan, TARGET_BOOT,
+        self, boot_line, plan_hops, scan_modules, Hop, JavaProject, ModuleScan, TARGET_BOOT,
         TARGET_JAVA,
     },
     memory_capture::{self, Output},
@@ -137,10 +137,17 @@ pub struct UpgradeReport {
     pub to_spring_boot: Option<String>,
     pub hops: Vec<HopResult>,
     pub failed_hop: Option<String>,
+    /// A step failed and was undone: the copy is back to the last step that worked.
+    pub rolled_back: bool,
+    /// The last step that worked (`None`: none did, the copy is as it was copied).
+    pub reached: Option<String>,
     pub fixups: Vec<FixupPlan>,
     pub changes: Changes,
     /// The result of the project's own tests, run on the upgraded copy.
     pub tests: Option<TestSummary>,
+    /// Some tests need Docker (Testcontainers), which the upgrade container does not have: their
+    /// errors do not come from the upgrade.
+    pub tests_need_docker: bool,
     /// Tail of the container output when something went wrong.
     pub output: String,
     pub detail: String,
@@ -195,9 +202,9 @@ fn label(hop: Hop) -> String {
     }
 }
 
-fn hop_plans(java: Option<u32>, boot: Option<(u32, u32)>) -> Vec<HopPlan> {
+fn hop_plans(java: Option<u32>, boot: Option<(u32, u32)>, boot_pinned: bool) -> Vec<HopPlan> {
     let mut level = java.unwrap_or(0);
-    hops_for(java, boot)
+    plan_hops(java, boot, boot_pinned)
         .into_iter()
         .map(|hop| {
             match hop {
@@ -281,26 +288,39 @@ fn script(hops: &[HopPlan], ids: Option<(u32, u32)>, reactor: bool) -> String {
     } else {
         ""
     };
+    // `snap` keeps the copy as it is before a step, `restore` puts it back: a step that fails
+    // (the recipe itself, or the compilation after it) is undone, so the copy is never left
+    // half upgraded. Only the steps that worked count.
     let mut text = format!(
         "{owner}M='mvn -B -ntp -Dmaven.repo.local=/m2'; \
-hop() {{ id=\"$1\"; recipe=\"$2\"; check=\"$3\"; \
+snap() {{ rm -rf /snap && mkdir /snap && tar -C /work -cf - . | tar -C /snap -xf -; }}; \
+restore() {{ find /work -mindepth 1 -maxdepth 1 -exec rm -rf {{}} + ; tar -C /snap -cf - . | tar -C /work -xf -; }}; \
+hop() {{ id=\"$1\"; recipe=\"$2\"; check=\"$3\"; snap || {{ echo \"HOP $id failed\"; echo 'could not keep the copy before the step'; return 1; }}; \
 if $M {prepare} {REWRITE_PLUGIN}:runNoFork -Drewrite.recipeArtifactCoordinates={RECIPE_LIBRARIES} -Drewrite.failOnInvalidActiveRecipes=true -Drewrite.activeRecipes=\"$recipe\" >/tmp/hop.log 2>&1; \
-then echo \"HOP $id ok\"; else echo \"HOP $id failed\"; grep -E 'ERROR' /tmp/hop.log | head -n 40; return 1; fi; \
+then echo \"HOP $id ok\"; else echo \"HOP $id failed\"; grep -E 'ERROR' /tmp/hop.log | head -n 40; restore && echo \"ROLLBACK $id\"; return 1; fi; \
 if [ \"$check\" = 1 ]; then if $M -q test-compile >/tmp/check.log 2>&1; \
-then echo \"CHECK $id ok\"; else echo \"CHECK $id failed\"; grep -E 'ERROR' /tmp/check.log | head -n 40; return 1; fi; fi; }}; "
+then echo \"CHECK $id ok\"; else echo \"CHECK $id failed\"; grep -E 'ERROR' /tmp/check.log | head -n 40; restore && echo \"ROLLBACK $id\"; return 1; fi; fi; verified=\"$check\"; }}; \
+failed=''; verified=0; "
     );
     for hop in hops {
         text.push_str(&format!(
-            "hop {} {} {} || exit 1; ",
-            hop.id,
-            hop.recipe,
-            u8::from(hop.checked)
+            "if [ -z \"$failed\" ]; then hop {id} {recipe} {check} || failed={id}; fi; ",
+            id = hop.id,
+            recipe = hop.recipe,
+            check = u8::from(hop.checked)
         ));
     }
+    // The project's own tests run on the last state that worked, and only when that state was
+    // compiled (a state before Java 17 cannot be built on the new JDK, and a copy where no step
+    // worked is just what was copied). Tests that need Docker (Testcontainers) cannot run here:
+    // the container has no Docker, on purpose, so that is reported instead of read as a failure.
     text.push_str(
-        "echo TESTS; $M test >/tmp/test.log 2>&1; code=$?; \
+        "if [ -n \"$failed\" ] && [ \"$verified\" != 1 ]; then echo TESTS_SKIPPED; exit 1; fi; \
+echo TESTS; $M test >/tmp/test.log 2>&1; code=$?; \
 grep -E '^(\\[[A-Z]+\\] )?Tests run:.*Skipped: [0-9]+$' /tmp/test.log | sed 's/^/TESTLINE /'; \
-if [ $code -ne 0 ]; then grep -E 'ERROR|FAIL' /tmp/test.log | head -n 40; fi; echo \"TESTS_EXIT $code\"",
+if [ $code -ne 0 ]; then grep -E 'ERROR|FAIL' /tmp/test.log | head -n 40; fi; \
+if grep -qi 'docker environment' /tmp/test.log; then echo TESTS_NEED_DOCKER; fi; echo \"TESTS_EXIT $code\"; \
+if [ -n \"$failed\" ]; then exit 1; fi",
     );
     text
 }
@@ -384,12 +404,19 @@ pub fn plan_in(path: &str, into: Option<&str>) -> Result<UpgradePlan, String> {
             project.spring_boot.clone().unwrap_or_default()
         ));
     }
-    let hops = hop_plans(project.java_level, boot);
+    let pinned = project.spring_boot_pinned_by.clone();
+    let hops = hop_plans(project.java_level, boot, pinned.is_some());
     if hops.is_empty() {
-        return Err(tr!(
-            "O projeto já está no Java {TARGET_JAVA} e no Spring Boot mais novo que o AutoDock migra.",
-            "The project is already on Java {TARGET_JAVA} and the newest Spring Boot AutoDock migrates."
-        ));
+        return Err(match &pinned {
+            Some(bom) => tr!(
+                "O Java do projeto já está no máximo que o Spring Boot dele suporta, e o Spring Boot é fixado por {bom}, que o AutoDock não consegue subir. Para subir o Spring Boot use a ferramenta desse BOM (no JHipster, jhipster upgrade).",
+                "The project's Java is already as high as its Spring Boot supports, and Spring Boot is pinned by {bom}, which AutoDock cannot move. To move Spring Boot use that BOM's own tool (for JHipster, jhipster upgrade)."
+            ),
+            None => tr!(
+                "O projeto já está no Java {TARGET_JAVA} e no Spring Boot mais novo que o AutoDock migra.",
+                "The project is already on Java {TARGET_JAVA} and the newest Spring Boot AutoDock migrates."
+            ),
+        });
     }
     let root = generate::root_of(path)?;
     generate::check_mount_path(&root)?;
@@ -399,6 +426,23 @@ pub fn plan_in(path: &str, into: Option<&str>) -> Result<UpgradePlan, String> {
     let fixups = fixups_for(&scans);
 
     let mut warnings = vec![];
+    if let Some(bom) = &pinned {
+        let ceiling = if boot.is_some_and(|line| line >= (3, 5)) {
+            TARGET_JAVA
+        } else {
+            17
+        };
+        warnings.push(tr!(
+            "O Spring Boot deste projeto é fixado por {bom}, e as receitas do AutoDock não conseguem subir esse BOM (tentar deixaria o projeto quebrado). Por isso só o Java é atualizado, até o {ceiling}, o máximo que esse Spring Boot suporta bem. Para subir o Spring Boot use a ferramenta do próprio BOM (no JHipster, jhipster upgrade).",
+            "This project's Spring Boot is pinned by {bom}, and AutoDock's recipes cannot move that BOM (trying would leave the project broken). So only Java is upgraded, up to {ceiling}, the most that Spring Boot is meant for. To move Spring Boot use the BOM's own tool (for JHipster, jhipster upgrade)."
+        ));
+    }
+    if project.java_level.is_none() {
+        warnings.push(tr!(
+            "O nível do Java não está declarado neste pom (pode vir de um pom pai externo, que o AutoDock não lê): o plano assume que ele é antigo. Se o projeto já usa um Java recente, os passos do Java podem ser desnecessários.",
+            "The Java level is not declared in this pom (it may come from an external parent pom, which AutoDock does not read): the plan assumes it is old. If the project already uses a recent Java, the Java steps may be unnecessary."
+        ));
+    }
     for module in &scans {
         for (name, (files, api)) in &module.apis {
             if api.artifacts.is_empty() {
@@ -473,7 +517,10 @@ pub fn plan_in(path: &str, into: Option<&str>) -> Result<UpgradePlan, String> {
         label: tr!("Receitas do OpenRewrite", "OpenRewrite recipes"),
         url: "https://docs.openrewrite.org/recipes/java/migrate".into(),
     }];
-    if boot.is_some() {
+    // Spring Boot only moves when the project is behind the line the recipes migrate to. A
+    // project already on a newer line (4.1, say) keeps it: the plan must not read as a downgrade.
+    let boot_moves = pinned.is_none() && boot.is_some_and(|line| line < TARGET_BOOT);
+    if boot_moves {
         links.push(PlanLink {
             label: tr!("Migração para o Spring Boot 4", "Migrating to Spring Boot 4"),
             url: "https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide".into(),
@@ -484,7 +531,7 @@ pub fn plan_in(path: &str, into: Option<&str>) -> Result<UpgradePlan, String> {
         from_java: project.java_level,
         to_java: TARGET_JAVA,
         from_spring_boot: project.spring_boot.clone(),
-        to_spring_boot: boot.map(|_| format!("{}.{}.x", TARGET_BOOT.0, TARGET_BOOT.1)),
+        to_spring_boot: boot_moves.then(|| format!("{}.{}.x", TARGET_BOOT.0, TARGET_BOOT.1)),
         project,
         image: MAVEN_IMAGE.into(),
         hops,
@@ -790,6 +837,10 @@ struct Parsed {
     tests: TestSummary,
     test_lines: u32,
     tests_exit: Option<i32>,
+    /// Steps that failed and were undone.
+    rolled_back: BTreeSet<String>,
+    /// Some tests need Docker (Testcontainers) and cannot run in the upgrade container.
+    needs_docker: bool,
 }
 
 fn parse(text: &str) -> Parsed {
@@ -803,6 +854,10 @@ fn parse(text: &str) -> Parsed {
             }
             ["CHECK", id, status] => {
                 parsed.checks.insert((*id).into(), *status == "ok");
+            }
+            ["TESTS_NEED_DOCKER"] => parsed.needs_docker = true,
+            ["ROLLBACK", id] => {
+                parsed.rolled_back.insert((*id).into());
             }
             ["TESTS_EXIT", code] => parsed.tests_exit = code.parse().ok(),
             ["TESTLINE", rest @ ..] => {
@@ -974,6 +1029,11 @@ fn run_with(
     if succeeded {
         failed_hop = None;
     }
+    let reached = hops
+        .iter()
+        .rfind(|h| h.status == "ok")
+        .map(|h| h.id.clone());
+    let rolled_back = failed_hop.is_some() && !parsed.rolled_back.is_empty();
 
     let tests = (parsed.test_lines > 0).then(|| TestSummary {
         passed: parsed.tests_exit == Some(0)
@@ -991,9 +1051,12 @@ fn run_with(
         to_spring_boot: plan.to_spring_boot.clone(),
         hops,
         failed_hop,
+        rolled_back,
+        reached,
         fixups,
         changes: compare(&root, &copy),
         tests,
+        tests_need_docker: parsed.needs_docker,
         output: String::new(),
         detail: String::new(),
         duration_ms: output.duration_ms,
@@ -1017,6 +1080,21 @@ fn run_with(
             "Prazo excedido. A cópia ficou como estava no momento; o projeto original não foi alterado.",
             "Time limit exceeded. The copy was left as it was; the original project was not modified."
         ),
+        _ if report.rolled_back => {
+            let id = report.failed_hop.clone().unwrap_or_default();
+            match &report.reached {
+                Some(reached) => tr!(
+                    "O passo {id} falhou e foi desfeito: a cópia ficou no último passo que funcionou ({reached}). O projeto original não foi alterado. Cópia em {}.",
+                    "Step {id} failed and was undone: the copy was left at the last step that worked ({reached}). The original project was not modified. Copy in {}.",
+                    plan.destination
+                ),
+                None => tr!(
+                    "O passo {id} falhou e foi desfeito: a cópia ficou igual ao projeto original. O projeto original não foi alterado. Cópia em {}.",
+                    "Step {id} failed and was undone: the copy is the same as the original project. The original project was not modified. Copy in {}.",
+                    plan.destination
+                ),
+            }
+        }
         _ => match &report.failed_hop {
             Some(id) => tr!(
                 "O upgrade parou no passo {id}. O projeto original não foi alterado; a cópia ficou em {} para você examinar.",
@@ -1064,14 +1142,24 @@ fn failure_report(
             })
             .collect(),
         failed_hop: None,
+        rolled_back: false,
+        reached: None,
         fixups,
         changes: Changes::default(),
         tests: None,
+        tests_need_docker: false,
         output: text,
         detail: output.detail.clone(),
         duration_ms: output.duration_ms,
         next_steps: vec![],
     }
+}
+
+fn docker_tests_note() -> String {
+    tr!(
+        "Alguns testes usam o Testcontainers, que precisa do Docker, e o container do upgrade não tem acesso ao Docker (de propósito, por segurança): os erros desses testes não vêm do upgrade. Rode-os no seu computador, onde o Docker está disponível.",
+        "Some tests use Testcontainers, which needs Docker, and the upgrade container has no access to Docker (on purpose, for safety): the errors of those tests do not come from the upgrade. Run them on your computer, where Docker is available."
+    )
 }
 
 fn next_steps(plan: &UpgradePlan, report: &UpgradeReport) -> Vec<String> {
@@ -1093,11 +1181,20 @@ fn next_steps(plan: &UpgradePlan, report: &UpgradeReport) -> Vec<String> {
         )),
         _ => {}
     }
+    if report.tests_need_docker {
+        steps.push(docker_tests_note());
+    }
     for api in plan.project.jdk_apis.iter().filter(|a| !a.fixable) {
         steps.push(tr!(
             "Reescreva o código que usa {} (sem substituto automático).",
             "Rewrite the code that uses {} (no automatic replacement).",
             api.name
+        ));
+    }
+    if let Some(bom) = &plan.project.spring_boot_pinned_by {
+        steps.push(tr!(
+            "O Spring Boot continua na versão de antes: ele é fixado por {bom}. Para subir o Spring Boot use a ferramenta desse BOM (no JHipster, jhipster upgrade).",
+            "Spring Boot stays where it was: it is pinned by {bom}. To move Spring Boot use that BOM's own tool (for JHipster, jhipster upgrade)."
         ));
     }
     if plan.to_spring_boot.is_some() {
@@ -1122,6 +1219,28 @@ fn next_steps(plan: &UpgradePlan, report: &UpgradeReport) -> Vec<String> {
 
 fn failure_steps(plan: &UpgradePlan, report: &UpgradeReport) -> Vec<String> {
     let mut steps = vec![];
+    if report.rolled_back {
+        if let Some(reached) = &report.reached {
+            let compiled = report
+                .hops
+                .iter()
+                .any(|h| &h.id == reached && h.compiled == Some(true));
+            steps.push(if compiled {
+                tr!(
+                    "A cópia está no passo {reached}, que compilou: você pode usá-la como ponto de partida e fazer o resto à mão. Os testes abaixo, se rodaram, são desse estado.",
+                    "The copy is at step {reached}, which compiled: you can use it as a starting point and do the rest by hand. The tests below, if they ran, are from that state."
+                )
+            } else {
+                tr!(
+                    "A cópia tem os passos até {reached} aplicados, mas esse estado não foi compilado (os passos antes do Java 17 não são): confira antes de usá-la.",
+                    "The copy has the steps up to {reached} applied, but that state was not compiled (the steps before Java 17 are not): check it before using it."
+                )
+            });
+        }
+    }
+    if report.tests_need_docker {
+        steps.push(docker_tests_note());
+    }
     if let Some(id) = &report.failed_hop {
         steps.push(tr!(
             "Leia os erros do passo {id} abaixo: costumam apontar a classe ou a dependência que precisa de ajuste manual.",
@@ -1296,12 +1415,15 @@ mod tests {
 
     #[test]
     fn the_script_only_embeds_constants_and_integers() {
-        let hops = hop_plans(Some(7), Some((1, 5)));
+        let hops = hop_plans(Some(7), Some((1, 5)), false);
         let text = script(&hops, Some((1000, 1000)), false);
-        assert!(text.contains("hop spring-boot-2.7 org.openrewrite.java.spring.boot2.UpgradeSpringBoot_2_7 0 || exit 1;"));
-        assert!(
-            text.contains("hop java-17 org.openrewrite.java.migrate.UpgradeToJava17 1 || exit 1;")
-        );
+        assert!(text.contains("hop spring-boot-2.7 org.openrewrite.java.spring.boot2.UpgradeSpringBoot_2_7 0 || failed=spring-boot-2.7;"));
+        assert!(text.contains(
+            "hop java-17 org.openrewrite.java.migrate.UpgradeToJava17 1 || failed=java-17;"
+        ));
+        // a step that fails is undone, and the steps after it do not run
+        assert!(text.contains("restore && echo \"ROLLBACK $id\""));
+        assert!(text.contains("if [ -z \"$failed\" ]; then hop java-25"));
         assert!(text.contains("chown -R 1000:1000 /work"));
         assert!(text.contains(REWRITE_PLUGIN));
         assert!(text.contains("failOnInvalidActiveRecipes=true"));
@@ -1669,5 +1791,164 @@ TESTS_EXIT 0
             fs::read_to_string(Path::new(&path).join("pom.xml")).unwrap(),
             PLAIN6
         );
+    }
+    #[test]
+    fn a_project_on_a_newer_spring_boot_than_the_target_is_not_shown_as_a_downgrade() {
+        // Found with a real project: spring-petclinic is on Spring Boot 4.1 and Java 17.
+        let pom = BOOT15
+            .replace("1.5.22.RELEASE", "4.1.0")
+            .replace("1.7", "17");
+        let (_base, path) = workspace(&[("pom.xml", &pom), ("src/test/java/T.java", "class T {}")]);
+        let plan = plan(&path).unwrap();
+        let ids: Vec<&str> = plan.hops.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, ["java-25"]);
+        assert_eq!(plan.from_spring_boot.as_deref(), Some("4.1.0"));
+        assert_eq!(plan.to_spring_boot, None);
+        assert!(plan
+            .links
+            .iter()
+            .all(|l| !l.url.contains("Migration-Guide")));
+    }
+
+    #[test]
+    fn an_undeclared_java_level_is_said_in_the_plan() {
+        // Found with a real project: Jenkins inherits its Java level from an external parent pom.
+        let pom = "<project><artifactId>inherits</artifactId></project>";
+        let (_base, path) = workspace(&[("pom.xml", pom), ("src/test/java/T.java", "class T {}")]);
+        let plan = plan(&path).unwrap();
+        assert_eq!(plan.from_java, None);
+        assert!(plan
+            .warnings
+            .iter()
+            .any(|w| w.contains("parent pom") || w.contains("pom pai")));
+        // a declared level gets no such warning
+        let (_base, declared) =
+            workspace(&[("pom.xml", PLAIN6), ("src/test/java/T.java", "class T {}")]);
+        assert!(!plan_warnings(&declared)
+            .iter()
+            .any(|w| w.contains("parent pom") || w.contains("pom pai")));
+    }
+
+    fn plan_warnings(path: &str) -> Vec<String> {
+        plan(path).unwrap().warnings
+    }
+    #[test]
+    fn a_failed_step_that_was_undone_leaves_the_copy_at_the_last_step_that_worked() {
+        let (_base, path) =
+            workspace(&[("pom.xml", BOOT15), ("src/test/java/T.java", "class T {}")]);
+        let out = "HOP spring-boot-2.7 ok\nHOP java-17 ok\nCHECK java-17 ok\nHOP spring-boot-3.5 ok\nCHECK spring-boot-3.5 failed\n[ERROR] 'dependencies.dependency.version' for org.ehcache:ehcache:jar:jakarta is missing\nROLLBACK spring-boot-3.5\nTESTS\nTESTLINE [INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 1\nTESTS_EXIT 0\n";
+        let report = run_with(request(&path, true), |_, _| {
+            output(ToolStatus::Available, Some(1), out)
+        })
+        .unwrap();
+        assert!(!report.succeeded);
+        assert!(report.rolled_back);
+        assert_eq!(report.failed_hop.as_deref(), Some("spring-boot-3.5"));
+        assert_eq!(report.reached.as_deref(), Some("java-17"));
+        let statuses: Vec<&str> = report.hops.iter().map(|h| h.status.as_str()).collect();
+        assert_eq!(statuses, ["ok", "ok", "failed", "skipped", "skipped"]);
+        // the tests of the state that worked are reported
+        assert_eq!(
+            report.tests.as_ref().map(|t| (t.run, t.passed)),
+            Some((4, true))
+        );
+        assert!(report.detail.contains("java-17") && report.detail.contains("spring-boot-3.5"));
+        assert!(report.next_steps.iter().any(|s| s.contains("java-17")));
+        assert!(report.output.contains("ehcache"));
+    }
+
+    #[test]
+    fn when_the_first_step_is_undone_the_copy_is_the_original_and_no_tests_ran() {
+        let (_base, path) = workspace(&[("pom.xml", PLAIN6)]);
+        let out = "HOP java-17 failed\n[ERROR] boom\nROLLBACK java-17\nTESTS_SKIPPED\n";
+        let report = run_with(request(&path, true), |_, _| {
+            output(ToolStatus::Available, Some(1), out)
+        })
+        .unwrap();
+        assert!(report.rolled_back);
+        assert_eq!(report.reached, None);
+        assert!(report.tests.is_none());
+        assert!(report.detail.contains("java-17"));
+        // nothing was upgraded, so the copy equals the original
+        assert_eq!(report.changes.total, report.fixups.len().min(1));
+    }
+
+    #[test]
+    fn a_pinned_spring_boot_only_gets_the_java_steps_and_says_why() {
+        // Found with a real project: JHipster Online (Spring Boot 2.7.3 pinned by jhipster-dependencies).
+        let pom = r#"<project><artifactId>jh</artifactId>
+            <properties><java.version>11</java.version><spring-boot.version>2.7.3</spring-boot.version></properties>
+            <dependencyManagement><dependencies><dependency>
+              <groupId>tech.jhipster</groupId><artifactId>jhipster-dependencies</artifactId>
+              <version>7.9.3</version><type>pom</type><scope>import</scope>
+            </dependency></dependencies></dependencyManagement></project>"#;
+        let (_base, path) = workspace(&[("pom.xml", pom), ("src/test/java/T.java", "class T {}")]);
+        let plan = plan(&path).unwrap();
+        let ids: Vec<&str> = plan.hops.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["java-17"],
+            "Java 17 is as high as Spring Boot 2.7 goes"
+        );
+        assert_eq!(plan.from_spring_boot.as_deref(), Some("2.7.3"));
+        assert_eq!(plan.to_spring_boot, None);
+        assert!(plan
+            .warnings
+            .iter()
+            .any(|w| w.contains("jhipster-dependencies")));
+        assert!(plan
+            .links
+            .iter()
+            .all(|l| !l.url.contains("Migration-Guide")));
+
+        // already on Java 17: nothing left that AutoDock can do, and the error says what to use
+        let on17 = pom.replace(
+            "<java.version>11</java.version>",
+            "<java.version>17</java.version>",
+        );
+        let (_base, path) = workspace(&[("pom.xml", &on17)]);
+        let error = plan_in(&path, None).unwrap_err();
+        assert!(error.contains("jhipster upgrade"), "{error}");
+    }
+    #[test]
+    fn tests_that_need_docker_are_explained_and_do_not_read_as_an_upgrade_failure() {
+        // Found with a real project: JHipster Online. 19 of 87 tests use Testcontainers.
+        let (_base, path) =
+            workspace(&[("pom.xml", PLAIN6), ("src/test/java/T.java", "class T {}")]);
+        let out = "HOP java-17 ok\nCHECK java-17 ok\nHOP java-25 ok\nCHECK java-25 ok\nTESTS\nTESTLINE [ERROR] Tests run: 87, Failures: 0, Errors: 19, Skipped: 0\nTESTS_NEED_DOCKER\nTESTS_EXIT 1\n";
+        let report = run_with(request(&path, true), |_, _| {
+            output(ToolStatus::Available, Some(0), out)
+        })
+        .unwrap();
+        assert!(report.succeeded && report.tests_need_docker);
+        assert_eq!(
+            report.tests.as_ref().map(|t| (t.run, t.errors, t.passed)),
+            Some((87, 19, false))
+        );
+        assert!(report
+            .next_steps
+            .iter()
+            .any(|s| s.contains("Testcontainers")));
+        // without the marker there is no such note
+        let out = out.replace("TESTS_NEED_DOCKER\n", "");
+        let report = run_with(request(&path, true), |_, _| {
+            output(ToolStatus::Available, Some(0), &out)
+        })
+        .unwrap();
+        assert!(!report.tests_need_docker);
+        assert!(!report
+            .next_steps
+            .iter()
+            .any(|s| s.contains("Testcontainers")));
+    }
+
+    #[test]
+    fn the_script_only_runs_tests_on_a_compiled_state() {
+        let hops = hop_plans(Some(7), Some((1, 5)), false);
+        let text = script(&hops, None, false);
+        // a state that was not compiled (before Java 17) is not tested
+        assert!(text.contains("[ \"$verified\" != 1 ]; then echo TESTS_SKIPPED"));
+        assert!(text.contains("verified=\"$check\""));
+        assert!(text.contains("echo TESTS_NEED_DOCKER"));
     }
 }
