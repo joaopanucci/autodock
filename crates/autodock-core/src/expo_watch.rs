@@ -7,6 +7,7 @@
 //! user turned it on, at most once a day when the app opens.
 use crate::{
     expo::{self, ExpoProject, LatestSdk},
+    generate,
     ports::autodock_home,
 };
 use serde::{Deserialize, Serialize};
@@ -92,6 +93,36 @@ fn same_path(a: &str, b: &str) -> bool {
         }
     };
     plain(a) == plain(b)
+}
+
+/// The ways a folder typed by the user can be written in the list: as typed (the folder
+/// may be gone) and, when it exists, where it really is (the list keeps that form), so
+/// symbolic links (`/var` → `/private/var` on macOS) and Windows short names
+/// (`RUNNER~1`) still find the entry.
+fn spellings(path: &str) -> Vec<String> {
+    let mut found = vec![path.to_string()];
+    found.extend(resolved(path));
+    found
+}
+
+/// Real location of a path. When the folder is already gone, the nearest ancestor that
+/// still exists is resolved and the rest is appended (so `/var/x/app` deleted still
+/// becomes `/private/var/x/app`).
+fn resolved(path: &str) -> Option<String> {
+    let mut existing = Path::new(path);
+    let mut rest = vec![];
+    loop {
+        if let Ok(mut real) = existing.canonicalize() {
+            real.extend(rest.iter().rev());
+            return Some(generate::plain_path(&real));
+        }
+        rest.push(existing.file_name()?);
+        existing = existing.parent()?;
+    }
+}
+
+fn is_listed(stored: &str, spellings: &[String]) -> bool {
+    spellings.iter().any(|spelling| same_path(stored, spelling))
 }
 
 fn load(home: &Path) -> Store {
@@ -208,9 +239,10 @@ pub fn add_project(path: &str) -> Result<WatchState, String> {
 pub fn remove_project(path: &str) -> Result<WatchState, String> {
     let home = autodock_home();
     let mut store = load(&home);
-    // The folder may be gone, so the paths are compared as text.
-    store.projects.retain(|p| !same_path(p, path));
-    store.dismissed.retain(|p, _| !same_path(p, path));
+    // The folder may be gone, so the path is also compared as text.
+    let spellings = spellings(path);
+    store.projects.retain(|p| !is_listed(p, &spellings));
+    store.dismissed.retain(|p, _| !is_listed(p, &spellings));
     save(&home, &store)?;
     Ok(build_state(&store, None))
 }
@@ -227,7 +259,13 @@ pub fn set_check_on_start(enabled: bool) -> Result<WatchState, String> {
 pub fn dismiss_update(path: &str) -> Result<WatchState, String> {
     let home = autodock_home();
     let mut store = load(&home);
-    let Some(stored) = store.projects.iter().find(|p| same_path(p, path)).cloned() else {
+    let spellings = spellings(path);
+    let Some(stored) = store
+        .projects
+        .iter()
+        .find(|p| is_listed(p, &spellings))
+        .cloned()
+    else {
         return Err(tr!(
             "Este projeto não está na lista de acompanhados.",
             "This project is not in the watched list."
@@ -388,6 +426,62 @@ mod tests {
         // dismissing twice keeps a single entry
         dismiss_update(&path(&app)).unwrap();
         assert_eq!(load(&autodock_home()).dismissed.len(), 1);
+    }
+
+    #[test]
+    fn a_path_that_leads_to_the_same_folder_finds_the_entry() {
+        // The list keeps the real location, so a path spelled another way (`..`, a symbolic
+        // link, a Windows short name) must still dismiss and remove it.
+        let app = expo_project("~57.0.0");
+        fs::create_dir(app.path().join("sub")).unwrap();
+        let roundabout = format!("{}/sub/..", path(&app));
+        add_project(&path(&app)).unwrap();
+        refresh_with(|| Ok(latest(58, 1))).unwrap();
+        let state = dismiss_update(&roundabout).unwrap();
+        assert!(state.projects[0].update.as_ref().unwrap().dismissed);
+
+        #[cfg(unix)]
+        {
+            let holder = tempfile::tempdir().unwrap();
+            let link = holder.path().join("link");
+            std::os::unix::fs::symlink(app.path(), &link).unwrap();
+            let state = dismiss_update(&link.to_string_lossy()).unwrap();
+            assert_eq!(state.alerts, 0);
+            assert!(remove_project(&link.to_string_lossy())
+                .unwrap()
+                .projects
+                .is_empty());
+            add_project(&path(&app)).unwrap();
+        }
+
+        let state = remove_project(&roundabout).unwrap();
+        assert!(state.projects.is_empty());
+        assert!(
+            load(&autodock_home()).dismissed.is_empty(),
+            "the dismissal goes away with the project"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_deleted_folder_behind_a_symbolic_link_is_still_removed() {
+        // Like a temp folder under /var on macOS (/var → /private/var): the list holds the
+        // real path, the user types the one through the link, and the folder is gone.
+        let real = tempfile::tempdir().unwrap();
+        let holder = tempfile::tempdir().unwrap();
+        let link = holder.path().join("link");
+        std::os::unix::fs::symlink(real.path(), &link).unwrap();
+        let app = real.path().join("app");
+        fs::create_dir(&app).unwrap();
+        fs::write(
+            app.join("package.json"),
+            r#"{"name":"app","dependencies":{"expo":"~57.0.0"}}"#,
+        )
+        .unwrap();
+        let through_link = link.join("app").to_string_lossy().into_owned();
+        assert_eq!(add_project(&through_link).unwrap().projects.len(), 1);
+        fs::remove_dir_all(&app).unwrap();
+        assert!(remove_project(&through_link).unwrap().projects.is_empty());
     }
 
     #[test]
