@@ -11,6 +11,7 @@ import {
   WandSparkles,
   HeartHandshake,
   GraduationCap,
+  Smartphone,
   ChevronRight,
   ArrowUpRight,
   type LucideIcon,
@@ -29,6 +30,7 @@ export const navigation: {
   { id: "overview", labelKey: "nav.overview", icon: LayoutDashboard },
   { id: "projects", labelKey: "nav.projects", icon: FolderGit2 },
   { id: "setup", labelKey: "nav.setup", icon: WandSparkles },
+  { id: "expo", labelKey: "nav.expo", icon: Smartphone },
   { id: "environment", labelKey: "nav.environment", icon: SlidersHorizontal },
   { id: "containers", labelKey: "nav.containers", icon: Boxes },
   { id: "monitoring", labelKey: "nav.monitoring", icon: Activity },
@@ -42,11 +44,14 @@ export function Layout({
   navigate,
   children,
   projects,
+  expoAlerts = 0,
 }: {
   page: Page;
   navigate: (page: Page) => void;
   children: ReactNode;
   projects: number;
+  /** Watched Expo projects behind the latest SDK. */
+  expoAlerts?: number;
 }) {
   const { t } = useI18n();
   return (
@@ -71,7 +76,7 @@ export function Layout({
         </div>
         <nav aria-label={t("nav.aria")}>
           <p className="nav-label">{t("nav.group.workspace")}</p>
-          {navigation.slice(0, 4).map((item) => (
+          {navigation.slice(0, 5).map((item) => (
             <button
               key={item.id}
               aria-current={page === item.id ? "page" : undefined}
@@ -82,10 +87,15 @@ export function Layout({
               {item.id === "projects" && (
                 <span className="nav-count">{projects}</span>
               )}
+              {item.id === "expo" && expoAlerts > 0 && (
+                <span className="nav-count" title={t("expo.nav.alerts")}>
+                  {expoAlerts}
+                </span>
+              )}
             </button>
           ))}
           <p className="nav-label secondary-label">{t("nav.group.operations")}</p>
-          {navigation.slice(4, 7).map((item) => (
+          {navigation.slice(5, 8).map((item) => (
             <button
               key={item.id}
               aria-current={page === item.id ? "page" : undefined}

@@ -179,6 +179,35 @@ pub(crate) fn root_of(path: &str) -> Result<PathBuf, String> {
     Ok(root)
 }
 
+/// The folder as people (and Docker, in `--mount ...,source=<path>`) write it. On Windows
+/// `canonicalize` returns the `\\?\C:\…` form, which Docker rejects ("is not a valid
+/// Windows path") and which looks odd in the interface.
+pub(crate) fn plain_path(root: &Path) -> String {
+    let text = root.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        text.into_owned()
+    }
+}
+
+/// The path ends up in a comma-separated `--mount` value: a comma or a quote would let
+/// the folder name add mount options of its own.
+pub(crate) fn check_mount_path(root: &Path) -> Result<(), String> {
+    if plain_path(root)
+        .chars()
+        .any(|c| c == ',' || c == '"' || c.is_control())
+    {
+        return Err(tr!(
+            "O caminho da pasta não pode conter vírgula, aspas ou caracteres de controle. Renomeie a pasta ou escolha outra.",
+            "The folder path cannot contain commas, quotes or control characters. Rename the folder or pick another one."
+        ));
+    }
+    Ok(())
+}
+
 /// Entries that do not make a folder "non-empty" for starting a new project.
 const IGNORABLE_ENTRIES: [&str; 3] = [".git", ".DS_Store", "Thumbs.db"];
 
@@ -1905,6 +1934,29 @@ pub(crate) fn write_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn docker_gets_the_folder_without_the_windows_verbatim_prefix() {
+        let source = |text: &str| plain_path(Path::new(text));
+        assert_eq!(source(r"\\?\C:\Users\me\app"), r"C:\Users\me\app");
+        assert_eq!(source(r"\\?\UNC\server\share\app"), r"\\server\share\app");
+        assert_eq!(source(r"C:\Users\me\app"), r"C:\Users\me\app");
+        assert_eq!(source("/home/me/app"), "/home/me/app");
+    }
+
+    #[test]
+    fn a_folder_that_could_add_mount_options_is_refused() {
+        assert!(check_mount_path(Path::new("/home/me/my app")).is_ok());
+        assert!(check_mount_path(Path::new(r"\\?\C:\Users\me\my app")).is_ok());
+        for bad in [
+            "/home/me/a,readonly=false",
+            "/home/me/a\"b",
+            "/home/me/a\nb",
+        ] {
+            let error = check_mount_path(Path::new(bad)).unwrap_err();
+            assert!(error.contains("comma"), "{bad}: {error}");
+        }
+    }
 
     fn project(files: &[(&str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();

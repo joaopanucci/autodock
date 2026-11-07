@@ -2,6 +2,9 @@
 pub mod i18n;
 pub mod container_lifecycle;
 pub mod docker;
+pub mod expo;
+pub mod expo_upgrade;
+pub mod expo_watch;
 pub mod lifecycle_journal;
 pub mod logs;
 mod memory_capture;

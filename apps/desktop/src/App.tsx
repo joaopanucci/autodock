@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { call } from "./ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -10,9 +10,16 @@ import {
   X,
   AlertTriangle,
 } from "lucide-react";
-import type { Doctor, Page, Scan, SessionProject } from "./types";
+import type {
+  Doctor,
+  ExpoWatchState,
+  Page,
+  Scan,
+  SessionProject,
+} from "./types";
 import { displayPath, rememberProject } from "./model";
 import { Layout, navigation } from "./components/Layout";
+import { ExpoAlert } from "./components/ExpoAlert";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { Badge, Panel } from "./components/ui";
 import { Overview } from "./pages/Overview";
@@ -24,6 +31,7 @@ import { Console } from "./pages/Console";
 import { Assistant } from "./pages/Assistant";
 import { Contribute } from "./pages/Contribute";
 import { Learn } from "./pages/Learn";
+import { Expo } from "./pages/Expo";
 import { LANGUAGES, useI18n, type Lang, type TranslationKey } from "./i18n";
 
 const headings: Record<
@@ -38,6 +46,7 @@ const headings: Record<
   monitoring: { title: "page.monitoring.title", description: "page.monitoring.description" },
   console: { title: "page.console.title", description: "page.console.description" },
   learn: { title: "page.learn.title", description: "page.learn.description" },
+  expo: { title: "page.expo.title", description: "page.expo.description" },
   contribute: { title: "page.contribute.title", description: "page.contribute.description" },
   settings: { title: "page.settings.title", description: "page.settings.description" },
 };
@@ -53,8 +62,39 @@ export default function App() {
   const [busy, setBusy] = useState<"scan" | "doctor" | "select" | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [expo, setExpo] = useState<ExpoWatchState | null>(null);
+  const [expoFocus, setExpoFocus] = useState<string | null>(null);
   const working = useRef(false);
   const previousPage = useRef(page);
+  // Watched Expo projects come from a local file; the registry is only asked when the
+  // user turned the automatic check on (at most once a day).
+  useEffect(() => {
+    let alive = true;
+    const apply = (state: ExpoWatchState) => {
+      if (alive) setExpo(state);
+    };
+    call<ExpoWatchState>("expo_watch_state")
+      .then(apply)
+      .catch(() => undefined)
+      .then(() => call<ExpoWatchState>("expo_auto_check"))
+      .then(apply)
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const clearExpoFocus = useCallback(() => setExpoFocus(null), []);
+  function openExpo(path?: string) {
+    setExpoFocus(path ?? null);
+    setPage("expo");
+  }
+  function dismissExpo(path: string) {
+    call<ExpoWatchState>("expo_watch_dismiss", { path })
+      .then(setExpo)
+      .catch((e) =>
+        setError(typeof e === "string" ? e : e instanceof Error ? e.message : String(e)),
+      );
+  }
   useEffect(() => {
     if (previousPage.current === page) return;
     previousPage.current = page;
@@ -137,7 +177,12 @@ export default function App() {
   }
   const nav = navigation.find((item) => item.id === page)!;
   return (
-    <Layout page={page} navigate={setPage} projects={projects.length}>
+    <Layout
+      page={page}
+      navigate={setPage}
+      projects={projects.length}
+      expoAlerts={expo?.alerts ?? 0}
+    >
       <div className="page-heading">
         <div>
           <p className="eyebrow">
@@ -158,6 +203,9 @@ export default function App() {
           </button>
         )}
       </div>
+      {page !== "expo" && (
+        <ExpoAlert state={expo} open={openExpo} dismiss={dismissExpo} />
+      )}
       <div className="feedback-area" aria-live="polite" aria-atomic="true">
         {busy && (
           <div className="feedback loading" role="status">
@@ -238,6 +286,15 @@ export default function App() {
           <Assistant path={path} setPath={setPath} />
         </div>
         {page === "learn" && <Learn navigate={setPage} />}
+        {page === "expo" && (
+          <Expo
+            state={expo}
+            setState={setExpo}
+            sessionProjects={projects}
+            focusPath={expoFocus}
+            clearFocus={clearExpoFocus}
+          />
+        )}
         {page === "contribute" && <Contribute />}
         {page === "environment" && (
           <Environment

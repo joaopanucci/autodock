@@ -1,4 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+// Calls the app makes by itself. The watched Expo projects are read from a local file when
+// the app opens (no Docker and no network: the registry is only asked if the user turned
+// the automatic check on), so those reads do not count as queries.
+const startupCalls = (page: Page) =>
+  page.evaluate(() =>
+    ((window as any).testCalls as string[]).filter((c) => !c.startsWith("expo_")),
+  );
 
 // Test-only IPC fixture. Production never loads demo projects or fabricated metrics.
 const scan = {
@@ -158,7 +166,7 @@ test("starts empty and Console navigation makes no automatic queries", async ({
     page.getByRole("heading", { name: "Seu workspace, em foco." }),
   ).toBeVisible();
   await expect(page.getByText("Nenhuma análise por enquanto")).toBeVisible();
-  expect(await page.evaluate(() => (window as any).testCalls)).toEqual([]);
+  expect(await startupCalls(page)).toEqual([]);
   await page.screenshot({
     path: "../../.cache/etapa-002-3-overview.png",
     fullPage: true,
@@ -174,7 +182,7 @@ test("starts empty and Console navigation makes no automatic queries", async ({
   await expect(
     page.getByText("Escolha um container para começar"),
   ).toBeVisible();
-  expect(await page.evaluate(() => (window as any).testCalls)).toEqual([]);
+  expect(await startupCalls(page)).toEqual([]);
 });
 test("selects, scans, groups modules, shows warnings and remembers only one project on rescan", async ({
   page,
@@ -269,9 +277,7 @@ test("canceling picker does not scan and session is not persisted after reload",
   await expect(
     page.getByRole("button", { name: "Analisar projeto", exact: true }),
   ).toBeDisabled();
-  expect(await page.evaluate(() => (window as any).testCalls)).toEqual([
-    "plugin:dialog|open",
-  ]);
+  expect(await startupCalls(page)).toEqual(["plugin:dialog|open"]);
   await page.reload();
   await expect(page.getByText("Nenhuma análise por enquanto")).toBeVisible();
 });

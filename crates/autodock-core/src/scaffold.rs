@@ -234,7 +234,10 @@ fn docker_args(spec: &Spec, directory: &Path, container: &str) -> Vec<String> {
     );
     args.extend([
         "--mount".into(),
-        format!("type=bind,source={},target=/work", directory.display()),
+        format!(
+            "type=bind,source={},target=/work",
+            crate::generate::plain_path(directory)
+        ),
         "-w".into(),
         "/work".into(),
         spec.image.clone(),
@@ -246,16 +249,7 @@ fn docker_args(spec: &Spec, directory: &Path, container: &str) -> Vec<String> {
 fn checked(request: &ScaffoldRequest) -> Result<(Spec, std::path::PathBuf), String> {
     let spec = spec(request)?;
     let root = crate::generate::root_of(&request.path)?;
-    // The path is embedded in a comma-separated `--mount` value.
-    if root
-        .to_string_lossy()
-        .chars()
-        .any(|c| c == ',' || c == '"' || c.is_control())
-    {
-        return Err(
-            tr!("O caminho da pasta não pode conter vírgula, aspas ou caracteres de controle. Renomeie a pasta ou escolha outra.", "The folder path cannot contain commas, quotes or control characters. Rename the folder or pick another one."),
-        );
-    }
+    crate::generate::check_mount_path(&root)?;
     if !crate::generate::folder_is_empty(&request.path)? {
         return Err(tr!(
             "A pasta não está vazia. O instalador só roda em pasta vazia.",

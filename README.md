@@ -53,6 +53,7 @@ Setting up Docker for a local project is repetitive: which base image, which por
 | **Ready-made services** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer and MailHog, already wired to your app through environment variables, with healthchecks, **generated strong passwords** and **automatically chosen free ports**. |
 | **Several apps (monorepos, microservices)** | Finds every app in the folder (backend, front end, mobile…), writes **one Dockerfile per app** and **one compose file** that runs them together with the shared services, wired to each other (the front end receives the backend's address). Existing Dockerfiles and compose files are reused, never overwritten. |
 | **Run everything** | One button (after you confirm) runs `docker compose up -d --build`, shows the state of every service and lets you stop or remove the containers. Volumes (your data) are never removed. |
+| **Expo: SDK alerts and upgrade** | Shows the SDK of your Expo projects and tells you when a newer **stable** SDK is out ("your project is on SDK 57, but Expo released SDK 58: upgrade?"). The upgrade follows the official steps (`expo install`, `expo install --fix`, `expo-doctor`) **inside Docker**, one SDK at a time, with a backup of `package.json` and the lock file that is restored by itself if something fails. |
 | **Open in your IDE** | After creating, opens the project in whichever of VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed or Sublime you have installed. |
 | **Environment view** | Analyzes projects, diagnoses your environment, lists containers, shows metrics and logs, all read-only. |
 
@@ -204,6 +205,8 @@ AutoDock touches your files, so trust comes first:
 - **Isolated framework installers.** They run in a throwaway container with **only** the empty folder mounted.
 - **Service ports on `127.0.0.1` only.** Databases and queues are not exposed to your network.
 - **Never reads `.env`** nor runs scripts of the analyzed projects.
+- **Expo upgrades are isolated and reversible.** The package manager runs inside a throwaway container (`node:22-bookworm-slim`) that sees the project folder but gets its own empty `node_modules`, so install scripts never run on your computer. Only `package.json` and the lock file change; they are backed up outside the project first and put back automatically if the upgrade fails (or on demand, later).
+- **One optional network request.** The latest Expo SDK is read from the npm registry (`registry.npmjs.org`, the version list of the `expo` package; nothing from your projects is sent), only when you press *Check now* or turned on the automatic check (off by default, at most once a day). Watched projects are stored as plain folder paths in `~/.autodock/expo.json`, and only the ones you add.
 - **Running is explicit.** The only thing AutoDock executes beyond reading is `docker compose` (up, stop, down), and only after you tick a confirmation. It uses fixed arguments and a compose file of the project root, and it never removes volumes or images. Note that building the images runs the steps of the Dockerfiles, and starting the containers runs your app, both inside Docker.
 
 Details in [`docs/SECURITY.md`](docs/SECURITY.md).
@@ -237,6 +240,13 @@ autodock apps ./shop                                   # which apps are there
 autodock multi ./shop --service postgres               # preview: one Dockerfile per app + compose
 autodock multi ./shop --service postgres --write       # write the new files
 autodock compose ./shop up --yes                       # docker compose up -d --build (also: stop, down, status)
+
+# Expo projects: SDK, alerts and upgrade
+autodock expo inspect ./app                            # SDK, package manager, generated native folders
+autodock expo watch ./app                              # keep an eye on this project (only its path is stored)
+autodock expo check                                    # latest stable SDK on npm vs your watched projects
+autodock expo plan ./app                               # what the upgrade to the next SDK would do (runs nothing)
+autodock expo upgrade ./app --yes                      # runs it in Docker, with a backup (also: backups, restore --yes)
 ```
 
 ## 🧱 Architecture
@@ -268,7 +278,7 @@ npm --prefix apps/desktop run tauri dev
 - [x] Learn area (lessons, quick reference, glossary)
 - [x] Containers and images named after your project
 - [ ] Spring Initializr (choose dependencies)
-- [ ] Expo: detect outdated SDK versions and assist the upgrade
+- [x] Expo: detect the SDK, alert when a newer stable one is out and upgrade with backup
 - [ ] Gradle, legacy Java upgrades and more services (Kafka, MinIO…)
 - [ ] Production Dockerfiles (multi-stage)
 - [ ] Code signing and notarization of the installers

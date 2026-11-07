@@ -2610,3 +2610,47 @@ input[type="checkbox"], input[type="radio"], progress { accent-color: var(--ink)
 .multi-app-field input { width: 100%; min-width: 0; box-sizing: border-box; }
 .multi-run-actions + small { display: block; margin: 8px 0 14px; }
 .multi-app .feedback { margin-top: 14px; }
+
+/* Expo: SDK, aviso de nova versão e upgrade */
+.expo-alert {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center;
+  border: 1px solid var(--line-strong); border-left: 3px solid var(--amber); border-radius: 3px;
+  background: var(--panel); padding: 14px 18px; margin: 0 0 16px;
+}
+.expo-alert p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.expo-alert-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.expo-page > * + * { margin-top: 16px; }
+.expo-latest { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.expo-latest-sdk { font-size: 28px; letter-spacing: -0.02em; }
+.expo-projects { list-style: none; margin: 12px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 3px; }
+.expo-projects > li {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 14px 16px; border-bottom: 1px solid var(--line);
+}
+.expo-projects > li:last-child { border-bottom: 0; }
+.expo-projects > li.is-selected { background: var(--hover); }
+.expo-project-main { min-width: 0; flex: 1 1 280px; display: grid; gap: 4px; }
+.expo-project-main small { color: var(--subtle); overflow-wrap: anywhere; }
+.expo-project-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.expo-project-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.expo-suggest { margin-top: 20px; }
+.expo-steps, .expo-notes { margin: 6px 0 14px; padding-left: 20px; display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.expo-notes { list-style: disc; }
+.expo-notes code { overflow-wrap: anywhere; }
+.expo-file { display: inline-block; margin: 0 8px 4px 0; }
+.expo-command { margin: 4px 0 8px; }
+.expo-command summary, .expo-report summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 8px 0; }
+.expo-report { display: grid; gap: 6px; }
+.expo-changes { margin-bottom: 8px; }
+.expo-backups { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
+.expo-backups ul { list-style: none; margin: 8px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 3px; }
+.expo-backups li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.expo-backups li:last-child { border-bottom: 0; }
+.expo-backups li > div { display: grid; gap: 3px; min-width: 0; }
+.expo-backups small { color: var(--subtle); }
+.expo-backups .feedback { margin-top: 12px; }
+@media (max-width: 860px) {
+  .expo-alert { grid-template-columns: auto 1fr; }
+  .expo-alert-actions { grid-column: 1 / -1; }
+}
+.expo-page .field-label { margin-top: 18px; }
