@@ -75,10 +75,10 @@ Get the installer for your platform from the [releases page](https://github.com/
 
 | System | File | How to install |
 |---|---|---|
-| 🍎 **macOS** (Intel and Apple Silicon) | [`AutoDock_0.2.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_universal.dmg) | Open the DMG and drag the app to *Applications*. |
-| 🪟 **Windows** (64-bit) | [`AutoDock_0.2.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_x64-setup.exe) | Run the installer. |
-| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.2.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_amd64.deb) | `sudo apt install ./AutoDock_0.2.0_amd64.deb` |
-| 🐧 **Linux** (any distro) | [`AutoDock_0.2.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🍎 **macOS** (Intel and Apple Silicon) | [`AutoDock_0.3.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.3.0/AutoDock_0.3.0_universal.dmg) | Open the DMG and drag the app to *Applications*. |
+| 🪟 **Windows** (64-bit) | [`AutoDock_0.3.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.3.0/AutoDock_0.3.0_x64-setup.exe) | Run the installer. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.3.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.3.0/AutoDock_0.3.0_amd64.deb) | `sudo apt install ./AutoDock_0.3.0_amd64.deb` |
+| 🐧 **Linux** (any distro) | [`AutoDock_0.3.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.3.0/AutoDock_0.3.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
 > **Requirement:** [Docker](https://docs.docker.com/get-docker/) installed and running, to create and run the environments.
 
@@ -96,7 +96,7 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh) and [`install.ps1`](scripts/install.ps1). To pin a version: `AUTODOCK_VERSION=v0.2.0`.
+Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh) and [`install.ps1`](scripts/install.ps1). To pin a version: `AUTODOCK_VERSION=v0.3.0`.
 
 <details>
 <summary><b>⚠️ Downloaded with a browser and got "unidentified developer"? That is expected</b></summary>
@@ -112,7 +112,7 @@ AutoDock is open source and the installers are **not code-signed yet** (signing 
 Verify the file's integrity:
 
 ```bash
-shasum -a 256 AutoDock_0.2.0_universal.dmg   # compare with SHA256SUMS.txt
+shasum -a 256 AutoDock_0.3.0_universal.dmg   # compare with SHA256SUMS.txt
 ```
 
 </details>
@@ -167,6 +167,18 @@ docker compose up --build
 <tr>
 <td width="50%"><b>Diagnose the environment</b><br/>Node, Git, Docker, Compose and Engine, without assuming anything.<br/><img src="docs/screenshots/en/09-ambiente.png" alt="Environment diagnostics" /></td>
 <td width="50%"><b>Overview</b><br/>Your projects and the state of your environment in one place.<br/><img src="docs/screenshots/en/01-visao-geral.png" alt="Overview" /></td>
+</tr>
+</table>
+
+### 📱 Expo: new SDK alerts and upgrade
+
+Add your Expo projects and AutoDock tells you when a newer **stable** SDK is out. The upgrade runs the official steps (`expo install`, `expo install --fix`, `expo-doctor`) inside Docker, one SDK at a time, after you confirm, with a backup of `package.json` and the lock file that you can restore. [More details in the security notes](docs/SECURITY.md).
+
+<table>
+<tr>
+<td width="33%"><b>The alert</b><br/>On every screen, until you upgrade or dismiss it.<br/><img src="docs/screenshots/en/11-expo-aviso.png" alt="Alert: your project is on SDK 57 but Expo released SDK 58" /></td>
+<td width="33%"><b>The plan</b><br/>What will happen, which files change and what to read first.<br/><img src="docs/screenshots/en/12-expo-atualizacao.png" alt="Upgrade plan with a confirmation" /></td>
+<td width="33%"><b>The report</b><br/>Changed dependencies, the expo-doctor result and the next steps.<br/><img src="docs/screenshots/en/13-expo-relatorio.png" alt="Upgrade report" /></td>
 </tr>
 </table>
 

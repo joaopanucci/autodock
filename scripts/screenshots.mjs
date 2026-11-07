@@ -18,8 +18,8 @@ const out = path.join(root, "docs/screenshots", theme === "dark" ? "dark" : "", 
 fs.mkdirSync(out, { recursive: true });
 // UI labels the script clicks, per language.
 const L = {
-  pt: { projects: "Projetos", assistant: "Assistente Docker", selectFolder: "Selecionar pasta", analyze: "Analisar projeto", modules: "módulos identificados", found: /Encontramos/, next: /Continuar/, review: /Revisar/, reviewTitle: "Revise antes de criar", view: "ver", create: /Criar \d+ arquivo/, openIn: "Abrir o projeto em:", containers: "Containers", environment: "Ambiente", contribute: "Contribuir", refresh: /Carregar|Atualizar|Listar/, check: /Verificar|Atualizar/ },
-  en: { projects: "Projects", assistant: "Docker assistant", selectFolder: "Select folder", analyze: "Analyze project", modules: "modules found", found: /Found:/, next: /Continue/, review: /Review/, reviewTitle: "Review before creating", view: "view", create: /Create \d+ file/, openIn: "Open the project in:", containers: "Containers", environment: "Environment", contribute: "Contribute", refresh: /Load|Refresh|List/, check: /Check|Refresh/ },
+  pt: { projects: "Projetos", assistant: "Assistente Docker", selectFolder: "Selecionar pasta", analyze: "Analisar projeto", modules: "módulos identificados", found: /Encontramos/, next: /Continuar/, review: /Revisar/, reviewTitle: "Revise antes de criar", view: "ver", create: /Criar \d+ arquivo/, openIn: "Abrir o projeto em:", containers: "Containers", environment: "Ambiente", contribute: "Contribuir", expo: "Expo", seeUpgrade: "Ver upgrade", understand: /Entendi que o AutoDock vai rodar/, upgradeTo: "Atualizar para o SDK 58", upgraded: /Atualizado do SDK 57/, refresh: /Carregar|Atualizar|Listar/, check: /Verificar|Atualizar/ },
+  en: { projects: "Projects", assistant: "Docker assistant", selectFolder: "Select folder", analyze: "Analyze project", modules: "modules found", found: /Found:/, next: /Continue/, review: /Review/, reviewTitle: "Review before creating", view: "view", create: /Create \d+ file/, openIn: "Open the project in:", containers: "Containers", environment: "Environment", contribute: "Contribute", expo: "Expo", seeUpgrade: "See upgrade", understand: /I understand AutoDock will run these commands in Docker/, upgradeTo: "Upgrade to SDK 58", upgraded: /Upgraded from SDK 57/, refresh: /Load|Refresh|List/, check: /Check|Refresh/ },
 }[lang];
 const base = process.env.AUTODOCK_URL ?? "http://127.0.0.1:1420";
 const cli = path.join(root, "target/debug", process.platform === "win32" ? "autodock.exe" : "autodock");
@@ -106,6 +106,51 @@ const containers = {
   ],
 };
 
+// Expo: a tiny real SDK 57 project, so the inspection and the upgrade plan come from the CLI.
+const expoDir = fs.mkdtempSync(path.join(os.tmpdir(), "meu-app-"));
+fs.writeFileSync(path.join(expoDir, "package.json"), JSON.stringify({ name: "meu-app", main: "expo-router/entry", dependencies: { expo: "~57.0.32", "expo-router": "~57.0.30", react: "19.2.3", "react-native": "0.86.3" } }, null, 2));
+fs.writeFileSync(path.join(expoDir, "package-lock.json"), "{}");
+fs.writeFileSync(path.join(expoDir, ".gitignore"), "/android\n/ios\n");
+for (const folder of ["android", "ios"]) {
+  fs.mkdirSync(path.join(expoDir, folder));
+  fs.writeFileSync(path.join(expoDir, folder, ".keep"), "");
+}
+const expoProjectPath = "/Users/maria/projetos/meu-app";
+const expoReal = fs.realpathSync.native(expoDir);
+const prettify = (value) => JSON.parse(JSON.stringify(value).split(JSON.stringify(expoReal).slice(1, -1)).join(expoProjectPath));
+const cliJson = (...args) => JSON.parse(execFileSync(cli, ["--lang", lang, ...args], { env: process.env }).toString());
+const expoProject = prettify(cliJson("expo", "inspect", expoDir, "--json"));
+const expoPlan = prettify(cliJson("expo", "plan", expoDir, "--json"));
+const expoLatest = { checkedAt: Math.floor(Date.now() / 1000) - 600, latestVersion: "58.0.23", latestSdk: 58, availableSdks: [56, 57, 58] };
+const expoState = (project, update, latest = expoLatest) => ({
+  schemaVersion: 1,
+  checkOnStart: false,
+  latest,
+  projects: project ? [{ path: expoProjectPath, name: "meu-app", project, update }] : [],
+  alerts: update && !update.dismissed ? 1 : 0,
+  checkError: null,
+});
+const expo = {
+  empty: expoState(null, null, null),
+  before: expoState(expoProject, { currentSdk: 57, latestSdk: 58, nextSdk: 58, stepsBehind: 1, dismissed: false }),
+  after: expoState({ ...expoProject, sdk: 58, declaredVersion: "^58.0.23" }, null),
+  plan: expoPlan,
+  backups: [{ id: "1794028502-57-58", fromSdk: 57, toSdk: 58, createdAt: Math.floor(Date.now() / 1000), status: "done", files: ["package.json", "package-lock.json"], modifiedSinceUpgrade: false }],
+  report: {
+    schemaVersion: 1, succeeded: true, restored: false, fromSdk: 57, toSdk: 58,
+    changes: [
+      ["expo", "~57.0.32", "^58.0.23"], ["expo-router", "~57.0.30", "~58.0.30"], ["react", "19.2.3", "19.3.0"],
+      ["react-dom", "19.2.3", "19.3.0"], ["react-native", "0.86.3", "0.88.1"], ["react-native-reanimated", "4.5.1", "4.7.1"],
+      ["react-native-screens", "~4.26.0", "~4.30.1"], ["react-native-safe-area-context", "~5.7.0", "~5.11.1"],
+    ].map(([name, from, to]) => ({ name, section: "dependencies", from, to })),
+    doctor: "Running 20 checks on your project...\n20/20 checks passed. No issues detected!",
+    doctorPassed: true, usedLegacyPeerDeps: false, output: "", detail: "", durationMs: 41000, backupId: "1794028502-57-58",
+    nextSteps: lang === "en"
+      ? ["Run npm install in the project to update the node_modules on your computer.", "Delete the android folder (it is generated) so it is recreated on the next build.", "Delete the ios folder (it is generated) so it is recreated on the next build.", "Read the SDK 58 release notes and test the app."]
+      : ["Rode npm install no projeto para atualizar a node_modules do seu computador.", "Apague a pasta android (é gerada) para ela ser recriada no próximo build.", "Apague a pasta ios (é gerada) para ela ser recriada no próximo build.", "Leia as notas da versão do SDK 58 e teste o app."],
+  },
+};
+
 const browser = await chromium.launch({ channel: process.env.AUTODOCK_BROWSER_CHANNEL ?? (process.platform === "win32" ? "msedge" : "chrome") });
 const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: theme, locale: lang === "en" ? "en-US" : "pt-BR" });
 const page = await context.newPage();
@@ -113,7 +158,7 @@ await page.addInitScript(({ theme, lang }) => {
   localStorage.setItem("autodock.theme", theme);
   localStorage.setItem("autodock.language", lang);
 }, { theme, lang });
-await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes }) => {
+await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes, expo }) => {
   window.__TAURI_INTERNALS__ = {
     transformCallback: () => 1,
     invoke: async (command) => {
@@ -126,12 +171,19 @@ await page.addInitScript(({ scan, doctor, containers, files, project, ports, pre
         case "inspect_folder": return false;
         case "preview_docker_setup": return { schemaVersion: 1, project, files, seed: "0".repeat(64), ports, notes: previewNotes };
         case "apply_docker_setup": return { written: files.map((f) => f.name), skipped: [] };
+        case "expo_watch_state":
+        case "expo_auto_check":
+          return sessionStorage.getItem("expo-demo") ? (window.__upgraded ? expo.after : expo.before) : expo.empty;
+        case "expo_upgrade_plan": return expo.plan;
+        case "expo_upgrade_run": window.__upgraded = true; return expo.report;
+        case "expo_backups": return window.__upgraded ? expo.backups : [];
+        case "expo_inspect": return null;
         case "detect_ides": return [{ id: "vscode", label: "VS Code" }, { id: "cursor", label: "Cursor" }, { id: "intellij", label: "IntelliJ IDEA" }];
         default: throw new Error(`IPC ${command}`);
       }
     },
   };
-}, { scan, doctor, containers, files, project, ports, previewNotes });
+}, { scan, doctor, containers, files, project, ports, previewNotes, expo });
 
 const shot = async (name) => {
   await page.waitForTimeout(250);
@@ -179,5 +231,20 @@ await shot("09-ambiente");
 await nav(L.contribute);
 await shot("10-contribuir");
 
+// Expo: aviso de SDK novo, plano de atualização e relatório
+await page.evaluate(() => sessionStorage.setItem("expo-demo", "1"));
+await page.reload();
+await page.getByTestId("expo-alert").waitFor();
+await shot("11-expo-aviso");
+await page.getByTestId("expo-alert").getByRole("button", { name: L.seeUpgrade }).click();
+await page.getByLabel(L.understand).waitFor();
+await shot("12-expo-atualizacao");
+await page.getByLabel(L.understand).check();
+await page.locator(".multi-run-actions").getByRole("button", { name: L.upgradeTo }).click();
+await page.getByText(L.upgraded).waitFor();
+await page.evaluate(() => document.querySelectorAll(".expo-report details").forEach((d) => { d.open = true; }));
+await page.locator(".expo-report").scrollIntoViewIfNeeded();
+await shot("13-expo-relatorio");
+
 await browser.close();
-for (const dir of [sample, firstSample]) fs.rmSync(dir, { recursive: true, force: true });
+for (const dir of [sample, firstSample, expoDir]) fs.rmSync(dir, { recursive: true, force: true });
