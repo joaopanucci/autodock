@@ -197,3 +197,49 @@ test("a folder that is not a Java project is reported", async ({ page }) => {
   await choose(page);
   await expect(page.getByRole("alert")).toContainText("Choose a folder to see the project");
 });
+
+test("explains the Java upgrade before a folder is chosen and folds away once there is a project", async ({ page }) => {
+  await open(page);
+  const how = page.getByTestId("java-how");
+  await expect(page.getByRole("heading", { name: "From old Java to Java 25, without touching your project" })).toBeVisible();
+  await expect(how).toHaveAttribute("open", "");
+  await expect(how.locator(".java-journey li")).toHaveCount(5);
+  await expect(how).toContainText("Spring Boot 3.5");
+  await expect(how).toContainText("javax.* with jakarta.*");
+  await expect(how).toContainText("What AutoDock fixes by itself");
+  await expect(how).toContainText("What is left for you");
+  await expect(how).toContainText("The original is never modified");
+  await expect(how).toContainText("A tested example");
+
+  // choosing a project folds it (the person can open it again)
+  await choose(page);
+  await expect(page.locator(".expo-projects")).toContainText("legacy-shop");
+  await expect(how).not.toHaveAttribute("open", "");
+  await how.getByText("How the Java upgrade works").click();
+  await expect(how).toHaveAttribute("open", "");
+  await expect(how.locator(".java-journey li").first()).toBeVisible();
+});
+
+test("the explanation fits a narrow window without horizontal scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await open(page);
+  const how = page.getByTestId("java-how");
+  await expect(how.locator(".java-journey li")).toHaveCount(5);
+  await how.scrollIntoViewIfNeeded();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test.describe("in Portuguese", () => {
+  test.use({ locale: "pt-BR" });
+
+  test("the explanation is written in Portuguese", async ({ page }) => {
+    await open(page);
+    const how = page.getByTestId("java-how");
+    await expect(page.getByRole("heading", { name: "Do Java antigo ao Java 25, sem mexer no seu projeto" })).toBeVisible();
+    await expect(how.locator(".java-journey li")).toHaveCount(5);
+    await expect(how).toContainText("O que o AutoDock resolve sozinho");
+    await expect(how).toContainText("O que sobra para você");
+    await expect(how).toContainText("O original nunca é alterado");
+  });
+});

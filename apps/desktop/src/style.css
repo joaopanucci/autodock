@@ -2656,6 +2656,16 @@ input[type="checkbox"], input[type="radio"], progress { accent-color: var(--ink)
 .expo-page .field-label { margin-top: 18px; }
 .java-hops { list-style: none; margin: 6px 0 14px; padding: 0; display: grid; gap: 8px; }
 .java-hops li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.java-how summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+.java-journey { list-style: none; counter-reset: step; margin: 8px 0 10px; padding: 0; display: grid; gap: 8px; }
+.java-journey li { counter-increment: step; display: grid; grid-template-columns: 28px 1fr; column-gap: 12px; row-gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 3px; }
+.java-journey li::before { content: counter(step); grid-row: 1 / span 2; align-self: start; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; font-size: 12px; color: var(--muted); }
+.java-journey strong { font-size: 14px; }
+.java-journey span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.java-how-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.java-how .field-label { display: flex; align-items: center; gap: 6px; }
+.java-example { margin-top: 16px; }
+@media (max-width: 720px) { .java-how-grid { grid-template-columns: 1fr; gap: 0; } }
 
 /* Atualização do próprio app */
 .update-banner {
