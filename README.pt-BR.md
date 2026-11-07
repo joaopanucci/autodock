@@ -7,7 +7,8 @@
 # AutoDock
 
 **Coloque qualquer projeto no Docker em poucos cliques.**<br/>
-Responda algumas perguntas. O AutoDock cria o `Dockerfile`, o `docker-compose.yml` e até o projeto, se você ainda não tiver um. Você revisa tudo antes de gravar.
+Responda algumas perguntas. O AutoDock cria o `Dockerfile`, o `docker-compose.yml` e até o projeto, se você ainda não tiver um. Você revisa tudo antes de gravar.<br/>
+Depois, mantenha seus projetos em dia: atualize projetos **Java (Maven)** antigos para **Java 25 e Spring Boot 4**, atualize o SDK do **Expo** e revise o resultado num **editor de código** embutido, com um terminal que roda no Docker.
 
 [![CI](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml/badge.svg?branch=main)](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml)
 [![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=22252a&label=vers%C3%A3o)](https://github.com/joaopanucci/autodock/releases/latest)
@@ -78,10 +79,10 @@ Pegue o instalador da sua plataforma na [página de releases](https://github.com
 
 | Sistema | Arquivo | Como instalar |
 |---|---|---|
-| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.5.1_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.5.1/AutoDock_0.5.1_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
-| 🪟 **Windows** (64 bits) | [`AutoDock_0.5.1_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.5.1/AutoDock_0.5.1_x64-setup.exe) | Execute o instalador. |
-| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.5.1_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.5.1/AutoDock_0.5.1_amd64.deb) | `sudo apt install ./AutoDock_0.5.1_amd64.deb` |
-| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.5.1_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.5.1/AutoDock_0.5.1_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.6.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
+| 🪟 **Windows** (64 bits) | [`AutoDock_0.6.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_x64-setup.exe) | Execute o instalador. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.6.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_amd64.deb) | `sudo apt install ./AutoDock_0.6.0_amd64.deb` |
+| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.6.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
 > **Requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução para criar e rodar os ambientes.
 
@@ -99,7 +100,7 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.5.1`.
+Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.6.0`.
 
 <details>
 <summary><b>⚠️ Baixou pelo navegador e apareceu "desenvolvedor não identificado"? É esperado</b></summary>
@@ -115,7 +116,7 @@ O AutoDock é um projeto open source e os instaladores **ainda não são assinad
 Conferir a integridade do arquivo:
 
 ```bash
-shasum -a 256 AutoDock_0.5.1_universal.dmg   # compare com o SHA256SUMS.txt
+shasum -a 256 AutoDock_0.6.0_universal.dmg   # compare com o SHA256SUMS.txt
 ```
 
 </details>
@@ -188,6 +189,24 @@ Adicione seus projetos Expo e o AutoDock avisa quando sai um SDK **estável** ma
 ### ☕ Java: atualização de projeto legado
 
 Escolha um projeto Maven e o AutoDock mostra o nível do Java e a versão do Spring Boot, monta o plano e, depois da sua confirmação, cria uma cópia atualizada (`<nome>-java25`) ao lado da pasta, ou na pasta que você escolher. Cada passo é compilado: se algo quebrar, o relatório diz em qual passo e mostra os erros do compilador, e **aquele passo é desfeito**: a cópia fica no último passo que funcionou (com os testes do projeto rodando ali). Projetos com o Spring Boot fixado por um BOM de terceiros (o JHipster, por exemplo) só têm o nível do Java atualizado, porque as receitas do Spring Boot não conseguem subir esse BOM. Projetos Spring Boot sobem uma linha principal por vez; projetos sem Spring só mudam o nível do Java. Gradle ainda não é suportado. [Mais detalhes nas notas de segurança](docs/SECURITY.md).
+
+<table>
+<tr>
+<td width="50%"><b>O plano</b><br/>Os passos em ordem, as dependências que ele adiciona e onde a cópia vai ficar. Nada roda antes da sua confirmação.<br/><img src="docs/screenshots/14-java-plano.png" alt="Plano do upgrade de Java: Java 7 para 25 e Spring Boot 1.5 para 4.0" /></td>
+<td width="50%"><b>O relatório</b><br/>Cada passo compilou, os testes do próprio projeto rodaram na cópia e há um botão para revisar as mudanças no editor.<br/><img src="docs/screenshots/15-java-relatorio.png" alt="Relatório do upgrade de Java" /></td>
+</tr>
+</table>
+
+### 💻 Editor de código e terminal
+
+Abra a pasta de um projeto, ou a cópia atualizada direto do relatório de Java, e trabalhe nela sem sair do AutoDock. O editor é o [Monaco](https://microsoft.github.io/monaco-editor/), o do VS Code. Depois de um upgrade ele mostra o original e a cópia **lado a lado**; a busca cobre todos os arquivos do projeto; e o **terminal** roda seus comandos (`mvn test`, `npm run build`…) **dentro de um contêiner Docker** com a pasta montada, numa imagem de Java, Node.js, Python ou Debian, então nada roda solto no seu computador. [Regras de segurança](docs/SECURITY.md).
+
+<table>
+<tr>
+<td width="50%"><b>Lado a lado</b><br/>O original à esquerda, a cópia atualizada (editável) à direita.<br/><img src="docs/screenshots/16-editor-revisao.png" alt="Editor comparando o pom.xml antes e depois do upgrade" /></td>
+<td width="50%"><b>Busca e terminal</b><br/>Ache texto em todos os arquivos e rode comandos num contêiner.<br/><img src="docs/screenshots/19-editor-terminal.png" alt="Editor com os resultados da busca e o terminal rodando mvn test" /></td>
+</tr>
+</table>
 
 ### 🌗 Claro e escuro
 
