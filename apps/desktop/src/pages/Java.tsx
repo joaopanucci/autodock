@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertTriangle, CheckCircle2, FolderOpen, LoaderCircle, Play, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FolderOpen, GitCompare, LoaderCircle, Play, X } from "lucide-react";
 import { call } from "../ipc";
 import { Badge, EmptyState, Panel } from "../components/ui";
 import { JavaExplainer } from "../components/JavaExplainer";
 import { displayPath } from "../model";
 import { useI18n } from "../i18n";
-import type { JavaPlan, JavaProject, JavaUpgradeReport, SessionProject } from "../types";
+import type { JavaChanges, JavaPlan, JavaProject, JavaUpgradeReport, SessionProject } from "../types";
 
 const message = (error: unknown) =>
   typeof error === "string" ? error : error instanceof Error ? error.message : String(error);
 
-export function Java({ sessionProjects }: { sessionProjects: SessionProject[] }) {
+export function Java({
+  sessionProjects,
+  onReview,
+}: {
+  sessionProjects: SessionProject[];
+  /** Opens the changes of an upgrade in the editor, side by side with the original. */
+  onReview: (original: string, copy: string, changes: JavaChanges) => void;
+}) {
   const { t } = useI18n();
   const [error, setError] = useState("");
   const [project, setProject] = useState<JavaProject | null>(null);
@@ -512,6 +519,17 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
                   </p>
                   {report.testsNeedDocker && (
                     <p className="field-hint">{t("java.report.testsDocker")}</p>
+                  )}
+                  {report.changes.total > 0 && (
+                    <div className="multi-run-actions">
+                      <button
+                        type="button"
+                        className="button primary"
+                        onClick={() => onReview(plan?.project.path ?? project?.path ?? "", report.destination, report.changes)}
+                      >
+                        <GitCompare size={16} aria-hidden="true" /> {t("java.report.review")}
+                      </button>
+                    </div>
                   )}
                   <details>
                     <summary>{t("java.report.changes", { total: report.changes.total })}</summary>

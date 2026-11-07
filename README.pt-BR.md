@@ -55,7 +55,7 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 | **Subir tudo** | Um botão (depois da sua confirmação) roda `docker compose up -d --build`, mostra o estado de cada serviço e permite parar ou remover os containers. Os volumes (seus dados) nunca são removidos. |
 | **Expo: aviso de SDK e atualização** | Mostra o SDK dos seus projetos Expo e avisa quando sai um SDK **estável** mais novo ("seu projeto está no SDK 57, mas o Expo lançou o SDK 58: atualizar?"). A atualização segue os passos oficiais (`expo install`, `expo install --fix`, `expo-doctor`) **dentro do Docker**, um SDK por vez, com backup do `package.json` e do arquivo de lock que volta sozinho se algo falhar. |
 | **Java: atualização de projeto legado** | Lê um projeto Maven antigo (Java 6/7/8, Spring Boot 1.x/2.x) e cria, **ao lado dele** (ou na pasta que você escolher), uma cópia atualizada para o **Java 25 e o Spring Boot 4**: sobe a cópia um passo por vez (Spring Boot 2.7, Java 17, Spring Boot 3.5 com `javax` → `jakarta`, Spring Boot 4, Java 25) com o [OpenRewrite](https://docs.openrewrite.org/) **dentro do Docker**, compila depois de cada passo, adiciona as dependências das APIs que o JDK deixou de trazer (JAXB, `javax.annotation`…) e roda os testes do próprio projeto. O seu projeto nunca é alterado. |
-| **Editor de código** | Abra a pasta de um projeto e edite os arquivos sem sair do AutoDock. Usa o Monaco, o editor do VS Code: explorador de arquivos, abas, cores para muitas linguagens, novos arquivos e pastas, e salvar com a checagem de que o arquivo não mudou no disco nesse meio tempo. Só enxerga a pasta que você escolher, nunca segue links que levam para fora dela e funciona sem internet. |
+| **Editor de código** | Abra a pasta de um projeto e edite os arquivos sem sair do AutoDock. Usa o Monaco, o editor do VS Code: explorador de arquivos, abas, cores para muitas linguagens, novos arquivos e pastas, e salvar com a checagem de que o arquivo não mudou no disco nesse meio tempo. Depois de um upgrade de Java, **Revisar as mudanças no editor** abre a cópia atualizada ao lado do original, arquivo por arquivo e lado a lado, e você pode editar e salvar a cópia. Só enxerga a pasta que você escolher, nunca segue links que levam para fora dela e funciona sem internet. |
 | **Atualização dentro do app** | Quando sai uma versão nova, o AutoDock avisa e se atualiza com um clique (sem baixar de novo). A atualização é **verificada por assinatura** antes de ser instalada, nada é instalado sem o seu clique, e a verificação (uma vez por dia, uma requisição ao GitHub) pode ser desligada em Configurações. |
 | **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
 | **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
@@ -304,7 +304,8 @@ npm --prefix apps/desktop run tauri dev
 - [x] Expo: detectar o SDK, avisar quando sai um estável mais novo e atualizar com backup
 - [x] Java: atualizar um projeto Maven legado para o JDK e o Spring Boot atuais (numa cópia)
 - [x] Editor de código dentro do app (explorador, abas, salvar)
-- [ ] Editor: comparar um upgrade com o original, buscar em todos os arquivos, terminal integrado, extensões
+- [x] Editor: revisar um upgrade de Java lado a lado com o original
+- [ ] Editor: buscar em todos os arquivos, terminal integrado, extensões
 - [ ] Gradle e mais serviços (Kafka, MinIO…)
 - [ ] Dockerfiles de produção (multi-stage)
 - [x] Atualização dentro do app (assinada, com a sua confirmação)

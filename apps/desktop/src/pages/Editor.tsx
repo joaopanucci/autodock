@@ -5,10 +5,13 @@ import {
   ChevronDown,
   ChevronRight,
   File as FileIcon,
+  FileDiff,
+  FileMinus,
   FilePlus2,
   FolderClosed,
   FolderOpen,
   FolderPlus,
+  GitCompare,
   Link2,
   LoaderCircle,
   Save,
@@ -17,6 +20,7 @@ import {
 } from "lucide-react";
 import { call } from "../ipc";
 import { CodeEditor, type CodeEditorHandle } from "../components/CodeEditor";
+import { DiffEditor, type DiffEditorHandle } from "../components/DiffEditor";
 import { EmptyState, Panel } from "../components/ui";
 import { baseName, joinPath, languageFor, parentOf } from "../editor/languages";
 import { displayPath } from "../model";
@@ -25,6 +29,7 @@ import type {
   EditorEntry,
   EditorFile,
   EditorListing,
+  EditorReview,
   EditorRoot,
   EditorSaveReport,
   SessionProject,
@@ -35,6 +40,10 @@ const message = (error: unknown) =>
 
 type Tab = {
   path: string;
+  /** `diff`: the original on the left and the editable copy on the right (reviewing an upgrade). */
+  kind: "file" | "diff";
+  /** Nothing can be typed (a file the upgrade removed). */
+  readOnly: boolean;
   dirty: boolean;
   /** Last change on disk, as read or saved: sent back so a change made elsewhere is noticed. */
   modifiedMs: number;
@@ -44,9 +53,17 @@ type Tab = {
 
 type Dir = { entries: EditorEntry[]; truncated: boolean; loading: boolean; error: string };
 
-export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] }) {
+export function Editor({
+  sessionProjects,
+  reviewRequest,
+}: {
+  sessionProjects: SessionProject[];
+  /** The Java page asked to review the changes of an upgrade. */
+  reviewRequest: EditorReview | null;
+}) {
   const { t } = useI18n();
   const editor = useRef<CodeEditorHandle>(null);
+  const diffEditor = useRef<DiffEditorHandle>(null);
 
   const [root, setRoot] = useState<EditorRoot | null>(null);
   const [dirs, setDirs] = useState<Record<string, Dir>>({});
@@ -64,6 +81,11 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
   const [newName, setNewName] = useState("");
   const [typedPath, setTypedPath] = useState("");
   const [cursor, setCursor] = useState<{ line: number; col: number } | null>(null);
+  /** The upgrade being reviewed: its original folder and what changed. */
+  const [review, setReview] = useState<EditorReview | null>(null);
+  const [view, setView] = useState<"files" | "changes">("files");
+  /** A folder waits to be opened (or the open one to be closed) until unsaved changes are decided. */
+  const [switching, setSwitching] = useState<{ path: string | null; review: EditorReview | null } | null>(null);
 
   // The callbacks of the editor always see the latest tabs and folder.
   const tabsRef = useRef(tabs);
@@ -100,12 +122,27 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
     }
   }, []);
 
-  async function openFolder(path: string) {
+  const closeAllTabs = () => {
+    tabsRef.current.forEach((tab) => (tab.kind === "diff" ? diffEditor : editor).current?.close(tab.path));
+    editor.current?.show(null);
+    diffEditor.current?.show(null);
+  };
+
+  /** Opens a folder (`null` closes the open one), asking first when unsaved changes would be lost. */
+  function requestOpen(path: string | null, reviewed: EditorReview | null = null) {
+    if (tabsRef.current.some((tab) => tab.dirty)) setSwitching({ path, review: reviewed });
+    else if (path === null) closeFolder();
+    else void openFolder(path, reviewed);
+  }
+
+  async function openFolder(path: string, reviewed: EditorReview | null = null) {
     setError("");
+    setSwitching(null);
     try {
       const info = await call<EditorRoot>("editor_open_root", { path });
-      tabsRef.current.forEach((tab) => editor.current?.close(tab.path));
-      editor.current?.show(null);
+      closeAllTabs();
+      setReview(reviewed);
+      setView(reviewed ? "changes" : "files");
       setRoot(info);
       setDirs({});
       setExpanded(new Set([""]));
@@ -131,8 +168,9 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
   }
 
   function closeFolder() {
-    tabsRef.current.forEach((tab) => editor.current?.close(tab.path));
-    editor.current?.show(null);
+    setSwitching(null);
+    closeAllTabs();
+    setReview(null);
     setRoot(null);
     setTabs([]);
     setActive(null);
@@ -153,17 +191,19 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
 
   // ───────────── files ─────────────
 
-  const activate = useCallback((path: string | null) => {
+  const activate = useCallback((path: string | null, kind: "file" | "diff" = "file") => {
     setActive(path);
-    editor.current?.show(path);
+    editor.current?.show(kind === "file" ? path : null);
+    diffEditor.current?.show(kind === "diff" ? path : null);
     setConflict(null);
   }, []);
 
   async function openFile(relative: string) {
     setSelected({ path: relative, dir: false });
     setError("");
-    if (tabsRef.current.some((tab) => tab.path === relative)) {
-      activate(relative);
+    const existing = tabsRef.current.find((tab) => tab.path === relative);
+    if (existing) {
+      activate(relative, existing.kind);
       return;
     }
     try {
@@ -171,7 +211,15 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
       editor.current?.open(file.path, file.text, languageFor(file.path));
       setTabs((current) => [
         ...current,
-        { path: file.path, dirty: false, modifiedMs: file.modifiedMs, bom: file.bom, sensitive: file.sensitive },
+        {
+          path: file.path,
+          kind: "file",
+          readOnly: false,
+          dirty: false,
+          modifiedMs: file.modifiedMs,
+          bom: file.bom,
+          sensitive: file.sensitive,
+        },
       ]);
       activate(file.path);
     } catch (e) {
@@ -189,7 +237,7 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
   const save = useCallback(
     async (path: string, overwrite = false): Promise<boolean> => {
       const tab = tabsRef.current.find((item) => item.path === path);
-      const text = editor.current?.value(path);
+      const text = (tab?.kind === "diff" ? diffEditor : editor).current?.value(path);
       if (!tab || text == null || !rootRef.current) return false;
       setSaving(true);
       setError("");
@@ -205,7 +253,7 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
         setTabs((current) =>
           current.map((item) => (item.path === path ? { ...item, modifiedMs: report.modifiedMs } : item)),
         );
-        editor.current?.markSaved(path);
+        (tab.kind === "diff" ? diffEditor : editor).current?.markSaved(path);
         setConflict(null);
         say(t("editor.saved", { name: baseName(path) }));
         return true;
@@ -226,7 +274,8 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
   async function reloadFromDisk(path: string) {
     try {
       const file = await call<EditorFile>("editor_read", { root: rootPath, path });
-      editor.current?.replace(path, file.text);
+      const kind = tabsRef.current.find((tab) => tab.path === path)?.kind;
+      (kind === "diff" ? diffEditor : editor).current?.replace(path, file.text);
       setTabs((current) =>
         current.map((tab) => (tab.path === path ? { ...tab, modifiedMs: file.modifiedMs, bom: file.bom } : tab)),
       );
@@ -238,14 +287,15 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
   }
 
   function removeTab(path: string) {
-    editor.current?.close(path);
+    const closingKind = tabsRef.current.find((tab) => tab.path === path)?.kind;
+    (closingKind === "diff" ? diffEditor : editor).current?.close(path);
     const index = tabsRef.current.findIndex((tab) => tab.path === path);
     const rest = tabsRef.current.filter((tab) => tab.path !== path);
     setTabs(rest);
     setClosing(null);
     if (active === path) {
-      const next = rest[Math.min(index, rest.length - 1)]?.path ?? null;
-      activate(next);
+      const next = rest[Math.min(index, rest.length - 1)];
+      activate(next?.path ?? null, next?.kind);
     }
   }
 
@@ -254,6 +304,57 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
     if (tab?.dirty) setClosing(path);
     else removeTab(path);
   }
+
+  // ───────────── reviewing an upgrade ─────────────
+
+  /** Opens a file of the upgrade: a changed one side by side, an added one as a normal file. */
+  async function openChange(relative: string, status: "modified" | "added" | "removed") {
+    if (!review) return;
+    setSelected({ path: relative, dir: false });
+    setError("");
+    if (status === "added") {
+      await openFile(relative);
+      return;
+    }
+    const existing = tabsRef.current.find((tab) => tab.path === relative);
+    // A side-by-side tab is just shown again; a normal tab with unsaved work is never replaced.
+    if (existing && (existing.kind === "diff" || existing.dirty)) {
+      activate(relative, existing.kind);
+      return;
+    }
+    try {
+      const original = await call<EditorFile>("editor_read", { root: review.original, path: relative });
+      const copy =
+        status === "removed" ? null : await call<EditorFile>("editor_read", { root: rootPath, path: relative });
+      if (existing) removeTab(relative);
+      diffEditor.current?.open(relative, original.text, copy?.text ?? "", languageFor(relative), status === "removed");
+      setTabs((current) => [
+        ...current,
+        {
+          path: relative,
+          kind: "diff",
+          readOnly: status === "removed",
+          dirty: false,
+          modifiedMs: copy?.modifiedMs ?? 0,
+          bom: copy?.bom ?? false,
+          sensitive: false,
+        },
+      ]);
+      activate(relative, "diff");
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  // The Java page asks, once per upgrade, to review its changes.
+  const handledReview = useRef<number | null>(null);
+  useEffect(() => {
+    if (!reviewRequest || handledReview.current === reviewRequest.id) return;
+    handledReview.current = reviewRequest.id;
+    requestOpen(reviewRequest.copy, reviewRequest);
+    // requestOpen reads the tabs through a ref and only calls setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewRequest]);
 
   // ───────────── new file / folder ─────────────
 
@@ -385,6 +486,51 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
     );
   };
 
+  const changeIcons = { modified: FileDiff, added: FilePlus2, removed: FileMinus } as const;
+
+  const renderChanges = (): ReactNode => {
+    if (!review) return null;
+    const groups = [
+      ["modified", review.changes.modified],
+      ["added", review.changes.added],
+      ["removed", review.changes.removed],
+    ] as const;
+    return (
+      <div className="editor-changes">
+        {review.changes.total === 0 && <p className="editor-note">{t("editor.changes.empty")}</p>}
+        {groups.map(([kind, files]) => {
+          const Icon = changeIcons[kind];
+          return (
+            files.length > 0 && (
+              <div key={kind}>
+                <p className="editor-changes-title">
+                  {t(`editor.changes.${kind}` as "editor.changes.modified")} ({files.length})
+                </p>
+                <ul>
+                  {files.map((file) => (
+                    <li key={file}>
+                      <button
+                        type="button"
+                        className={`editor-row ${active === file ? "is-active" : ""}`}
+                        title={file}
+                        style={{ paddingLeft: 10 }}
+                        onClick={() => void openChange(file, kind)}
+                      >
+                        <Icon size={15} aria-hidden="true" />
+                        <span>{file}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          );
+        })}
+        {review.changes.truncated && <p className="editor-note warn">{t("editor.changes.truncated")}</p>}
+      </div>
+    );
+  };
+
   const where = createParent || root?.name || "";
 
   return (
@@ -492,7 +638,7 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
                 className="icon-button"
                 title={t("editor.explorer.close")}
                 aria-label={t("editor.explorer.close")}
-                onClick={closeFolder}
+                onClick={() => requestOpen(null)}
               >
                 <X size={16} />
               </button>
@@ -531,9 +677,35 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
               </div>
             </form>
           )}
-          <ul className="editor-tree" role="tree" aria-label={t("editor.explorer.aria")}>
-            {renderChildren("", 0)}
-          </ul>
+          {review && (
+            <div className="editor-views" role="tablist" aria-label={t("editor.view.aria")}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === "files"}
+                className={view === "files" ? "is-active" : ""}
+                onClick={() => setView("files")}
+              >
+                {t("editor.view.files")}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === "changes"}
+                className={view === "changes" ? "is-active" : ""}
+                onClick={() => setView("changes")}
+              >
+                {t("editor.view.changes", { count: review.changes.total })}
+              </button>
+            </div>
+          )}
+          {view === "changes" && review ? (
+            renderChanges()
+          ) : (
+            <ul className="editor-tree" role="tree" aria-label={t("editor.explorer.aria")}>
+              {renderChildren("", 0)}
+            </ul>
+          )}
         </aside>
 
         <section className="editor-main">
@@ -546,11 +718,12 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
                   aria-selected={active === tab.path}
                   title={tab.path}
                   className="editor-tab-name"
-                  onClick={() => activate(tab.path)}
+                  onClick={() => activate(tab.path, tab.kind)}
                   onAuxClick={(event) => {
                     if (event.button === 1) closeTab(tab.path);
                   }}
                 >
+                  {tab.kind === "diff" && <FileDiff size={13} aria-hidden="true" />}
                   {baseName(tab.path)}
                   {tab.dirty && (
                     <span className="editor-dirty" role="img" aria-label={t("editor.tab.unsaved")} title={t("editor.tab.unsaved")}>
@@ -633,14 +806,72 @@ export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] 
             </div>
           )}
 
+          {switching && (
+            <div className="notice warning editor-notice" role="alertdialog" aria-label={t("editor.switch.title")}>
+              <AlertTriangle size={18} aria-hidden="true" />
+              <div>
+                <strong>{t("editor.switch.title")}</strong>
+                <p>{t("editor.switch.body")}</p>
+                <div className="editor-create-actions">
+                  <button
+                    type="button"
+                    className="button primary"
+                    onClick={() =>
+                      switching.path === null ? closeFolder() : void openFolder(switching.path, switching.review)
+                    }
+                  >
+                    {t("editor.switch.discard")}
+                  </button>
+                  <button type="button" className="button secondary" onClick={() => setSwitching(null)}>
+                    {t("editor.switch.cancel")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {review && (
+            <div className="notice editor-notice editor-review" role="note">
+              <GitCompare size={18} aria-hidden="true" />
+              <p>{t("editor.review.banner", { name: baseName(review.original.replace(/\\/g, "/")) })}</p>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  setReview(null);
+                  setView("files");
+                }}
+              >
+                {t("editor.review.stop")}
+              </button>
+            </div>
+          )}
+
           <div className="editor-stage">
-            <CodeEditor
-              ref={editor}
-              ariaLabel={t("page.editor.title")}
-              onDirty={setDirty}
-              onSave={onEditorSave}
-              onCursor={onCursor}
-            />
+            <div className="editor-pane" hidden={activeTab?.kind === "diff"}>
+              <CodeEditor
+                ref={editor}
+                ariaLabel={t("page.editor.title")}
+                onDirty={setDirty}
+                onSave={onEditorSave}
+                onCursor={onCursor}
+              />
+            </div>
+            <div className="editor-pane" hidden={activeTab?.kind !== "diff"}>
+              <div className="editor-diff-head">
+                <span>{t("editor.diff.original")}</span>
+                <span>{activeTab?.readOnly ? t("editor.diff.removed") : t("editor.diff.copy")}</span>
+              </div>
+              <div className="editor-diff-body">
+                <DiffEditor
+                  ref={diffEditor}
+                  ariaLabel={t("editor.diff.aria")}
+                  onDirty={setDirty}
+                  onSave={onEditorSave}
+                  onCursor={onCursor}
+                />
+              </div>
+            </div>
             {tabs.length === 0 && (
               <div className="editor-empty">
                 <EmptyState title={t("editor.empty.title")} description={t("editor.empty.body")} />

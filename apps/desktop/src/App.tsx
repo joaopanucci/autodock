@@ -17,6 +17,7 @@ import type {
   Scan,
   SessionProject,
   UpdateOffer,
+  EditorReview,
 } from "./types";
 import { displayPath, rememberProject } from "./model";
 import { Layout, navigation } from "./components/Layout";
@@ -68,6 +69,8 @@ export default function App() {
   const { t, lang, setLang, locale } = useI18n();
   const [page, setPage] = useState<Page>("overview");
   const [editorVisited, setEditorVisited] = useState(false);
+  const [reviewRequest, setReviewRequest] = useState<EditorReview | null>(null);
+  const reviewCount = useRef(0);
   useEffect(() => {
     if (page === "editor") setEditorVisited(true);
   }, [page]);
@@ -356,12 +359,21 @@ export default function App() {
             clearFocus={clearExpoFocus}
           />
         )}
-        {page === "java" && <Java sessionProjects={projects} />}
+        {page === "java" && (
+          <Java
+            sessionProjects={projects}
+            onReview={(original, copy, changes) => {
+              reviewCount.current += 1;
+              setReviewRequest({ id: reviewCount.current, original, copy, changes });
+              setPage("editor");
+            }}
+          />
+        )}
         {/* Built on the first visit (the code editor is heavy), then kept mounted and only hidden, so
             the open files and their undo history survive a visit elsewhere. */}
         {editorVisited && (
           <div hidden={page !== "editor"}>
-            <Editor sessionProjects={projects} />
+            <Editor sessionProjects={projects} reviewRequest={reviewRequest} />
           </div>
         )}
         {page === "contribute" && <Contribute />}
