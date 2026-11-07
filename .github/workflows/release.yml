@@ -1,7 +1,7 @@
 name: Build installers
 
 # Manual runs build the installers and keep them as workflow artifacts.
-# Pushing a tag like v0.3.0 also publishes a DRAFT GitHub release for review.
+# Pushing a tag like v0.3.1 also publishes a DRAFT GitHub release for review.
 on:
   workflow_dispatch:
   push:
