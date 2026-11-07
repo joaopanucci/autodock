@@ -1,8 +1,10 @@
 use autodock_core::i18n::{with_lang, Lang};
 
+mod updater;
+
 /// Runs `task` on a blocking thread with the caller's language, so every message
 /// the core produces (errors, notes, descriptions) comes back in that language.
-async fn localized<T: Send + 'static>(
+pub(crate) async fn localized<T: Send + 'static>(
     lang: Option<String>,
     task: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
@@ -300,6 +302,8 @@ async fn execute_console_operation(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::PendingUpdate::default())
         .invoke_handler(tauri::generate_handler![
             scan_project,
             detect_stacks,
@@ -329,6 +333,13 @@ pub fn run() {
             expo_upgrade_run,
             expo_backups,
             expo_restore,
+            updater::update_auto_check,
+            updater::update_check_now,
+            updater::update_install,
+            updater::update_restart,
+            updater::update_get_prefs,
+            updater::update_set_check_on_start,
+            updater::update_skip_version,
             doctor_environment,
             list_docker_containers,
             collect_container_metrics,

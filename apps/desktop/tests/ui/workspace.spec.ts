@@ -2,10 +2,14 @@ import { test, expect, type Page } from "@playwright/test";
 
 // Calls the app makes by itself. The watched Expo projects are read from a local file when
 // the app opens (no Docker and no network: the registry is only asked if the user turned
-// the automatic check on), so those reads do not count as queries.
+// the automatic check on), and the update check (one request to GitHub, on by default, at
+// most once a day, nothing installed without a click) is the app's own: neither counts as a
+// query about the user's environment.
 const startupCalls = (page: Page) =>
   page.evaluate(() =>
-    ((window as any).testCalls as string[]).filter((c) => !c.startsWith("expo_")),
+    ((window as any).testCalls as string[]).filter(
+      (c) => !c.startsWith("expo_") && !c.startsWith("update_"),
+    ),
   );
 
 // Test-only IPC fixture. Production never loads demo projects or fabricated metrics.

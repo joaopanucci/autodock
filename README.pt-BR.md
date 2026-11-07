@@ -54,6 +54,7 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 | **Vários apps (monorepos, microsserviços)** | Encontra cada app da pasta (backend, front end, mobile…), escreve **um Dockerfile por app** e **um compose** que roda todos juntos com os serviços compartilhados, já ligados entre si (o front end recebe o endereço do backend). Dockerfiles e compose que já existem são reaproveitados, nunca sobrescritos. |
 | **Subir tudo** | Um botão (depois da sua confirmação) roda `docker compose up -d --build`, mostra o estado de cada serviço e permite parar ou remover os containers. Os volumes (seus dados) nunca são removidos. |
 | **Expo: aviso de SDK e atualização** | Mostra o SDK dos seus projetos Expo e avisa quando sai um SDK **estável** mais novo ("seu projeto está no SDK 57, mas o Expo lançou o SDK 58: atualizar?"). A atualização segue os passos oficiais (`expo install`, `expo install --fix`, `expo-doctor`) **dentro do Docker**, um SDK por vez, com backup do `package.json` e do arquivo de lock que volta sozinho se algo falhar. |
+| **Atualização dentro do app** | Quando sai uma versão nova, o AutoDock avisa e se atualiza com um clique (sem baixar de novo). A atualização é **verificada por assinatura** antes de ser instalada, nada é instalado sem o seu clique, e a verificação (uma vez por dia, uma requisição ao GitHub) pode ser desligada em Configurações. |
 | **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
 | **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
 
@@ -219,6 +220,7 @@ O AutoDock mexe nos seus arquivos, então a confiança vem primeiro:
 - **Nunca lê `.env`** nem executa scripts dos projetos analisados.
 - **Atualizar o Expo é isolado e reversível.** O gerenciador de pacotes roda dentro de um container descartável (`node:22-bookworm-slim`) que enxerga a pasta do projeto mas usa uma `node_modules` vazia só dele, então scripts de instalação nunca rodam no seu computador. Só o `package.json` e o arquivo de lock mudam; antes eles ganham um backup fora do projeto e voltam sozinhos se o upgrade falhar (ou quando você pedir, depois).
 - **Uma consulta opcional à internet.** O último SDK do Expo é lido do registry do npm (`registry.npmjs.org`, a lista de versões do pacote `expo`; nada dos seus projetos é enviado), só quando você aperta *Verificar agora* ou liga a verificação automática (desligada por padrão, no máximo uma vez por dia). Os projetos acompanhados ficam como caminhos de pasta em `~/.autodock/expo.json`, e só os que você adicionar.
+- **Atualizações são assinadas e pedem confirmação.** O app só instala uma atualização cuja assinatura bata com a chave pública embutida nele, baixada por HTTPS dos releases deste repositório. Ele verifica ao abrir (no máximo uma vez por dia, com uma requisição ao GitHub sem dados sobre você ou seus projetos; dá para desligar em Configurações), e nada é instalado até você clicar em *Atualizar agora*.
 - **Executar é explícito.** A única coisa que o AutoDock executa além de ler é o `docker compose` (up, stop, down), e só depois de você marcar uma confirmação. Ele usa argumentos fixos e um arquivo compose da raiz do projeto, e nunca remove volumes nem imagens. Atenção: construir as imagens roda os passos dos Dockerfiles e subir os containers roda o seu app, ambos dentro do Docker.
 
 Detalhes em [`docs/SECURITY.md`](docs/SECURITY.md).
@@ -289,6 +291,7 @@ npm --prefix apps/desktop run tauri dev
 - [x] Expo: detectar o SDK, avisar quando sai um estável mais novo e atualizar com backup
 - [ ] Gradle, atualização de Java legado e mais serviços (Kafka, MinIO…)
 - [ ] Dockerfiles de produção (multi-stage)
+- [x] Atualização dentro do app (assinada, com a sua confirmação)
 - [ ] Assinatura e notarização dos instaladores
 - [x] Interface em inglês e português
 - [x] Temas claro e escuro
