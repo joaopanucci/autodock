@@ -67,7 +67,8 @@
         "sidebarImage": "installer/sidebar.bmp",
         "headerImage": "installer/header.bmp",
         "installerIcon": "icons/icon.ico",
-        "startMenuFolder": "AutoDock"
+        "startMenuFolder": "AutoDock",
+        "installerHooks": "installer/hooks.nsh"
       }
     }
   }
