@@ -53,6 +53,7 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 | **Serviços prontos** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog, já conectados ao app por variáveis de ambiente, com healthchecks, **senhas fortes geradas** e **portas livres escolhidas automaticamente**. |
 | **Vários apps (monorepos, microsserviços)** | Encontra cada app da pasta (backend, front end, mobile…), escreve **um Dockerfile por app** e **um compose** que roda todos juntos com os serviços compartilhados, já ligados entre si (o front end recebe o endereço do backend). Dockerfiles e compose que já existem são reaproveitados, nunca sobrescritos. |
 | **Subir tudo** | Um botão (depois da sua confirmação) roda `docker compose up -d --build`, mostra o estado de cada serviço e permite parar ou remover os containers. Os volumes (seus dados) nunca são removidos. |
+| **Expo: aviso de SDK e atualização** | Mostra o SDK dos seus projetos Expo e avisa quando sai um SDK **estável** mais novo ("seu projeto está no SDK 57, mas o Expo lançou o SDK 58: atualizar?"). A atualização segue os passos oficiais (`expo install`, `expo install --fix`, `expo-doctor`) **dentro do Docker**, um SDK por vez, com backup do `package.json` e do arquivo de lock que volta sozinho se algo falhar. |
 | **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
 | **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
 
@@ -204,6 +205,8 @@ O AutoDock mexe nos seus arquivos, então a confiança vem primeiro:
 - **Instaladores de framework isolados.** Rodam em um container descartável com **apenas** a pasta vazia montada.
 - **Portas dos serviços só em `127.0.0.1`.** Bancos e filas não ficam expostos na sua rede.
 - **Nunca lê `.env`** nem executa scripts dos projetos analisados.
+- **Atualizar o Expo é isolado e reversível.** O gerenciador de pacotes roda dentro de um container descartável (`node:22-bookworm-slim`) que enxerga a pasta do projeto mas usa uma `node_modules` vazia só dele, então scripts de instalação nunca rodam no seu computador. Só o `package.json` e o arquivo de lock mudam; antes eles ganham um backup fora do projeto e voltam sozinhos se o upgrade falhar (ou quando você pedir, depois).
+- **Uma consulta opcional à internet.** O último SDK do Expo é lido do registry do npm (`registry.npmjs.org`, a lista de versões do pacote `expo`; nada dos seus projetos é enviado), só quando você aperta *Verificar agora* ou liga a verificação automática (desligada por padrão, no máximo uma vez por dia). Os projetos acompanhados ficam como caminhos de pasta em `~/.autodock/expo.json`, e só os que você adicionar.
 - **Executar é explícito.** A única coisa que o AutoDock executa além de ler é o `docker compose` (up, stop, down), e só depois de você marcar uma confirmação. Ele usa argumentos fixos e um arquivo compose da raiz do projeto, e nunca remove volumes nem imagens. Atenção: construir as imagens roda os passos dos Dockerfiles e subir os containers roda o seu app, ambos dentro do Docker.
 
 Detalhes em [`docs/SECURITY.md`](docs/SECURITY.md).
@@ -237,6 +240,13 @@ autodock apps ./loja                                   # quais apps existem
 autodock multi ./loja --service postgres               # preview: um Dockerfile por app + compose
 autodock multi ./loja --service postgres --write       # grava os arquivos novos
 autodock compose ./loja up --yes                       # docker compose up -d --build (também: stop, down, status)
+
+# projetos Expo: SDK, avisos e atualização
+autodock expo inspect ./app                            # SDK, gerenciador de pacotes, pastas nativas geradas
+autodock expo watch ./app                              # acompanhar este projeto (só o caminho é guardado)
+autodock expo check                                    # último SDK estável no npm vs seus projetos acompanhados
+autodock expo plan ./app                               # o que a atualização para o próximo SDK faria (não executa nada)
+autodock expo upgrade ./app --yes                      # executa no Docker, com backup (também: backups, restore --yes)
 ```
 
 ## 🧱 Arquitetura
@@ -264,7 +274,7 @@ npm --prefix apps/desktop run tauri dev
 - [x] Abrir o projeto na IDE instalada
 - [x] Instaladores para macOS, Windows e Linux
 - [ ] Spring Initializr (escolher dependências)
-- [ ] Expo: detectar versões antigas do SDK e ajudar na atualização
+- [x] Expo: detectar o SDK, avisar quando sai um estável mais novo e atualizar com backup
 - [ ] Gradle, atualização de Java legado e mais serviços (Kafka, MinIO…)
 - [ ] Dockerfiles de produção (multi-stage)
 - [ ] Assinatura e notarização dos instaladores

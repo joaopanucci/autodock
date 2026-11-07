@@ -24,6 +24,10 @@ macro_rules! say {
         }
     };
 }
+
+// after `say!`, which it uses
+mod expo_cli;
+
 #[derive(Subcommand)]
 enum Commands {
     Scan {
@@ -67,6 +71,11 @@ enum Commands {
         /// Confirms that you want to run it (required for up, stop and down)
         #[arg(long)]
         yes: bool,
+    },
+    /// Expo projects: detect the SDK, watch for a newer one and upgrade (inside Docker).
+    Expo {
+        #[command(subcommand)]
+        action: expo_cli::ExpoCommand,
     },
     /// Creates a project with the framework's official installer, inside Docker.
     /// Without --run it only shows the command.
@@ -533,6 +542,14 @@ fn run(command: Commands) -> ExitCode {
             file,
             yes,
         } => match compose_command(path, action, file, yes) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(error) => {
+                eprintln!("{}", say!("Erro: {error}", "Error: {error}"));
+                ExitCode::FAILURE
+            }
+        },
+        Commands::Expo { action } => match expo_cli::run(action) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
             Err(error) => {

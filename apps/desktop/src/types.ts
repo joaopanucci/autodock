@@ -45,6 +45,7 @@ export type Page =
   | "monitoring"
   | "console"
   | "learn"
+  | "expo"
   | "settings";
 
 export type DockerContainer = {
@@ -288,5 +289,115 @@ export type ComposeStatus = {
   schemaVersion: number;
   services: ServiceState[];
   status: "available" | "missing" | "timeout" | "execution_error";
+  detail: string;
+};
+
+export type ExpoNativeFolder = { name: string; ignoredByGit: boolean };
+
+export type ExpoProject = {
+  schemaVersion: number;
+  path: string;
+  name: string;
+  declaredVersion: string;
+  installedVersion: string | null;
+  sdk: number | null;
+  reactNative: string | null;
+  usesRouter: boolean;
+  packageManager: "npm" | "yarn" | "pnpm" | "bun" | null;
+  lockFile: string | null;
+  nativeFolders: ExpoNativeFolder[];
+  upgradeSupported: boolean;
+  unsupportedReason: string | null;
+};
+
+export type ExpoLatest = {
+  /** Seconds since the Unix epoch. */
+  checkedAt: number;
+  latestVersion: string;
+  latestSdk: number;
+  availableSdks: number[];
+};
+
+export type ExpoUpdate = {
+  currentSdk: number;
+  latestSdk: number;
+  nextSdk: number;
+  stepsBehind: number;
+  dismissed: boolean;
+};
+
+export type ExpoWatched = {
+  path: string;
+  name: string;
+  /** Null when the folder is gone or is no longer an Expo project. */
+  project: ExpoProject | null;
+  update: ExpoUpdate | null;
+};
+
+export type ExpoWatchState = {
+  schemaVersion: number;
+  checkOnStart: boolean;
+  latest: ExpoLatest | null;
+  projects: ExpoWatched[];
+  /** Projects behind the latest SDK whose alert was not dismissed. */
+  alerts: number;
+  checkError: string | null;
+};
+
+export type ExpoPlan = {
+  schemaVersion: number;
+  project: ExpoProject;
+  fromSdk: number;
+  toSdk: number;
+  packageManager: string;
+  image: string;
+  steps: string[];
+  command: string;
+  filesTouched: string[];
+  notes: string[];
+  warnings: string[];
+  links: { label: string; url: string }[];
+};
+
+export type ExpoChange = {
+  name: string;
+  section: "dependencies" | "devDependencies";
+  from: string | null;
+  to: string | null;
+};
+
+export type ExpoUpgradeReport = {
+  schemaVersion: number;
+  succeeded: boolean;
+  /** The upgrade failed and the files were put back as they were. */
+  restored: boolean;
+  fromSdk: number;
+  toSdk: number;
+  changes: ExpoChange[];
+  doctor: string;
+  doctorPassed: boolean | null;
+  usedLegacyPeerDeps: boolean;
+  output: string;
+  detail: string;
+  durationMs: number;
+  backupId: string;
+  nextSteps: string[];
+};
+
+export type ExpoBackup = {
+  id: string;
+  fromSdk: number;
+  toSdk: number;
+  /** Seconds since the Unix epoch. */
+  createdAt: number;
+  status: "running" | "done" | "failed";
+  files: string[];
+  modifiedSinceUpgrade: boolean;
+};
+
+export type ExpoRestoreReport = {
+  schemaVersion: number;
+  restored: string[];
+  removed: string[];
   detail: string;
 };

@@ -158,6 +158,119 @@ async fn compose_run(
 }
 
 #[tauri::command]
+async fn expo_inspect(
+    path: String,
+    lang: Option<String>,
+) -> Result<Option<autodock_core::expo::ExpoProject>, String> {
+    localized(lang, move || autodock_core::expo::inspect(&path)).await?
+}
+
+#[tauri::command]
+async fn expo_watch_state(
+    lang: Option<String>,
+) -> Result<autodock_core::expo_watch::WatchState, String> {
+    localized(lang, autodock_core::expo_watch::state).await?
+}
+
+#[tauri::command]
+async fn expo_watch_add(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::expo_watch::WatchState, String> {
+    localized(lang, move || autodock_core::expo_watch::add_project(&path)).await?
+}
+
+#[tauri::command]
+async fn expo_watch_remove(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::expo_watch::WatchState, String> {
+    localized(lang, move || {
+        autodock_core::expo_watch::remove_project(&path)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn expo_watch_dismiss(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::expo_watch::WatchState, String> {
+    localized(lang, move || {
+        autodock_core::expo_watch::dismiss_update(&path)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn expo_set_check_on_start(
+    enabled: bool,
+    lang: Option<String>,
+) -> Result<autodock_core::expo_watch::WatchState, String> {
+    localized(lang, move || {
+        autodock_core::expo_watch::set_check_on_start(enabled)
+    })
+    .await?
+}
+
+/// Explicit "check now": asks the npm registry for the latest stable SDK.
+#[tauri::command]
+async fn expo_check_latest(
+    lang: Option<String>,
+) -> Result<autodock_core::expo_watch::WatchState, String> {
+    localized(lang, autodock_core::expo_watch::refresh_latest).await?
+}
+
+/// When the app opens: only reaches the network if the user turned that on.
+#[tauri::command]
+async fn expo_auto_check(
+    lang: Option<String>,
+) -> Result<autodock_core::expo_watch::WatchState, String> {
+    localized(lang, autodock_core::expo_watch::auto_check).await?
+}
+
+#[tauri::command]
+async fn expo_upgrade_plan(
+    path: String,
+    target_sdk: Option<u32>,
+    lang: Option<String>,
+) -> Result<autodock_core::expo_upgrade::UpgradePlan, String> {
+    localized(lang, move || {
+        autodock_core::expo_upgrade::plan(&path, target_sdk)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn expo_upgrade_run(
+    request: autodock_core::expo_upgrade::UpgradeRequest,
+    lang: Option<String>,
+) -> Result<autodock_core::expo_upgrade::UpgradeReport, String> {
+    localized(lang, move || autodock_core::expo_upgrade::run(request)).await?
+}
+
+#[tauri::command]
+async fn expo_backups(
+    path: String,
+    lang: Option<String>,
+) -> Result<Vec<autodock_core::expo_upgrade::BackupInfo>, String> {
+    localized(lang, move || autodock_core::expo_upgrade::backups(&path)).await?
+}
+
+#[tauri::command]
+async fn expo_restore(
+    path: String,
+    backup_id: String,
+    confirmed: bool,
+    lang: Option<String>,
+) -> Result<autodock_core::expo_upgrade::RestoreReport, String> {
+    localized(lang, move || {
+        autodock_core::expo_upgrade::restore(&path, &backup_id, confirmed)
+    })
+    .await?
+}
+
+#[tauri::command]
 async fn scan_project(
     path: String,
     lang: Option<String>,
@@ -204,6 +317,18 @@ pub fn run() {
             compose_files,
             compose_status,
             compose_run,
+            expo_inspect,
+            expo_watch_state,
+            expo_watch_add,
+            expo_watch_remove,
+            expo_watch_dismiss,
+            expo_set_check_on_start,
+            expo_check_latest,
+            expo_auto_check,
+            expo_upgrade_plan,
+            expo_upgrade_run,
+            expo_backups,
+            expo_restore,
             doctor_environment,
             list_docker_containers,
             collect_container_metrics,
