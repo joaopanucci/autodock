@@ -113,6 +113,10 @@ See the *Translations* and *Updating the README screenshots* sections of [CONTRI
 - `PINNING_BOMS` (in `java.rs`) lists BOMs that decide the Spring Boot version on their own (today only `tech.jhipster:jhipster-dependencies`). For such a project `hops_pinned` plans only Java steps, capped at Java 17 while Spring Boot is older than 3.5. A real JHipster Online project (Spring Boot 2.7.3) is what showed this: the Spring Boot 3.5 recipe applied but left an invalid pom.
 - The unit tests use a fake runner (no Docker). To check a real upgrade, build small fixtures: a Spring Boot 1.5 project on Java 1.7 (JPA, a REST controller, a JUnit 4 test that uses `javax.xml.bind`), a plain Java 1.6 library with JUnit 4, a multi-module project, and one that uses `sun.misc.BASE64Encoder` (it must stop at the Java 17 step and name it). Then run `autodock java upgrade <folder> --yes` and check that the original is untouched and the copy compiles and passes its tests.
 
+## Code editor
+
+`crates/autodock-core/src/editor_fs.rs` is the only code that touches files for the editor (list, read, write, create; see the security notes for its rules) and the Tauri commands `editor_*` are thin wrappers. The interface is `pages/Editor.tsx` (explorer, tabs, save, conflicts) around `components/CodeEditor.tsx` (one Monaco editor with one text model per open file, controlled through a handle). `editor/monacoSetup.ts` loads Monaco on demand with its workers as files of the app (`monaco-editor/...?worker`; the package's `exports` map has no `esm/vs` in the path) and switches the JavaScript/TypeScript language service off, which keeps its very large worker out. `monaco-editor` is pinned to an exact version. The page is built on the first visit and then kept mounted, because Monaco adds `role="alert"` live regions to the page: tests that look for alerts must not run with it mounted.
+
 ## Legacy Windows bootstrap
 
 `bootstrap-autodock.ps1` and the PowerShell tests in `tests/` predate the CI matrix. They only apply to a full checkout on Windows, write their reports to `.autodock-bootstrap/` and do not install anything:

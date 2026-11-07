@@ -260,6 +260,63 @@ async fn expo_backups(
 }
 
 #[tauri::command]
+async fn editor_open_root(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::editor_fs::EditorRoot, String> {
+    localized(lang, move || autodock_core::editor_fs::open_root(&path)).await?
+}
+
+#[tauri::command]
+async fn editor_list(
+    root: String,
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::editor_fs::EditorListing, String> {
+    localized(lang, move || autodock_core::editor_fs::list(&root, &path)).await?
+}
+
+#[tauri::command]
+async fn editor_read(
+    root: String,
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::editor_fs::EditorFile, String> {
+    localized(lang, move || autodock_core::editor_fs::read(&root, &path)).await?
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn editor_write(
+    root: String,
+    path: String,
+    text: String,
+    bom: bool,
+    expected_ms: Option<u64>,
+    overwrite: bool,
+    lang: Option<String>,
+) -> Result<autodock_core::editor_fs::SaveReport, String> {
+    localized(lang, move || {
+        autodock_core::editor_fs::write(&root, &path, &text, bom, expected_ms, overwrite)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn editor_create(
+    root: String,
+    parent: String,
+    name: String,
+    kind: String,
+    lang: Option<String>,
+) -> Result<autodock_core::editor_fs::EditorEntry, String> {
+    localized(lang, move || {
+        autodock_core::editor_fs::create(&root, &parent, &name, &kind)
+    })
+    .await?
+}
+
+#[tauri::command]
 async fn java_inspect(
     path: String,
     lang: Option<String>,
@@ -361,6 +418,11 @@ pub fn run() {
             expo_upgrade_run,
             expo_backups,
             expo_restore,
+            editor_open_root,
+            editor_list,
+            editor_read,
+            editor_write,
+            editor_create,
             java_inspect,
             java_upgrade_plan,
             java_upgrade_run,
