@@ -708,7 +708,7 @@ export function Monitoring() {
                     <Trend
                       samples={currentHistory}
                       field="cpu"
-                      color="#6498ff"
+                      color="#23272d"
                     />
                   </div>
                   <div>
@@ -721,7 +721,7 @@ export function Monitoring() {
                     <Trend
                       samples={currentHistory}
                       field="memory"
-                      color="#4ac6ad"
+                      color="#8a9099"
                     />
                   </div>
                   <div>
@@ -731,7 +731,7 @@ export function Monitoring() {
                         {currentRates.rx === null ? t("monitor.unavailable") : `${bytes(currentRates.rx)}/s`}
                       </Badge>
                     </div>
-                    <Trend samples={currentHistory} field="rx" color="#e0a85c" />
+                    <Trend samples={currentHistory} field="rx" color="#23272d" />
                   </div>
                   <div>
                     <div className="ad-monitor-graph-heading">
@@ -740,7 +740,7 @@ export function Monitoring() {
                         {currentRates.tx === null ? t("monitor.unavailable") : `${bytes(currentRates.tx)}/s`}
                       </Badge>
                     </div>
-                    <Trend samples={currentHistory} field="tx" color="#b38cf0" />
+                    <Trend samples={currentHistory} field="tx" color="#8a9099" />
                   </div>
                 </div>
               </>

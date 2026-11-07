@@ -54,6 +54,21 @@
           "y": 210
         }
       }
+    },
+    "licenseFile": "../../../LICENSE",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "PortugueseBR",
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "sidebarImage": "installer/sidebar.bmp",
+        "headerImage": "installer/header.bmp",
+        "installerIcon": "icons/icon.ico",
+        "startMenuFolder": "AutoDock"
+      }
     }
   }
 }

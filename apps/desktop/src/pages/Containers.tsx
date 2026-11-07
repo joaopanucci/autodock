@@ -234,10 +234,10 @@ export function Containers() {
               style={{
                 width: "100%",
                 padding: "11px 12px 11px 38px",
-                borderRadius: 10,
-                border: "1px solid #334155",
-                background: "#111827",
-                color: "#f8fafc",
+                borderRadius: 3,
+                border: "1px solid var(--line)",
+                background: "var(--panel)",
+                color: "var(--ink)",
                 boxSizing: "border-box",
               }}
             />
@@ -264,15 +264,15 @@ export function Containers() {
             <section
               key={project}
               style={{
-                border: "1px solid #334155",
-                borderRadius: 14,
+                border: "1px solid var(--line)",
+                borderRadius: 3,
                 overflow: "hidden",
               }}
             >
               <div
                 style={{
                   padding: "16px 18px",
-                  background: "rgba(148,163,184,0.06)",
+                  background: "rgba(30, 34, 40, 0.035)",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
@@ -304,7 +304,7 @@ export function Containers() {
                     key={container.id}
                     style={{
                       padding: "17px 18px",
-                      borderTop: "1px solid #334155",
+                      borderTop: "1px solid var(--line)",
                       display: "grid",
                       gap: 9,
                     }}
