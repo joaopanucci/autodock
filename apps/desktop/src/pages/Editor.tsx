@@ -15,6 +15,7 @@ import {
   Link2,
   LoaderCircle,
   Save,
+  Search as SearchIcon,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -32,6 +33,8 @@ import type {
   EditorReview,
   EditorRoot,
   EditorSaveReport,
+  EditorSearchMatch,
+  EditorSearchReport,
   SessionProject,
 } from "../types";
 
@@ -83,7 +86,12 @@ export function Editor({
   const [cursor, setCursor] = useState<{ line: number; col: number } | null>(null);
   /** The upgrade being reviewed: its original folder and what changed. */
   const [review, setReview] = useState<EditorReview | null>(null);
-  const [view, setView] = useState<"files" | "changes">("files");
+  const [view, setView] = useState<"files" | "search" | "changes">("files");
+  const [query, setQuery] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [includeIgnored, setIncludeIgnored] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<EditorSearchReport | null>(null);
   /** A folder waits to be opened (or the open one to be closed) until unsaved changes are decided. */
   const [switching, setSwitching] = useState<{ path: string | null; review: EditorReview | null } | null>(null);
 
@@ -143,6 +151,8 @@ export function Editor({
       closeAllTabs();
       setReview(reviewed);
       setView(reviewed ? "changes" : "files");
+      setResults(null);
+      setQuery("");
       setRoot(info);
       setDirs({});
       setExpanded(new Set([""]));
@@ -171,6 +181,7 @@ export function Editor({
     setSwitching(null);
     closeAllTabs();
     setReview(null);
+    setResults(null);
     setRoot(null);
     setTabs([]);
     setActive(null);
@@ -303,6 +314,35 @@ export function Editor({
     const tab = tabsRef.current.find((item) => item.path === path);
     if (tab?.dirty) setClosing(path);
     else removeTab(path);
+  }
+
+  // ───────────── search ─────────────
+
+  async function runSearch() {
+    if (query.length < 2 || searching || !root) return;
+    setSearching(true);
+    setError("");
+    try {
+      setResults(
+        await call<EditorSearchReport>("editor_search", {
+          root: rootPath,
+          query,
+          caseSensitive,
+          includeIgnored,
+        }),
+      );
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  /** Opens the file of a match (or shows its tab again) and selects the match. */
+  async function openMatch(match: EditorSearchMatch) {
+    const kind = tabsRef.current.find((tab) => tab.path === match.path)?.kind ?? "file";
+    await openFile(match.path);
+    (kind === "diff" ? diffEditor : editor).current?.reveal(match.path, match.line, match.column, match.length);
   }
 
   // ───────────── reviewing an upgrade ─────────────
@@ -483,6 +523,103 @@ export function Editor({
           </li>
         )}
       </>
+    );
+  };
+
+  const renderSearch = (): ReactNode => {
+    const groups: { path: string; hits: EditorSearchMatch[] }[] = [];
+    for (const hit of results?.matches ?? []) {
+      const last = groups[groups.length - 1];
+      if (last && last.path === hit.path) last.hits.push(hit);
+      else groups.push({ path: hit.path, hits: [hit] });
+    }
+    return (
+      <div className="editor-search">
+        <form
+          className="editor-search-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void runSearch();
+          }}
+        >
+          <div className="editor-search-field">
+            <input
+              value={query}
+              placeholder={t("editor.search.placeholder")}
+              aria-label={t("editor.search.label")}
+              spellCheck={false}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <button
+              type="button"
+              className={`icon-button editor-case ${caseSensitive ? "is-on" : ""}`}
+              aria-pressed={caseSensitive}
+              title={t("editor.search.case")}
+              aria-label={t("editor.search.case")}
+              onClick={() => setCaseSensitive((value) => !value)}
+            >
+              Aa
+            </button>
+          </div>
+          <label className="editor-search-option">
+            <input
+              type="checkbox"
+              checked={includeIgnored}
+              onChange={(event) => setIncludeIgnored(event.target.checked)}
+            />
+            <span>{t("editor.search.ignored")}</span>
+          </label>
+          <button type="submit" className="button primary" disabled={query.length < 2 || searching}>
+            {searching ? <LoaderCircle className="spin" size={14} aria-hidden="true" /> : <SearchIcon size={14} aria-hidden="true" />}
+            {searching ? t("editor.search.running") : t("editor.search.button")}
+          </button>
+          {query.length > 0 && query.length < 2 && <small className="field-hint">{t("editor.search.short")}</small>}
+        </form>
+        {results && (
+          <div className="editor-search-results" role="status">
+            <p className="field-hint">
+              {results.matches.length === 0
+                ? t("editor.search.none")
+                : t("editor.search.summary", { count: results.matches.length, files: results.filesWithMatches })}
+            </p>
+            {results.truncated && (
+              <p className="editor-note warn">{t("editor.search.truncated", { count: results.matches.length })}</p>
+            )}
+            {results.filesSkipped > 0 && (
+              <p className="editor-note">{t("editor.search.skipped", { count: results.filesSkipped })}</p>
+            )}
+            {groups.map((group) => (
+              <div key={group.path}>
+                <p className="editor-changes-title" title={group.path}>
+                  {group.path} ({group.hits.length})
+                </p>
+                <ul>
+                  {group.hits.map((hit) => {
+                    const chars = Array.from(hit.preview);
+                    return (
+                      <li key={`${hit.line}:${hit.column}`}>
+                        <button
+                          type="button"
+                          className="editor-hit"
+                          onClick={() => void openMatch(hit)}
+                          aria-label={`${group.path}:${hit.line}:${hit.column}`}
+                        >
+                          <span className="editor-hit-line">{hit.line}</span>
+                          <span className="editor-hit-text">
+                            {chars.slice(0, hit.previewStart).join("")}
+                            <mark>{chars.slice(hit.previewStart, hit.previewStart + hit.length).join("")}</mark>
+                            {chars.slice(hit.previewStart + hit.length).join("")}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -677,17 +814,26 @@ export function Editor({
               </div>
             </form>
           )}
-          {review && (
-            <div className="editor-views" role="tablist" aria-label={t("editor.view.aria")}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === "files"}
-                className={view === "files" ? "is-active" : ""}
-                onClick={() => setView("files")}
-              >
-                {t("editor.view.files")}
-              </button>
+          <div className="editor-views" role="tablist" aria-label={t("editor.view.aria")}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "files"}
+              className={view === "files" ? "is-active" : ""}
+              onClick={() => setView("files")}
+            >
+              {t("editor.view.files")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "search"}
+              className={view === "search" ? "is-active" : ""}
+              onClick={() => setView("search")}
+            >
+              {t("editor.view.search")}
+            </button>
+            {review && (
               <button
                 type="button"
                 role="tab"
@@ -697,10 +843,12 @@ export function Editor({
               >
                 {t("editor.view.changes", { count: review.changes.total })}
               </button>
-            </div>
-          )}
+            )}
+          </div>
           {view === "changes" && review ? (
             renderChanges()
+          ) : view === "search" ? (
+            renderSearch()
           ) : (
             <ul className="editor-tree" role="tree" aria-label={t("editor.explorer.aria")}>
               {renderChildren("", 0)}

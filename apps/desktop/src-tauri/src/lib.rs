@@ -303,6 +303,20 @@ async fn editor_write(
 }
 
 #[tauri::command]
+async fn editor_search(
+    root: String,
+    query: String,
+    case_sensitive: bool,
+    include_ignored: bool,
+    lang: Option<String>,
+) -> Result<autodock_core::editor_fs::SearchReport, String> {
+    localized(lang, move || {
+        autodock_core::editor_fs::search(&root, &query, case_sensitive, include_ignored)
+    })
+    .await?
+}
+
+#[tauri::command]
 async fn editor_create(
     root: String,
     parent: String,
@@ -423,6 +437,7 @@ pub fn run() {
             editor_read,
             editor_write,
             editor_create,
+            editor_search,
             java_inspect,
             java_upgrade_plan,
             java_upgrade_run,

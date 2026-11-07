@@ -552,3 +552,21 @@ export type EditorReview = {
   copy: string;
   changes: JavaChanges;
 };
+
+export type EditorSearchMatch = {
+  path: string;
+  line: number;
+  column: number;
+  preview: string;
+  /** Where the match starts inside `preview`, and its length, in characters. */
+  previewStart: number;
+  length: number;
+};
+
+export type EditorSearchReport = {
+  matches: EditorSearchMatch[];
+  filesScanned: number;
+  filesWithMatches: number;
+  filesSkipped: number;
+  truncated: boolean;
+};

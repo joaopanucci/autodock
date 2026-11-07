@@ -70,6 +70,31 @@ async function open(page: Page, options: Options = {}) {
             dir.files[name].mtime = ++clock;
             return { modifiedMs: clock, size: args.text.length };
           }
+          case "editor_search": {
+            // like the Rust side: plain text, line by line, in path order
+            if (args.query === "many") {
+              return { matches: [{ path: "README.md", line: 1, column: 1, preview: "many", previewStart: 0, length: 4 }], filesScanned: 9, filesWithMatches: 1, filesSkipped: 3, truncated: true };
+            }
+            const found: any[] = [];
+            const walk = (node: any, prefix: string) => {
+              for (const [name, file] of Object.entries<any>(node.files ?? {})) {
+                if (file.binary) continue;
+                file.text.split("\n").forEach((line: string, index: number) => {
+                  const hay = args.caseSensitive ? line : line.toLowerCase();
+                  const needle = args.caseSensitive ? args.query : args.query.toLowerCase();
+                  let at = hay.indexOf(needle);
+                  while (at >= 0) {
+                    found.push({ path: prefix + name, line: index + 1, column: at + 1, preview: line, previewStart: at, length: needle.length });
+                    at = hay.indexOf(needle, at + needle.length);
+                  }
+                });
+              }
+              for (const [name, dir] of Object.entries<any>(node.dirs ?? {})) walk(dir, prefix + name + "/");
+            };
+            walk(tree, "");
+            found.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
+            return { matches: found, filesScanned: 6, filesWithMatches: new Set(found.map((m) => m.path)).size, filesSkipped: 0, truncated: false };
+          }
           case "editor_create": {
             const parent = dirAt(args.parent);
             if (args.kind === "dir") parent.dirs[args.name] = { dirs: {}, files: {} };
@@ -252,7 +277,7 @@ test("closing a tab with unsaved changes asks first and discarding forgets them"
 
   // a file without changes closes at once
   await page.getByRole("button", { name: "Close README.md" }).click();
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.locator(".editor-tabs").getByRole("tab")).toHaveCount(0);
   await expect(page.getByText("No file open")).toBeVisible();
 });
 
@@ -296,6 +321,89 @@ test("follows the app theme", async ({ page }) => {
   await expect(page.locator(".monaco-editor.vs-dark")).toHaveCount(0);
 });
 
+async function openSearch(page: Page) {
+  await page.getByRole("tab", { name: "Search", exact: true }).click();
+}
+
+test("searches the project and a click opens the file with the match selected", async ({ page }) => {
+  await open(page);
+  await openFolder(page);
+  await openSearch(page);
+  const box = page.getByLabel("Search the project");
+  const button = page.getByRole("button", { name: "Search", exact: true });
+  // nothing is searched until asked, and one letter is not enough
+  expect(await calls(page, "editor_search")).toEqual([]);
+  await box.fill("c");
+  await expect(button).toBeDisabled();
+  await expect(page.getByText("Type at least 2 characters.")).toBeVisible();
+
+  await box.fill("class");
+  await button.click();
+  await expect(page.getByText("1 results in 1 file(s)")).toBeVisible();
+  expect(await calls(page, "editor_search")).toEqual([
+    { root: "/Users/maria/shop", query: "class", caseSensitive: false, includeIgnored: false, lang: "en" },
+  ]);
+  // grouped by file, with the match highlighted
+  await expect(page.locator(".editor-changes-title")).toContainText("src/main/java/App.java (1)");
+  await expect(page.locator(".editor-hit mark")).toHaveText("class");
+
+  await page.getByRole("button", { name: "src/main/java/App.java:1:8" }).click();
+  await expect(page.getByRole("tab", { name: "App.java" })).toBeVisible();
+  await expect(lines(page)).toContainText("public class App");
+  // the match is selected: the cursor sits at its end
+  await expect(page.locator(".editor-status")).toContainText("Line 1, column 13");
+  expect(await calls(page, "editor_read")).toEqual([{ root: "/Users/maria/shop", path: "src/main/java/App.java", lang: "en" }]);
+});
+
+test("the search can match case and include build folders, and says when nothing is found", async ({ page }) => {
+  await open(page);
+  await openFolder(page);
+  await openSearch(page);
+  await page.getByLabel("Search the project").fill("SHOP");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("2 results in 2 file(s)")).toBeVisible(); // "# Shop" and the artifactId
+
+  await page.getByRole("button", { name: "Match case" }).click();
+  await expect(page.getByRole("button", { name: "Match case" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByText("No results.")).toBeVisible();
+
+  await page.getByLabel("Include build and dependency folders").check();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const searches = await calls(page, "editor_search");
+  expect(searches.map((a: any) => [a.query, a.caseSensitive, a.includeIgnored])).toEqual([
+    ["SHOP", false, false],
+    ["SHOP", true, false],
+    ["SHOP", true, true],
+  ]);
+});
+
+test("a cut or partial search says so", async ({ page }) => {
+  await open(page);
+  await openFolder(page);
+  await openSearch(page);
+  await page.getByLabel("Search the project").fill("many");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByText("Showing the first 1 results: narrow the search.")).toBeVisible();
+  await expect(page.getByText("3 file(s) were not searched")).toBeVisible();
+});
+
+test("the results are forgotten when another folder is opened", async ({ page }) => {
+  await open(page);
+  await openFolder(page);
+  await openSearch(page);
+  await page.getByLabel("Search the project").fill("remember");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.locator(".editor-hit")).toHaveCount(1);
+  await page.getByRole("button", { name: "Close folder" }).click();
+  await page.getByLabel("Or type or paste the folder path").fill("/Users/maria/shop");
+  await page.getByRole("button", { name: "Open this path" }).click();
+  await expect(page.getByRole("treeitem", { name: "pom.xml" })).toBeVisible();
+  await openSearch(page);
+  await expect(page.locator(".editor-hit")).toHaveCount(0);
+  await expect(page.getByLabel("Search the project")).toHaveValue("");
+});
+
 test.describe("in Portuguese", () => {
   test.use({ locale: "pt-BR" });
 
@@ -305,5 +413,6 @@ test.describe("in Portuguese", () => {
     await page.getByRole("button", { name: "Abrir pasta" }).click();
     await expect(page.getByRole("button", { name: "Novo arquivo" })).toBeVisible();
     await expect(page.getByText("Nenhum arquivo aberto")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Buscar", exact: true })).toBeVisible();
   });
 });
