@@ -177,6 +177,9 @@ pub struct JavaProject {
     pub java_declared: Option<String>,
     /// Spring Boot version as declared, e.g. `1.5.22.RELEASE`.
     pub spring_boot: Option<String>,
+    /// The BOM that pins the Spring Boot version (`group:artifact`), when the recipes cannot move
+    /// it: the upgrade then only changes the Java level.
+    pub spring_boot_pinned_by: Option<String>,
     pub modules: Vec<String>,
     /// Removed JDK APIs the sources still use.
     pub jdk_apis: Vec<JdkApi>,
@@ -260,6 +263,38 @@ pub(crate) fn hops_for(java: Option<u32>, boot: Option<(u32, u32)>) -> Vec<Hop> 
         hops.push(Hop::Java25);
     }
     hops
+}
+
+/// Spring Boot pinned by a BOM the recipes cannot move: only the Java level can change, and only
+/// as far as that Spring Boot line is meant for (before 3.5 that is Java 17).
+pub(crate) fn hops_pinned(java: Option<u32>, boot: Option<(u32, u32)>) -> Vec<Hop> {
+    let level = java.unwrap_or(0);
+    let ceiling = if boot.is_some_and(|line| line >= (3, 5)) {
+        TARGET_JAVA
+    } else {
+        17
+    };
+    let mut hops = vec![];
+    if level < 17 {
+        hops.push(Hop::Java17);
+    }
+    if ceiling >= TARGET_JAVA && level < TARGET_JAVA {
+        hops.push(Hop::Java25);
+    }
+    hops
+}
+
+/// The steps for a project, depending on whether its Spring Boot can be moved.
+pub(crate) fn plan_hops(
+    java: Option<u32>,
+    boot: Option<(u32, u32)>,
+    boot_pinned: bool,
+) -> Vec<Hop> {
+    if boot_pinned {
+        hops_pinned(java, boot)
+    } else {
+        hops_for(java, boot)
+    }
 }
 
 // ───────────────────────────── pom reading ─────────────────────────────
@@ -371,14 +406,80 @@ fn spring_boot_version(project: Node, props: &HashMap<String, String>) -> Option
             return text_of(parent, "version").map(|v| expand(&v, props));
         }
     }
+    let management = child(project, "dependencyManagement").and_then(|m| child(m, "dependencies"));
+    let imported = management.and_then(|management| {
+        children(management, "dependency")
+            .find(|d| {
+                is_boot(*d)
+                    && text_of(*d, "artifactId").as_deref() == Some("spring-boot-dependencies")
+            })
+            .and_then(|d| text_of(d, "version"))
+    });
+    if let Some(version) = imported {
+        return Some(expand(&version, props));
+    }
+    // Projects that get Spring Boot through another BOM (JHipster, for one) or pin it by hand:
+    // the plugin, an explicit starter version or the conventional property still tell the line.
+    let mut sections = vec![];
+    if let Some(build) = child(project, "build") {
+        sections.push(build);
+        if let Some(plugin_management) = child(build, "pluginManagement") {
+            sections.push(plugin_management);
+        }
+    }
+    let plugin_versions = sections
+        .into_iter()
+        .filter_map(|section| child(section, "plugins"))
+        .flat_map(|plugins| children(plugins, "plugin"))
+        .filter(|plugin| {
+            text_of(*plugin, "artifactId").as_deref() == Some("spring-boot-maven-plugin")
+                && text_of(*plugin, "groupId")
+                    .is_none_or(|group| group == "org.springframework.boot")
+        })
+        .filter_map(|plugin| text_of(plugin, "version"));
+    let dependency_versions = [child(project, "dependencies"), management]
+        .into_iter()
+        .flatten()
+        .flat_map(|dependencies| children(dependencies, "dependency"))
+        .filter(|d| is_boot(*d))
+        .filter_map(|d| text_of(d, "version"));
+    let property_versions = ["spring-boot.version", "spring.boot.version"]
+        .into_iter()
+        .filter_map(|name| props.get(name).cloned());
+    plugin_versions
+        .chain(dependency_versions)
+        .chain(property_versions)
+        .map(|v| expand(&v, props))
+        .find(|v| boot_line(v).is_some())
+}
+
+/// BOMs that decide the Spring Boot version of a project on their own: the OpenRewrite recipes
+/// do not know them, so they cannot move the Spring Boot that comes through them.
+const PINNING_BOMS: [(&str, &str); 1] = [("tech.jhipster", "jhipster-dependencies")];
+
+/// `group:artifact` of the BOM that pins Spring Boot, when the project gets it that way instead
+/// of through the Spring Boot parent or the Spring Boot BOM.
+fn spring_boot_pinned_by(project: Node) -> Option<String> {
+    let boot_group =
+        |node: Node| text_of(node, "groupId").as_deref() == Some("org.springframework.boot");
+    if child(project, "parent").is_some_and(boot_group) {
+        return None;
+    }
     let management =
         child(project, "dependencyManagement").and_then(|m| child(m, "dependencies"))?;
-    children(management, "dependency")
-        .find(|d| {
-            is_boot(*d) && text_of(*d, "artifactId").as_deref() == Some("spring-boot-dependencies")
-        })
-        .and_then(|d| text_of(d, "version"))
-        .map(|v| expand(&v, props))
+    if children(management, "dependency").any(|d| {
+        boot_group(d) && text_of(d, "artifactId").as_deref() == Some("spring-boot-dependencies")
+    }) {
+        return None;
+    }
+    children(management, "dependency").find_map(|d| {
+        let group = text_of(d, "groupId")?;
+        let artifact = text_of(d, "artifactId")?;
+        PINNING_BOMS
+            .iter()
+            .any(|(g, a)| *g == group && *a == artifact)
+            .then(|| format!("{group}:{artifact}"))
+    })
 }
 
 fn read_pom(path: &Path) -> Result<String, String> {
@@ -586,6 +687,7 @@ pub fn inspect(path: &str) -> Result<Option<JavaProject>, String> {
             java_level: None,
             java_declared: None,
             spring_boot: None,
+            spring_boot_pinned_by: None,
             modules: vec![],
             jdk_apis: vec![],
             upgrade_available: false,
@@ -642,6 +744,9 @@ pub fn inspect(path: &str) -> Result<Option<JavaProject>, String> {
         .or_else(|| root.file_name().map(|n| n.to_string_lossy().into_owned()))
         .unwrap_or_default();
     let boot = spring_boot.as_deref().and_then(boot_line);
+    let pinned_by = spring_boot
+        .as_ref()
+        .and_then(|_| spring_boot_pinned_by(project));
     let unsupported_reason = unsupported(&root, &text);
     Ok(Some(JavaProject {
         schema_version: 1,
@@ -652,9 +757,10 @@ pub fn inspect(path: &str) -> Result<Option<JavaProject>, String> {
         java_level,
         java_declared,
         spring_boot,
+        spring_boot_pinned_by: pinned_by.clone(),
         modules,
         jdk_apis,
-        upgrade_available: !hops_for(java_level, boot).is_empty(),
+        upgrade_available: !plan_hops(java_level, boot, pinned_by.is_some()).is_empty(),
         upgrade_supported: unsupported_reason.is_none(),
         unsupported_reason,
     }))
@@ -777,11 +883,17 @@ mod tests {
 
     #[test]
     fn removed_jdk_apis_are_found_by_name() {
-        let text =
-            "import javax.xml.bind.DatatypeConverter;\nimport javax.annotation.PostConstruct;\n\
-                    import javax.annotation.Nullable;\nimport javax.transaction.xa.XAResource;\n\
-                    import javax.transaction.Transactional;\nfoo(new sun.misc.BASE64Encoder());\n\
-                    import org.omg.CORBA.ORB;\nimport myjavax.xml.bind.Thing;";
+        let text = "import javax.xml.bind.DatatypeConverter;
+import javax.annotation.PostConstruct;
+\
+                    import javax.annotation.Nullable;
+import javax.transaction.xa.XAResource;
+\
+                    import javax.transaction.Transactional;
+foo(new sun.misc.BASE64Encoder());
+\
+                    import org.omg.CORBA.ORB;
+import myjavax.xml.bind.Thing;";
         let ids: Vec<&str> = removed_apis(text).iter().map(|a| a.id).collect();
         assert_eq!(
             ids,
@@ -794,7 +906,8 @@ mod tests {
             ]
         );
         assert!(removed_apis(
-            "import javax.persistence.Entity;\nimport javax.xml.stream.XMLReader;"
+            "import javax.persistence.Entity;
+import javax.xml.stream.XMLReader;"
         )
         .is_empty());
     }
@@ -903,5 +1016,94 @@ mod tests {
         assert_eq!(web.dir, "web");
         assert_eq!(names(web), ["javax.xml.bind"]);
         assert_eq!(web.apis["javax.xml.bind"].0, 1);
+    }
+    #[test]
+    fn spring_boot_is_found_when_a_third_party_bom_or_a_property_pins_it() {
+        // Found with a real project: JHipster Online (Spring Boot 2.7.3) has no Spring Boot parent
+        // and no Spring Boot BOM, only the property, the BOM of JHipster and bare starters.
+        let jhipster = r#"<project><artifactId>jh</artifactId>
+            <properties><java.version>11</java.version><spring-boot.version>2.7.3</spring-boot.version></properties>
+            <dependencyManagement><dependencies><dependency>
+              <groupId>tech.jhipster</groupId><artifactId>jhipster-dependencies</artifactId>
+              <version>7.9.3</version><type>pom</type><scope>import</scope>
+            </dependency></dependencies></dependencyManagement>
+            <dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies>
+            </project>"#;
+        let dir = project(&[("pom.xml", jhipster)]);
+        assert_eq!(inspect_dir(&dir).spring_boot.as_deref(), Some("2.7.3"));
+
+        // the plugin version, also through a property
+        let plugin = r#"<project><artifactId>a</artifactId><properties><boot>2.1.9.RELEASE</boot></properties>
+            <build><plugins><plugin><groupId>org.springframework.boot</groupId>
+              <artifactId>spring-boot-maven-plugin</artifactId><version>${boot}</version></plugin></plugins></build></project>"#;
+        let dir = project(&[("pom.xml", plugin)]);
+        assert_eq!(
+            inspect_dir(&dir).spring_boot.as_deref(),
+            Some("2.1.9.RELEASE")
+        );
+
+        // an explicit starter version
+        let starter = r#"<project><artifactId>a</artifactId><dependencies><dependency>
+            <groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId><version>1.5.4.RELEASE</version>
+            </dependency></dependencies></project>"#;
+        let dir = project(&[("pom.xml", starter)]);
+        assert_eq!(
+            inspect_dir(&dir).spring_boot.as_deref(),
+            Some("1.5.4.RELEASE")
+        );
+
+        // starters without any version, and a property that is not a version, say nothing
+        let bare = r#"<project><artifactId>a</artifactId><properties><spring-boot.version>${x}</spring-boot.version></properties>
+            <dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency></dependencies></project>"#;
+        let dir = project(&[("pom.xml", bare)]);
+        assert_eq!(inspect_dir(&dir).spring_boot, None);
+        // and a project that has nothing to do with Spring Boot stays that way
+        let dir = project(&[("pom.xml", "<project><artifactId>a</artifactId></project>")]);
+        assert_eq!(inspect_dir(&dir).spring_boot, None);
+    }
+    #[test]
+    fn a_spring_boot_pinned_by_a_third_party_bom_only_moves_the_java_level() {
+        use Hop::*;
+        // before 3.5 the ceiling is Java 17; from 3.5 on Java 25 is allowed
+        assert_eq!(hops_pinned(Some(11), Some((2, 7))), [Java17]);
+        assert_eq!(hops_pinned(Some(8), Some((2, 7))), [Java17]);
+        assert_eq!(hops_pinned(Some(17), Some((2, 7))), []);
+        assert_eq!(hops_pinned(Some(11), Some((3, 5))), [Java17, Java25]);
+        assert_eq!(hops_pinned(Some(17), Some((3, 5))), [Java25]);
+        assert_eq!(plan_hops(Some(11), Some((2, 7)), true), [Java17]);
+        assert_eq!(
+            plan_hops(Some(11), Some((2, 7)), false),
+            hops_for(Some(11), Some((2, 7)))
+        );
+    }
+
+    #[test]
+    fn the_jhipster_bom_is_reported_as_the_one_that_pins_spring_boot() {
+        // Found with a real project: JHipster Online. The Spring Boot recipes cannot move this
+        // BOM, so the Spring Boot hops failed halfway and left the copy broken.
+        let jhipster = r#"<project><artifactId>jh</artifactId>
+            <properties><java.version>11</java.version><spring-boot.version>2.7.3</spring-boot.version></properties>
+            <dependencyManagement><dependencies><dependency>
+              <groupId>tech.jhipster</groupId><artifactId>jhipster-dependencies</artifactId>
+              <version>7.9.3</version><type>pom</type><scope>import</scope>
+            </dependency></dependencies></dependencyManagement></project>"#;
+        let dir = project(&[("pom.xml", jhipster)]);
+        let p = inspect_dir(&dir);
+        assert_eq!(p.spring_boot.as_deref(), Some("2.7.3"));
+        assert_eq!(
+            p.spring_boot_pinned_by.as_deref(),
+            Some("tech.jhipster:jhipster-dependencies")
+        );
+        assert!(p.upgrade_available, "Java 11 can still go to 17");
+
+        // the Spring Boot BOM or parent next to it means Spring Boot is not pinned
+        let with_boot_bom = jhipster.replace("</dependencies></dependencyManagement>", "<dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-dependencies</artifactId><version>2.7.3</version><type>pom</type><scope>import</scope></dependency></dependencies></dependencyManagement>");
+        let dir = project(&[("pom.xml", &with_boot_bom)]);
+        assert_eq!(inspect_dir(&dir).spring_boot_pinned_by, None);
+        let dir = project(&[("pom.xml", BOOT15)]);
+        assert_eq!(inspect_dir(&dir).spring_boot_pinned_by, None);
+        // no Spring Boot, nothing to pin
+        let dir = project(&[("pom.xml", "<project><artifactId>a</artifactId></project>")]);
+        assert_eq!(inspect_dir(&dir).spring_boot_pinned_by, None);
     }
 }

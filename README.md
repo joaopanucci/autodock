@@ -186,7 +186,7 @@ Add your Expo projects and AutoDock tells you when a newer **stable** SDK is out
 
 ### ☕ Java: upgrade a legacy project
 
-Pick a Maven project and AutoDock shows its Java level and Spring Boot version, plans the upgrade and, after you confirm, creates an upgraded copy (`<name>-java25`) next to the folder, or in the folder you choose. Each step is compiled, so when something breaks the report names the step and shows the compiler errors. Spring Boot projects go up one major line at a time; projects without Spring only move the Java level. Gradle is not supported yet. [More details in the security notes](docs/SECURITY.md).
+Pick a Maven project and AutoDock shows its Java level and Spring Boot version, plans the upgrade and, after you confirm, creates an upgraded copy (`<name>-java25`) next to the folder, or in the folder you choose. Each step is compiled, so when something breaks the report names the step and shows the compiler errors, and **that step is undone**: the copy stays at the last step that worked (with the project's tests run there). Projects whose Spring Boot is pinned by a third-party BOM (JHipster, for one) only get the Java level upgraded, because the Spring Boot recipes cannot move that BOM. Spring Boot projects go up one major line at a time; projects without Spring only move the Java level. Gradle is not supported yet. [More details in the security notes](docs/SECURITY.md).
 
 ### 🌗 Light and dark
 
