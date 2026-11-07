@@ -10,13 +10,13 @@
 Answer a few questions. AutoDock writes the `Dockerfile`, the `docker-compose.yml` and even the project itself if you don't have one yet. You review everything before anything is written.
 
 [![CI](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml/badge.svg?branch=main)](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml)
-[![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=709fe5&label=release)](https://github.com/joaopanucci/autodock/releases/latest)
-[![License](https://img.shields.io/badge/license-Apache--2.0-7bc6a8)](LICENSE)
-![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-4d6fa8)
+[![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=22252a&label=release)](https://github.com/joaopanucci/autodock/releases/latest)
+[![License](https://img.shields.io/badge/license-Apache--2.0-22252a)](LICENSE)
+![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-22252a)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-core-CE422B?logo=rust&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-7bc6a8)](CONTRIBUTING.md)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-22252a)](CONTRIBUTING.md)
 
 [**Download**](#-download) · [**Step by step**](#-step-by-step) · [**CLI**](#-command-line) · [**Contribute**](#-contributing)
 
@@ -39,6 +39,9 @@ Setting up Docker for a local project is repetitive: which base image, which por
 - 🔌 **No port clashes.** AutoDock checks which ports are free and remembers the ones used by your other projects, so ten projects never fight over 5432.
 - 🧰 **Nothing to install except Docker.** The frameworks' official installers run *inside* containers.
 - 🖥️ **Local and open source.** Your code never leaves your computer. Apache-2.0 license.
+- 🏷️ **Named after your project.** The compose project, the containers and the images carry your project's name (`shop`, `shop-postgres`…), never a generic one.
+- 🌗 **Light and dark.** Switch the theme from any screen; it can also follow your system.
+- 🎓 **Learn as you go.** 13 short lessons, a quick reference with commands for PowerShell, CMD and Bash, and a glossary, all inside the app.
 - 🌍 **English and Portuguese.** The interface and messages follow your system language and can be switched in Settings.
 
 ## 🚀 What it does
@@ -55,10 +58,13 @@ Setting up Docker for a local project is repetitive: which base image, which por
 
 | Technology | Existing project | New project (clean) | New project (official framework) |
 |---|:---:|:---:|:---:|
-| **Node.js** | ✅ npm · pnpm · yarn, Vite | ✅ Express | ✅ Vite + React · Vite + Vue (TypeScript) |
+| **Node.js** | ✅ npm · pnpm · yarn, Vite, Next.js, NestJS | ✅ Express | ✅ Vite + React · Vite + Vue · Next.js · NestJS (TypeScript) |
 | **Java / Spring Boot** | ✅ Maven | ✅ Spring Boot + Maven | 🔜 Spring Initializr |
 | **Python** | ✅ FastAPI · Django · Flask | ✅ FastAPI · Flask | ✅ Django |
 | **PHP / Laravel** | ✅ Composer | — | ✅ Laravel |
+| **Go** | ✅ `go.mod` (multi-stage build) | ✅ `net/http` | — |
+| **.NET / ASP.NET Core** | ✅ `.csproj` (multi-stage build) | ✅ minimal API | — |
+| **Ruby on Rails** | ✅ Gemfile | — | — |
 
 ## 📦 Download
 
@@ -66,10 +72,10 @@ Get the installer for your platform from the [releases page](https://github.com/
 
 | System | File | How to install |
 |---|---|---|
-| 🍎 **macOS** (Intel and Apple Silicon) | [`AutoDock_0.1.2_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_universal.dmg) | Open the DMG and drag the app to *Applications*. |
-| 🪟 **Windows** (64-bit) | [`AutoDock_0.1.2_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_x64-setup.exe) | Run the installer. |
-| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.1.2_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_amd64.deb) | `sudo apt install ./AutoDock_0.1.2_amd64.deb` |
-| 🐧 **Linux** (any distro) | [`AutoDock_0.1.2_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🍎 **macOS** (Intel and Apple Silicon) | [`AutoDock_0.2.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_universal.dmg) | Open the DMG and drag the app to *Applications*. |
+| 🪟 **Windows** (64-bit) | [`AutoDock_0.2.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_x64-setup.exe) | Run the installer. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.2.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_amd64.deb) | `sudo apt install ./AutoDock_0.2.0_amd64.deb` |
+| 🐧 **Linux** (any distro) | [`AutoDock_0.2.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
 > **Requirement:** [Docker](https://docs.docker.com/get-docker/) installed and running, to create and run the environments.
 
@@ -87,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh) and [`install.ps1`](scripts/install.ps1). To pin a version: `AUTODOCK_VERSION=v0.1.2`.
+Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh) and [`install.ps1`](scripts/install.ps1). To pin a version: `AUTODOCK_VERSION=v0.2.0`.
 
 <details>
 <summary><b>⚠️ Downloaded with a browser and got "unidentified developer"? That is expected</b></summary>
@@ -103,7 +109,7 @@ AutoDock is open source and the installers are **not code-signed yet** (signing 
 Verify the file's integrity:
 
 ```bash
-shasum -a 256 AutoDock_0.1.2_universal.dmg   # compare with SHA256SUMS.txt
+shasum -a 256 AutoDock_0.2.0_universal.dmg   # compare with SHA256SUMS.txt
 ```
 
 </details>
@@ -114,7 +120,7 @@ shasum -a 256 AutoDock_0.1.2_universal.dmg   # compare with SHA256SUMS.txt
 
 ### 1. Pick the project folder
 
-Select the folder. AutoDock reads **only** configuration files (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`) to suggest the technology. None of your code is run.
+Select the folder. AutoDock reads **only** configuration files (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`, `go.mod`, `*.csproj`, `Gemfile`) to suggest the technology. None of your code is run.
 
 <img src="docs/screenshots/en/03-assistente-projeto.png" alt="Step 1: choose the folder and detect the technology" width="820" />
 
@@ -158,6 +164,15 @@ docker compose up --build
 <tr>
 <td width="50%"><b>Diagnose the environment</b><br/>Node, Git, Docker, Compose and Engine, without assuming anything.<br/><img src="docs/screenshots/en/09-ambiente.png" alt="Environment diagnostics" /></td>
 <td width="50%"><b>Overview</b><br/>Your projects and the state of your environment in one place.<br/><img src="docs/screenshots/en/01-visao-geral.png" alt="Overview" /></td>
+</tr>
+</table>
+
+### 🌗 Light and dark
+
+<table>
+<tr>
+<td width="50%"><b>Light</b><br/><img src="docs/screenshots/en/04-assistente-tecnologia.png" alt="Technology step, light theme" /></td>
+<td width="50%"><b>Dark</b><br/><img src="docs/screenshots/dark/en/04-assistente-tecnologia.png" alt="Technology step, dark theme" /></td>
 </tr>
 </table>
 
@@ -207,8 +222,12 @@ autodock generate ./my-project --stack nodejs --port 3000 --service postgres --w
 
 # new project in an empty folder
 autodock generate ./new --new --stack python --port 8000 --write
+# stacks: nodejs, spring-boot, python, laravel, go, dotnet, rails
+autodock generate ./api --stack go --port 8080 --service postgres
 autodock scaffold ./new --framework laravel --name shop          # only shows the command
 autodock scaffold ./new --framework laravel --name shop --run    # runs it
+# frameworks: laravel, django, vite-react, vite-vue, nextjs, nestjs
+autodock scaffold ./site --framework nextjs --name site
 ```
 
 ## 🧱 Architecture
@@ -229,14 +248,19 @@ npm --prefix apps/desktop run tauri dev
 
 ## 🗺️ Roadmap
 
-- [x] Docker assistant for existing projects (Node.js, Spring Boot, Python, Laravel)
+- [x] Docker assistant for existing projects (Node.js, Next.js, NestJS, Spring Boot, Python, Laravel, Go, .NET, Rails)
 - [x] Services: PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer, MailHog
-- [x] New project: clean or with the official installer (Laravel, Django, Vite)
+- [x] New project: clean or with the official installer (Laravel, Django, Vite, Next.js, NestJS)
 - [x] Open the project in the installed IDE
 - [x] Installers for macOS, Windows and Linux
 - [x] Interface in English and Portuguese
+- [x] Light and dark themes
+- [x] Learn area (lessons, quick reference, glossary)
+- [x] Containers and images named after your project
 - [ ] Spring Initializr (choose dependencies)
-- [ ] Gradle and more frameworks (Next.js, NestJS, Rails…)
+- [ ] Projects with several apps (monorepos and microservices: one container per app)
+- [ ] Expo: detect outdated SDK versions and assist the upgrade
+- [ ] Gradle, legacy Java upgrades and more services (Kafka, MinIO…)
 - [ ] Production Dockerfiles (multi-stage)
 - [ ] Code signing and notarization of the installers
 
