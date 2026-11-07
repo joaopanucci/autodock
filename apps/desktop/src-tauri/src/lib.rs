@@ -1,5 +1,6 @@
 use autodock_core::i18n::{with_lang, Lang};
 
+mod terminal;
 mod updater;
 
 /// Runs `task` on a blocking thread with the caller's language, so every message
@@ -403,6 +404,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::PendingUpdate::default())
+        .manage(terminal::Terminals::default())
         .invoke_handler(tauri::generate_handler![
             scan_project,
             detect_stacks,
@@ -438,6 +440,12 @@ pub fn run() {
             editor_write,
             editor_create,
             editor_search,
+            terminal::terminal_images,
+            terminal::terminal_default_image,
+            terminal::terminal_start,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_stop,
             java_inspect,
             java_upgrade_plan,
             java_upgrade_run,
@@ -454,6 +462,13 @@ pub fn run() {
             execute_console_operation,
             query_container_logs,
         ])
-        .run(tauri::generate_context!())
-        .expect("Failed to start AutoDock");
+        .build(tauri::generate_context!())
+        .expect("Failed to start AutoDock")
+        .run(|app, event| {
+            // The terminals run in containers: they must not outlive the app.
+            if let tauri::RunEvent::Exit = event {
+                use tauri::Manager;
+                app.state::<terminal::Terminals>().stop_all();
+            }
+        });
 }

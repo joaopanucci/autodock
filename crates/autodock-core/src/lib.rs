@@ -28,6 +28,7 @@ pub mod multi;
 mod ports;
 pub mod scaffold;
 mod secrets;
+pub mod terminal;
 pub use findings::Finding;
 pub use ports::PortAssignment;
 mod scan;

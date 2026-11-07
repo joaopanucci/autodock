@@ -14,14 +14,17 @@ import {
   GitCompare,
   Link2,
   LoaderCircle,
+  RefreshCw,
   Save,
   Search as SearchIcon,
   ShieldAlert,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { call } from "../ipc";
 import { CodeEditor, type CodeEditorHandle } from "../components/CodeEditor";
 import { DiffEditor, type DiffEditorHandle } from "../components/DiffEditor";
+import { TerminalPanel } from "../components/TerminalPanel";
 import { EmptyState, Panel } from "../components/ui";
 import { baseName, joinPath, languageFor, parentOf } from "../editor/languages";
 import { displayPath } from "../model";
@@ -92,6 +95,9 @@ export function Editor({
   const [includeIgnored, setIncludeIgnored] = useState(false);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<EditorSearchReport | null>(null);
+  /** The terminal starts the first time it is asked for; hiding it keeps the shell running. */
+  const [terminalStarted, setTerminalStarted] = useState(false);
+  const [terminalShown, setTerminalShown] = useState(false);
   /** A folder waits to be opened (or the open one to be closed) until unsaved changes are decided. */
   const [switching, setSwitching] = useState<{ path: string | null; review: EditorReview | null } | null>(null);
 
@@ -187,6 +193,14 @@ export function Editor({
     setActive(null);
     setClosing(null);
     setConflict(null);
+    setTerminalStarted(false);
+    setTerminalShown(false);
+  }
+
+  /** Lists again the folders that are open in the tree (a terminal command may have changed them). */
+  function refreshTree() {
+    if (!root) return;
+    new Set([...expanded, ""]).forEach((relative) => void loadDir(root.path, relative));
   }
 
   function toggleDir(relative: string) {
@@ -773,6 +787,15 @@ export function Editor({
               <button
                 type="button"
                 className="icon-button"
+                title={t("editor.explorer.refresh")}
+                aria-label={t("editor.explorer.refresh")}
+                onClick={refreshTree}
+              >
+                <RefreshCw size={16} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
                 title={t("editor.explorer.close")}
                 aria-label={t("editor.explorer.close")}
                 onClick={() => requestOpen(null)}
@@ -889,17 +912,32 @@ export function Editor({
                 </button>
               </div>
             ))}
-            {activeTab && (
+            <div className="editor-tools">
               <button
                 type="button"
-                className="button secondary editor-save"
-                disabled={saving || !activeTab.dirty}
-                onClick={() => void save(activeTab.path)}
+                className="button secondary"
+                aria-pressed={terminalShown}
+                title={t("terminal.toggle.hint")}
+                onClick={() => {
+                  setTerminalStarted(true);
+                  setTerminalShown((shown) => !shown);
+                }}
               >
-                {saving ? <LoaderCircle className="spin" size={14} aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
-                {saving ? t("editor.saving") : t("editor.save")}
+                <SquareTerminal size={14} aria-hidden="true" />
+                {t("terminal.toggle")}
               </button>
-            )}
+              {activeTab && (
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={saving || !activeTab.dirty}
+                  onClick={() => void save(activeTab.path)}
+                >
+                  {saving ? <LoaderCircle className="spin" size={14} aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+                  {saving ? t("editor.saving") : t("editor.save")}
+                </button>
+              )}
+            </div>
           </div>
 
           {activeTab?.sensitive && (
@@ -1026,6 +1064,10 @@ export function Editor({
               </div>
             )}
           </div>
+
+          {root && terminalStarted && (
+            <TerminalPanel key={root.path} root={root.path} hidden={!terminalShown} onHide={() => setTerminalShown(false)} />
+          )}
 
           <div className="editor-status" role="status">
             <span>{activeTab ? languageFor(activeTab.path) : ""}</span>
