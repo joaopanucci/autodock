@@ -570,3 +570,11 @@ export type EditorSearchReport = {
   filesSkipped: number;
   truncated: boolean;
 };
+
+/** An environment the integrated terminal can run in (a Docker image from the backend's list). */
+export type TerminalImage = { id: string; label: string; image: string };
+
+/** What a terminal tells the interface through its channel. */
+export type TerminalEvent =
+  | { event: "data"; data: string }
+  | { event: "exit"; code: number | null };

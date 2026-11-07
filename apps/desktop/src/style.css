@@ -2697,7 +2697,8 @@ input[type="checkbox"], input[type="radio"], progress { accent-color: var(--ink)
 .editor-tab-close { display: grid; place-items: center; width: 22px; height: 22px; margin-right: 4px; border: 0; border-radius: 3px; background: none; color: var(--subtle); cursor: pointer; }
 .editor-tab-close:hover { background: var(--hover); color: var(--ink); }
 .editor-dirty { color: var(--amber); font-size: 11px; }
-.editor-save { margin-left: auto; align-self: center; margin-bottom: 4px; }
+.editor-tools { display: flex; gap: 6px; margin-left: auto; align-self: center; margin-bottom: 4px; padding-left: 8px; }
+.editor-tools .button[aria-pressed="true"] { background: var(--hover); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .editor-notice { margin: 8px; }
 .editor-stage { position: relative; flex: 1; min-height: 0; }
 .code-editor { position: absolute; inset: 0; }
@@ -2730,6 +2731,18 @@ input[type="checkbox"], input[type="radio"], progress { accent-color: var(--ink)
 .editor-review { display: flex; align-items: center; gap: 10px; }
 .editor-review p { flex: 1; margin: 0; }
 .editor-empty { position: absolute; inset: 0; display: grid; place-items: center; background: var(--panel); }
+.terminal-panel { flex: none; display: flex; flex-direction: column; height: 280px; border-top: 1px solid var(--line); background: var(--panel); }
+.terminal-panel[hidden] { display: none; }
+.terminal-head { display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.terminal-image { display: flex; align-items: center; gap: 6px; }
+.terminal-image select { padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--bg); color: var(--ink); font: inherit; font-size: 12px; }
+.terminal-state { color: var(--ink); }
+.terminal-hint { margin-left: auto; color: var(--subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.terminal-actions { display: flex; gap: 2px; }
+.terminal-error { margin: 8px; padding: 8px 10px; border: 1px solid var(--amber); border-radius: 3px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal-screen { flex: 1; min-height: 0; overflow: hidden; padding: 4px 0 0 8px; }
+.terminal-screen .xterm { height: 100%; }
+.terminal-screen .xterm-viewport { background-color: transparent !important; }
 .editor-status { display: flex; justify-content: space-between; gap: 12px; padding: 4px 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 @media (max-width: 720px) {
   .editor-shell { grid-template-columns: 1fr; grid-template-rows: 200px minmax(0, 1fr); height: calc(100vh - 220px); }

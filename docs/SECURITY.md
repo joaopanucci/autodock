@@ -69,6 +69,19 @@ The editor reads and writes files, so it is held to strict rules (`autodock-core
 - Names that usually hold secrets (`.env` and variants other than examples, keys, certificates, `id_rsa`…) show a notice. Their content is only shown on the screen and never sent anywhere. Nothing in the editor executes files.
 - Monaco is bundled with the app: its workers are files of the app, the page's security policy (`default-src 'self'`) is unchanged and no code or font comes from a network. It is loaded on the first visit to the page.
 
+## Integrated terminal
+
+The terminal lets a person run commands, so it is built so that they run **in a container, not on the computer** (`autodock-core::terminal`):
+
+- The shell is `docker run -it --rm … bash`. The arguments are built by the backend, never by the interface: the interface only names one of four listed environments (`maven-jdk25`, `node22`, `python313`, `debian`), and an unknown name is refused before Docker is called.
+- The container gets only the open folder (a bind mount at `/work`, checked like every folder AutoDock mounts: an absolute, existing directory without characters that could change the mount) and, on Windows only (where the shell runs as root), for the Maven environment the same named volume the upgrade uses for the Maven cache. **No** `--privileged`, **no** Docker socket, no host network and no added capabilities, and `--security-opt no-new-privileges`. The container does have the normal Docker network, because package managers (`mvn`, `npm`, `pip`) need to download.
+- On Linux and macOS the shell runs as the user's own uid/gid, so files created in the folder belong to the person and not to root. On Windows Docker Desktop maps the owner.
+- The folder is mounted read-write on purpose (a terminal that cannot write is useless): a command can change or delete the files of that folder, as in any terminal. Nothing outside it is visible.
+- Every terminal has a named container (`autodock-terminal-<pid>-<id>`). Closing the terminal, closing the folder, restarting it, the shell ending or the app closing stops the process and runs `docker rm -f` on the container, so none is left running. At most four terminals are open at once.
+- What is typed is sent as bytes to the shell in the container (at most 64 KiB per write; the interface sends big pastes in pieces) and what the shell prints is sent to the screen. Nothing the shell prints is executed by AutoDock, interpreted as a command or sent anywhere.
+- It needs Docker running; without it the terminal says so and nothing else happens. The first run of an environment downloads its image (Docker shows the progress in the terminal).
+- xterm.js (MIT) is bundled with the app and loaded the first time the terminal is opened; it does not change the page's security policy.
+
 ## In-app updates
 
 AutoDock updates itself with the official Tauri updater, with these limits:
