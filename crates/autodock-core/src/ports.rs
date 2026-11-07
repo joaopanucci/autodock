@@ -176,8 +176,24 @@ pub(crate) fn validate_given(
         &project.to_string_lossy(),
         wanted,
         given,
-        &is_free,
+        &still_free,
     )
+}
+
+/// Whether a port chosen by an earlier preview can still be used. In the app this asks the
+/// computer. The unit tests do not: they preview and then apply the same ports a moment
+/// later, and another process on a busy CI machine can take one in between, which made those
+/// tests fail at random. The check itself is covered by `validate_given_with` with a fake.
+fn still_free(port: u16) -> bool {
+    #[cfg(test)]
+    {
+        let _ = port;
+        true
+    }
+    #[cfg(not(test))]
+    {
+        is_free(port)
+    }
 }
 
 fn validate_given_with(
