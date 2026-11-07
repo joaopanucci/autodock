@@ -76,10 +76,10 @@ Get the installer for your platform from the [releases page](https://github.com/
 
 | System | File | How to install |
 |---|---|---|
-| 🍎 **macOS** (Intel and Apple Silicon) | [`AutoDock_0.3.1_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.3.1/AutoDock_0.3.1_universal.dmg) | Open the DMG and drag the app to *Applications*. |
-| 🪟 **Windows** (64-bit) | [`AutoDock_0.3.1_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.3.1/AutoDock_0.3.1_x64-setup.exe) | Run the installer. |
-| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.3.1_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.3.1/AutoDock_0.3.1_amd64.deb) | `sudo apt install ./AutoDock_0.3.1_amd64.deb` |
-| 🐧 **Linux** (any distro) | [`AutoDock_0.3.1_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.3.1/AutoDock_0.3.1_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🍎 **macOS** (Intel and Apple Silicon) | [`AutoDock_0.4.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_universal.dmg) | Open the DMG and drag the app to *Applications*. |
+| 🪟 **Windows** (64-bit) | [`AutoDock_0.4.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_x64-setup.exe) | Run the installer. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.4.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_amd64.deb) | `sudo apt install ./AutoDock_0.4.0_amd64.deb` |
+| 🐧 **Linux** (any distro) | [`AutoDock_0.4.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
 > **Requirement:** [Docker](https://docs.docker.com/get-docker/) installed and running, to create and run the environments.
 
@@ -97,7 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh) and [`install.ps1`](scripts/install.ps1). To pin a version: `AUTODOCK_VERSION=v0.3.1`.
+Because the download does not go through a browser, the file never gets the "downloaded from the internet" mark that triggers macOS Gatekeeper and Windows SmartScreen. No protection of your system is turned off, and the app stays unsigned. The scripts are short and open: [`install.sh`](scripts/install.sh) and [`install.ps1`](scripts/install.ps1). To pin a version: `AUTODOCK_VERSION=v0.4.0`.
 
 <details>
 <summary><b>⚠️ Downloaded with a browser and got "unidentified developer"? That is expected</b></summary>
@@ -113,7 +113,7 @@ AutoDock is open source and the installers are **not code-signed yet** (signing 
 Verify the file's integrity:
 
 ```bash
-shasum -a 256 AutoDock_0.3.1_universal.dmg   # compare with SHA256SUMS.txt
+shasum -a 256 AutoDock_0.4.0_universal.dmg   # compare with SHA256SUMS.txt
 ```
 
 </details>
