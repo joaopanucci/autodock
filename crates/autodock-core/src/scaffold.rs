@@ -24,6 +24,10 @@ pub enum Framework {
     Django,
     ViteReact,
     ViteVue,
+    #[serde(rename = "nextjs")]
+    NextJs,
+    #[serde(rename = "nestjs")]
+    NestJs,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -136,6 +140,37 @@ printf 'Django==%s\\n' \"$(PYTHONPATH=/tmp/py python -m django --version)\" > re
                 notes: vec![
                     tr!("O pacote do projeto se chamará \"{package}\".", "The project package will be called \"{package}\"."),
                     tr!("A versão instalada do Django é fixada em requirements.txt.", "The installed Django version is pinned in requirements.txt."),
+                ],
+            }
+        }
+        Framework::NextJs => {
+            let version = image_version(&["24", "22", "20"], "22", &request.runtime_version)?;
+            Spec {
+                title: "Next.js (create-next-app)".to_string(),
+                image: format!("node:{version}-alpine"),
+                args: shell(format!(
+                    "npx --yes create-next-app@latest . --yes --use-npm --skip-install --disable-git < /dev/null && npm pkg set name={name}"
+                )),
+                marker: "package.json",
+                notes: vec![
+                    tr!("Usa o instalador oficial create-next-app com as opções recomendadas (TypeScript, App Router).", "Uses the official create-next-app installer with the recommended options (TypeScript, App Router)."),
+                    tr!("As dependências são instaladas quando a imagem Docker é construída; o servidor de desenvolvimento usa a porta 3000.", "Dependencies are installed when the Docker image is built; the development server uses port 3000."),
+                ],
+            }
+        }
+        Framework::NestJs => {
+            // Nest 12 dependencies do not install with the npm of Node 22.
+            let version = image_version(&["24", "22", "20"], "24", &request.runtime_version)?;
+            Spec {
+                title: "NestJS (Nest CLI)".to_string(),
+                image: format!("node:{version}-alpine"),
+                args: shell(format!(
+                    "npx --yes @nestjs/cli@latest new {name} --directory . --package-manager npm --skip-git --skip-install < /dev/null"
+                )),
+                marker: "package.json",
+                notes: vec![
+                    tr!("Usa o instalador oficial @nestjs/cli. O script de desenvolvimento é start:dev.", "Uses the official @nestjs/cli installer. The development script is start:dev."),
+                    tr!("As dependências são instaladas quando a imagem Docker é construída; a aplicação usa a porta 3000.", "Dependencies are installed when the Docker image is built; the application uses port 3000."),
                 ],
             }
         }

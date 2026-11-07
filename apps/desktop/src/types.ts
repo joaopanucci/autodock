@@ -112,7 +112,14 @@ export type LogsReport = {
   durationMs: number;
 };
 
-export type StackId = "nodejs" | "spring-boot" | "python" | "laravel";
+export type StackId =
+  | "nodejs"
+  | "spring-boot"
+  | "python"
+  | "laravel"
+  | "go"
+  | "dotnet"
+  | "rails";
 export type ServiceId =
   | "postgres"
   | "mysql"
@@ -131,6 +138,7 @@ export type StackSuggestion = {
   packageManager: PackageManager | null;
   pythonFramework: PythonFramework | null;
   vite: boolean;
+  nodeFramework?: "nextjs" | "nestjs" | null;
 };
 
 export type GenerateRequest = {
@@ -182,7 +190,13 @@ export type ApplyReport = {
 
 export type IdeInfo = { id: string; label: string };
 
-export type FrameworkId = "laravel" | "django" | "vite-react" | "vite-vue";
+export type FrameworkId =
+  | "laravel"
+  | "django"
+  | "vite-react"
+  | "vite-vue"
+  | "nextjs"
+  | "nestjs";
 export type ScaffoldPlan = {
   title: string;
   image: string;

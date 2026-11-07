@@ -36,6 +36,18 @@ pub enum Stack {
     SpringBoot,
     Python,
     Laravel,
+    Go,
+    Dotnet,
+    Rails,
+}
+
+/// Node.js frameworks recognised in `package.json`, used to suggest the right
+/// development script. They run through the regular Node.js template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeFramework {
+    Nextjs,
+    Nestjs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -147,6 +159,8 @@ pub struct Suggestion {
     pub python_framework: Option<PythonFramework>,
     /// The project uses the Vite dev server (default port 5173).
     pub vite: bool,
+    /// Next.js or NestJS, when `package.json` depends on them.
+    pub node_framework: Option<NodeFramework>,
 }
 
 // ---------------------------------------------------------------- detection
@@ -213,11 +227,26 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
     let root = root_of(path)?;
     let mut found = Vec::new();
     if let Some(text) = read_manifest(&root, "package.json") {
-        let scripts = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
+        let json = serde_json::from_str::<serde_json::Value>(&text).ok();
+        let scripts = json
+            .as_ref()
             .and_then(|v| v.get("scripts").and_then(|s| s.as_object().cloned()))
             .map(|s| s.keys().filter(|k| valid_script(k)).cloned().collect())
             .unwrap_or_default();
+        let depends_on = |name: &str| {
+            json.as_ref().is_some_and(|v| {
+                ["dependencies", "devDependencies"]
+                    .iter()
+                    .any(|group| v.get(group).and_then(|d| d.get(name)).is_some())
+            })
+        };
+        let node_framework = if depends_on("next") {
+            Some(NodeFramework::Nextjs)
+        } else if depends_on("@nestjs/core") {
+            Some(NodeFramework::Nestjs)
+        } else {
+            None
+        };
         let vite = text.contains("\"vite\"");
         let package_manager = if regular_file(&root, "pnpm-lock.yaml") {
             Some(PackageManager::Pnpm)
@@ -233,6 +262,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
             package_manager,
             python_framework: None,
             vite,
+            node_framework,
         });
     }
     if let Some(text) = read_manifest(&root, "pom.xml") {
@@ -247,6 +277,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
                 package_manager: None,
                 python_framework: None,
                 vite: false,
+                node_framework: None,
             });
         }
     }
@@ -269,6 +300,7 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
                 package_manager: None,
                 python_framework: framework,
                 vite: false,
+                node_framework: None,
             });
             break;
         }
@@ -282,10 +314,79 @@ pub fn detect_stacks(path: &str) -> Result<Vec<Suggestion>, String> {
                 package_manager: None,
                 python_framework: None,
                 vite: false,
+                node_framework: None,
             });
         }
     }
+    if regular_file(&root, "go.mod") {
+        found.push(Suggestion {
+            stack: Stack::Go,
+            evidence: "go.mod".into(),
+            scripts: vec![],
+            package_manager: None,
+            python_framework: None,
+            vite: false,
+            node_framework: None,
+        });
+    }
+    if let Some(name) = csproj_name(&root) {
+        found.push(Suggestion {
+            stack: Stack::Dotnet,
+            evidence: format!("{name}.csproj"),
+            scripts: vec![],
+            package_manager: None,
+            python_framework: None,
+            vite: false,
+            node_framework: None,
+        });
+    }
+    if read_manifest(&root, "Gemfile").is_some_and(|text| gemfile_has_rails(&text)) {
+        found.push(Suggestion {
+            stack: Stack::Rails,
+            evidence: "Gemfile (rails)".into(),
+            scripts: vec![],
+            package_manager: None,
+            python_framework: None,
+            vite: false,
+            node_framework: None,
+        });
+    }
     Ok(found)
+}
+
+/// Stem of the first `*.csproj` file at the root (regular files only, never
+/// symlinks). The stem becomes part of the Dockerfile, so it is validated.
+fn csproj_name(root: &Path) -> Option<String> {
+    let mut names: Vec<String> = fs::read_dir(root)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .strip_suffix(".csproj")
+                .map(str::to_owned)
+        })
+        .filter(|stem| {
+            !stem.is_empty()
+                && stem.len() <= 64
+                && !stem.starts_with(['-', '.'])
+                && stem
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        })
+        .collect();
+    names.sort();
+    names.into_iter().next()
+}
+
+/// True when the Gemfile declares the `rails` gem (comments are ignored).
+fn gemfile_has_rails(text: &str) -> bool {
+    text.lines().map(str::trim).any(|line| {
+        !line.starts_with('#')
+            && (line.starts_with("gem \"rails\"") || line.starts_with("gem 'rails'"))
+    })
 }
 
 // --------------------------------------------------------------- validation
@@ -317,6 +418,9 @@ fn runtime_version(stack: Stack, requested: &Option<String>) -> Result<String, S
         Stack::SpringBoot => (&["21", "17"], "21"),
         Stack::Python => (&["3.13", "3.12", "3.11"], "3.12"),
         Stack::Laravel => (&["8.5", "8.4", "8.3", "8.2"], "8.4"),
+        Stack::Go => (&["1.26", "1.25", "1.24"], "1.26"),
+        Stack::Dotnet => (&["10.0", "9.0", "8.0"], "10.0"),
+        Stack::Rails => (&["3.4", "3.3", "4.0"], "3.4"),
     };
     let version = requested.as_deref().unwrap_or(default);
     if allowed.contains(&version) {
@@ -394,6 +498,8 @@ struct Resolved {
     python_uses_pyproject: bool,
     new_project: bool,
     project_name: String,
+    /// Assembly (project file) name of a .NET application, empty for other stacks.
+    dotnet_project: String,
     /// The chosen npm script runs the Vite dev server, which must bind 0.0.0.0.
     vite: bool,
     seed: Seed,
@@ -468,6 +574,11 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
                     tr!("Projeto novo em Django ainda não está disponível. Use django-admin startproject e depois o assistente.", "New Django projects are not available here yet. Use django-admin startproject and then the assistant."),
                 )
             }
+            (Stack::Rails, _) => {
+                return Err(
+                    tr!("Projeto novo em Rails ainda não está disponível. Use rails new e depois o assistente.", "New Rails projects are not available here yet. Use rails new and then the assistant."),
+                )
+            }
             _ => {}
         }
         if !folder_is_empty(&request.path)? {
@@ -524,8 +635,31 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
                 "composer.json not found at the project root."
             ));
         }
+        Stack::Go if !regular_file(root, "go.mod") => {
+            return Err(tr!(
+                "go.mod não encontrado na raiz do projeto.",
+                "go.mod not found at the project root."
+            ));
+        }
+        Stack::Dotnet if csproj_name(root).is_none() => {
+            return Err(tr!(
+                "Nenhum arquivo .csproj encontrado na raiz. Soluções com vários projetos ainda não são suportadas.",
+                "No .csproj file found at the root. Multi-project solutions are not supported yet."
+            ));
+        }
+        Stack::Rails if !regular_file(root, "Gemfile") => {
+            return Err(tr!(
+                "Gemfile não encontrado na raiz do projeto.",
+                "Gemfile not found at the project root."
+            ));
+        }
         _ => {}
     }
+    let dotnet_project = match request.stack {
+        Stack::Dotnet if request.new_project => "app".to_string(),
+        Stack::Dotnet => csproj_name(root).unwrap_or_default(),
+        _ => String::new(),
+    };
     let start_script_value = start_script.clone();
     Ok(Resolved {
         stack: request.stack,
@@ -541,6 +675,7 @@ fn resolve(request: &GenerateRequest, root: &Path) -> Result<Resolved, String> {
         seed,
         ports: assigned_ports,
         gitignore_covers_env: gitignore_covers_env(root),
+        dotnet_project,
         vite: request.stack == Stack::Nodejs
             && !request.new_project
             && script_runs_vite(root, &start_script_value),
@@ -721,13 +856,47 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, String)> {
                 ));
             }
         }
-        Stack::Laravel => {}
+        Stack::Go => {
+            files.push((
+                "go.mod",
+                format!("module {name}\n\ngo {}\n", r.version),
+                tr!("Módulo Go.", "Go module."),
+            ));
+            files.push((
+                "main.go",
+                GO_MAIN
+                    .replace("__NAME__", name)
+                    .replace("__RUNNING__", &running)
+                    .replace("__PORT__", &port.to_string()),
+                tr!("Servidor HTTP de exemplo.", "Example HTTP server."),
+            ));
+        }
+        Stack::Dotnet => {
+            files.push((
+                "app.csproj",
+                format!(
+                    "<Project Sdk=\"Microsoft.NET.Sdk.Web\">\n  <PropertyGroup>\n    <TargetFramework>net{}</TargetFramework>\n    <Nullable>enable</Nullable>\n    <ImplicitUsings>enable</ImplicitUsings>\n  </PropertyGroup>\n</Project>\n",
+                    r.version
+                ),
+                tr!("Projeto ASP.NET Core.", "ASP.NET Core project."),
+            ));
+            files.push((
+                "Program.cs",
+                DOTNET_PROGRAM
+                    .replace("__NAME__", name)
+                    .replace("__RUNNING__", &running),
+                tr!("Endpoints de exemplo.", "Example endpoints."),
+            ));
+        }
+        Stack::Laravel | Stack::Rails => {}
     }
     let ignore = match r.stack {
         Stack::Nodejs => "node_modules/\n.env\n.env.docker\n",
         Stack::SpringBoot => "target/\n.idea/\n*.iml\n.env\n.env.docker\n",
         Stack::Python => "__pycache__/\n*.pyc\n.venv/\n.env\n.env.docker\n",
-        Stack::Laravel => ".env\n.env.docker\n",
+        Stack::Laravel | Stack::Rails => ".env\n.env.docker\n",
+        Stack::Go => "bin/\n*.exe\n.env\n.env.docker\n",
+        Stack::Dotnet => "bin/\nobj/\n.vs/\n.env\n.env.docker\n",
     };
     files.push((
         ".gitignore",
@@ -747,6 +916,46 @@ fn starter_files(r: &Resolved) -> Vec<(&'static str, String, String)> {
     ));
     files
 }
+
+const GO_MAIN: &str = r#"package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+)
+
+func respond(w http.ResponseWriter, body map[string]string) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "__PORT__"
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
+		respond(w, map[string]string{"message": "__NAME__ __RUNNING__"})
+	})
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		respond(w, map[string]string{"status": "ok"})
+	})
+	log.Printf("listening on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, mux))
+}
+"#;
+
+const DOTNET_PROGRAM: &str = r#"var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapGet("/", () => new { message = "__NAME__ __RUNNING__" });
+app.MapGet("/health", () => new { status = "ok" });
+
+app.Run();
+"#;
 
 fn json_array(items: &[String]) -> String {
     let quoted: Vec<String> = items.iter().map(|i| format!("\"{i}\"")).collect();
@@ -912,6 +1121,72 @@ EXPOSE {port}\n\
 CMD [\"php\", \"artisan\", \"serve\", \"--host=0.0.0.0\", \"--port={port}\"]\n"
             )
         }
+        Stack::Go => {
+            let banner = tr!(
+                "# Gerado pelo AutoDock. Build em duas etapas (Go).",
+                "# Generated by AutoDock. Two-stage build (Go)."
+            );
+            format!(
+                "{banner}\n\
+FROM golang:{v}-alpine AS build\n\
+WORKDIR /src\n\
+COPY go.mod go.sum* ./\n\
+RUN go mod download\n\
+COPY . .\n\
+RUN CGO_ENABLED=0 go build -o /out/app .\n\
+\n\
+FROM alpine:3\n\
+RUN apk add --no-cache ca-certificates \\\n    && adduser -S app\n\
+COPY --from=build /out/app /usr/local/bin/app\n\
+USER app\n\
+EXPOSE {port}\n\
+CMD [\"app\"]\n"
+            )
+        }
+        Stack::Dotnet => {
+            let banner = tr!(
+                "# Gerado pelo AutoDock. Build em duas etapas (.NET).",
+                "# Generated by AutoDock. Two-stage build (.NET)."
+            );
+            let project = &r.dotnet_project;
+            format!(
+                "{banner}\n\
+FROM mcr.microsoft.com/dotnet/sdk:{v} AS build\n\
+WORKDIR /src\n\
+COPY *.csproj ./\n\
+RUN dotnet restore\n\
+COPY . .\n\
+RUN dotnet publish -c Release -o /out --no-restore\n\
+\n\
+FROM mcr.microsoft.com/dotnet/aspnet:{v}\n\
+WORKDIR /app\n\
+COPY --from=build /out .\n\
+USER app\n\
+EXPOSE {port}\n\
+ENTRYPOINT [\"dotnet\", \"{project}.dll\"]\n"
+            )
+        }
+        Stack::Rails => {
+            let mut packages = vec!["build-essential", "git", "libyaml-dev", "pkg-config"];
+            if r.services.contains(&Service::Postgres) {
+                packages.push("libpq-dev");
+            }
+            if r.services.contains(&Service::Mysql) {
+                packages.push("default-libmysqlclient-dev");
+            }
+            let packages = packages.join(" ");
+            format!(
+                "{banner_dev}\n\
+FROM ruby:{v}-slim\n\
+RUN apt-get update \\\n    && apt-get install -y --no-install-recommends {packages} \\\n    && rm -rf /var/lib/apt/lists/*\n\
+WORKDIR /rails\n\
+COPY Gemfile Gemfile.lock* ./\n\
+RUN bundle install\n\
+COPY . .\n\
+EXPOSE {port}\n\
+CMD [\"sh\", \"-c\", \"rm -f tmp/pids/server.pid && bin/rails server -b 0.0.0.0 -p {port}\"]\n"
+            )
+        }
     }
 }
 
@@ -933,6 +1208,16 @@ fn dockerignore(stack: Stack) -> String {
         Stack::SpringBoot => vec!["target", "build", ".gradle"],
         Stack::Python => vec!["__pycache__", "*.pyc", ".venv", ".pytest_cache"],
         Stack::Laravel => vec!["vendor", "node_modules", "storage/logs"],
+        Stack::Go => vec!["bin", "*.exe", "*.test"],
+        Stack::Dotnet => vec!["bin", "obj", ".vs"],
+        Stack::Rails => vec![
+            "log",
+            "tmp",
+            "node_modules",
+            "storage",
+            ".bundle",
+            "vendor/bundle",
+        ],
     });
     tr!(
         "# Gerado pelo AutoDock.\n{}\n",
@@ -1026,6 +1311,15 @@ fn app_environment(r: &Resolved, pw: &Passwords) -> (Vec<(String, String)>, Vec<
     match r.stack {
         Stack::Nodejs => push(&mut plain, "HOST", "0.0.0.0"),
         Stack::SpringBoot => push(&mut plain, "SERVER_PORT", &r.port.to_string()),
+        Stack::Dotnet => push(
+            &mut plain,
+            "ASPNETCORE_URLS",
+            &format!("http://0.0.0.0:{}", r.port),
+        ),
+        Stack::Rails => {
+            push(&mut plain, "RAILS_ENV", "development");
+            push(&mut plain, "RAILS_LOG_TO_STDOUT", "1");
+        }
         _ => {}
     }
     let has = |s: Service| r.services.contains(&s);
@@ -1041,7 +1335,13 @@ fn app_environment(r: &Resolved, pw: &Passwords) -> (Vec<(String, String)>, Vec<
             Service::Postgres => ("postgresql", "postgres", 5432, pw["postgres"].as_str()),
             _ => ("mysql", "mysql", 3306, pw["mysql"].as_str()),
         };
-        let url = format!("{scheme}://app:{password}@{host}:{db_port}/app");
+        // Rails expects the mysql2 adapter name in DATABASE_URL.
+        let url_scheme = if r.stack == Stack::Rails && sql == Service::Mysql {
+            "mysql2"
+        } else {
+            scheme
+        };
+        let url = format!("{url_scheme}://app:{password}@{host}:{db_port}/app");
         if Some(sql) != primary {
             push(
                 &mut secret,
@@ -1060,6 +1360,18 @@ fn app_environment(r: &Resolved, pw: &Passwords) -> (Vec<(String, String)>, Vec<
                 );
                 push(&mut plain, "SPRING_DATASOURCE_USERNAME", "app");
                 push(&mut secret, "SPRING_DATASOURCE_PASSWORD", password);
+            }
+            Stack::Dotnet => {
+                let connection = if sql == Service::Postgres {
+                    format!(
+                        "Host={host};Port={db_port};Database=app;Username=app;Password={password}"
+                    )
+                } else {
+                    format!(
+                        "Server={host};Port={db_port};Database=app;User=app;Password={password}"
+                    )
+                };
+                push(&mut secret, "ConnectionStrings__Default", &connection);
             }
             Stack::Laravel => {
                 let connection = if sql == Service::Postgres {
@@ -1184,8 +1496,9 @@ fn compose(r: &Resolved) -> String {
     let pw = passwords(r);
     let (plain, _) = app_environment(r, &pw);
     let mut out = tr!(
-        "# Gerado pelo AutoDock. Revise antes de usar.\n# Nenhuma senha fica neste arquivo: elas estão em {ENV_FILE} (não versione).\nservices:\n  app:\n    build: .\n",
-        "# Generated by AutoDock. Review before use.\n# No password lives in this file: they are in {ENV_FILE} (do not commit).\nservices:\n  app:\n    build: .\n"
+        "# Gerado pelo AutoDock. Revise antes de usar.\n# Nenhuma senha fica neste arquivo: elas estão em {ENV_FILE} (não versione).\nname: {project}\nservices:\n  app:\n    build: .\n    container_name: {project}\n",
+        "# Generated by AutoDock. Review before use.\n# No password lives in this file: they are in {ENV_FILE} (do not commit).\nname: {project}\nservices:\n  app:\n    build: .\n    container_name: {project}\n",
+        project = r.project_name
     );
     out.push_str(&format!(
         "    ports:\n      - \"{}:{}\"\n",
@@ -1205,7 +1518,9 @@ fn compose(r: &Resolved) -> String {
         Stack::Laravel => {
             out.push_str("    volumes:\n      - .:/var/www/html\n      - /var/www/html/vendor\n")
         }
-        Stack::SpringBoot => {}
+        Stack::Rails => out.push_str("    volumes:\n      - .:/rails\n"),
+        // Compiled stacks: code changes need `docker compose up --build`.
+        Stack::SpringBoot | Stack::Go | Stack::Dotnet => {}
     }
     let waits: Vec<Service> = r
         .services
@@ -1231,7 +1546,15 @@ fn compose(r: &Resolved) -> String {
     let mut volumes: Vec<&str> = vec![];
     for service in &r.services {
         out.push('\n');
-        out.push_str(&service_block(r, *service));
+        let block = service_block(r, *service);
+        match block.split_once('\n') {
+            Some((head, rest)) => out.push_str(&format!(
+                "{head}\n    container_name: {}-{}\n{rest}",
+                r.project_name,
+                name_of(*service)
+            )),
+            None => out.push_str(&block),
+        }
         match service {
             Service::Postgres => volumes.push("postgres_data"),
             Service::Mysql => volumes.push("mysql_data"),
@@ -1311,6 +1634,21 @@ fn notes(r: &Resolved) -> Vec<String> {
         Stack::Laravel => notes.push(tr!(
             "Crie o .env do Laravel (copie .env.example) e rode php artisan key:generate dentro do container.",
             "Create Laravel's .env (copy .env.example) and run php artisan key:generate inside the container."
+        )),
+        Stack::Go => notes.push(tr!(
+            "O build compila o pacote main da raiz (go build .) e a aplicação precisa escutar na porta da variável PORT ({}). Alterações no código exigem docker compose up --build.",
+            "The build compiles the main package at the root (go build .) and the application must listen on the port in the PORT variable ({}). Code changes need docker compose up --build.",
+            r.port
+        )),
+        Stack::Dotnet => notes.push(tr!(
+            "O build publica {}.csproj da raiz e a aplicação escuta em ASPNETCORE_URLS (porta {}). Alterações no código exigem docker compose up --build; soluções com vários projetos podem exigir ajuste.",
+            "The build publishes {}.csproj from the root and the application listens on ASPNETCORE_URLS (port {}). Code changes need docker compose up --build; multi-project solutions may need adjusting.",
+            r.dotnet_project,
+            r.port
+        )),
+        Stack::Rails => notes.push(tr!(
+            "Na primeira vez rode bin/rails db:prepare dentro do container. O banco é configurado por DATABASE_URL: confira o config/database.yml.",
+            "The first time, run bin/rails db:prepare inside the container. The database is configured through DATABASE_URL: check config/database.yml."
         )),
     }
     if r.services.contains(&Service::Adminer)
@@ -2062,12 +2400,18 @@ mod tests {
             Stack::SpringBoot,
             Stack::Python,
             Stack::Laravel,
+            Stack::Go,
+            Stack::Dotnet,
+            Stack::Rails,
         ] {
             let dir = project(&[
                 ("package.json", "{}"),
                 ("pom.xml", "<project/>"),
                 ("requirements.txt", ""),
                 ("composer.json", "{}"),
+                ("go.mod", "module example"),
+                ("app.csproj", "<Project/>"),
+                ("Gemfile", "gem \"rails\""),
             ]);
             let mut req = request(&dir, stack);
             req.port = busy;
@@ -2092,7 +2436,13 @@ mod tests {
             assert_ne!(english.notes, portuguese.notes);
         }
         // new projects, starters included
-        for stack in [Stack::Nodejs, Stack::SpringBoot, Stack::Python] {
+        for stack in [
+            Stack::Nodejs,
+            Stack::SpringBoot,
+            Stack::Python,
+            Stack::Go,
+            Stack::Dotnet,
+        ] {
             let dir = project(&[]);
             let mut req = request(&dir, stack);
             req.new_project = true;
@@ -2127,6 +2477,9 @@ mod tests {
             Stack::SpringBoot,
             Stack::Python,
             Stack::Laravel,
+            Stack::Go,
+            Stack::Dotnet,
+            Stack::Rails,
         ] {
             assert!(preview(&request(&dir, stack)).is_err());
         }
@@ -2199,5 +2552,210 @@ mod tests {
         assert_eq!(found[0].scripts, vec!["dev".to_string()]);
         let plan = preview(&request(&dir, Stack::Nodejs)).unwrap();
         assert!(plan.files.iter().all(|f| !f.content.contains("SECRET")));
+    }
+
+    #[test]
+    fn go_plan_builds_a_static_binary_from_the_root() {
+        let dir = project(&[("go.mod", "module example.com/api\n\ngo 1.26\n")]);
+        let mut req = request(&dir, Stack::Go);
+        req.port = 8080;
+        req.services = vec![Service::Postgres];
+        let plan = preview(&req).unwrap();
+        let dockerfile = &file(&plan, DOCKERFILE).content;
+        assert!(dockerfile.contains("FROM golang:1.26-alpine AS build"));
+        assert!(dockerfile.contains("RUN CGO_ENABLED=0 go build -o /out/app ."));
+        assert!(dockerfile.contains("FROM alpine:3"));
+        assert!(dockerfile.contains("USER app"));
+        assert!(dockerfile.contains("EXPOSE 8080"));
+        let compose = &file(&plan, COMPOSE_FILE).content;
+        assert!(compose.contains("PORT: \"8080\""));
+        assert!(
+            !compose.contains("volumes:\n      - .:/"),
+            "compiled stack has no code mount"
+        );
+        assert!(file(&plan, ENV_FILE)
+            .content
+            .contains("DATABASE_URL=postgresql://app:"));
+        assert!(file(&plan, DOCKERIGNORE).content.contains("bin"));
+        assert!(plan
+            .notes
+            .iter()
+            .any(|n| n.contains("go build") || n.contains("main package")));
+    }
+
+    #[test]
+    fn dotnet_plan_uses_the_project_file_name_and_connection_string() {
+        let dir = project(&[(
+            "Billing.Api.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk.Web\"/>",
+        )]);
+        let mut req = request(&dir, Stack::Dotnet);
+        req.port = 5000;
+        req.services = vec![Service::Postgres, Service::Mysql];
+        req.runtime_version = Some("9.0".into());
+        let plan = preview(&req).unwrap();
+        let dockerfile = &file(&plan, DOCKERFILE).content;
+        assert!(dockerfile.contains("FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build"));
+        assert!(dockerfile.contains("FROM mcr.microsoft.com/dotnet/aspnet:9.0"));
+        assert!(dockerfile.contains(r#"ENTRYPOINT ["dotnet", "Billing.Api.dll"]"#));
+        let compose = &file(&plan, COMPOSE_FILE).content;
+        assert!(compose.contains("ASPNETCORE_URLS: \"http://0.0.0.0:5000\""));
+        let env = &file(&plan, ENV_FILE).content;
+        assert!(env.contains("ConnectionStrings__Default=Host=postgres;Port=5432;Database=app;Username=app;Password="));
+        assert!(
+            !env.contains("Server=mysql"),
+            "only the primary database is the default connection"
+        );
+        assert!(env.contains("MYSQL_URL=mysql://app:"));
+    }
+
+    #[test]
+    fn dotnet_rejects_project_file_names_that_are_unsafe_in_a_dockerfile() {
+        let dir = project(&[("bad name.csproj", "<Project/>")]);
+        assert!(preview(&request(&dir, Stack::Dotnet)).is_err());
+        assert!(detect_stacks(&dir.path().to_string_lossy())
+            .unwrap()
+            .iter()
+            .all(|s| s.stack != Stack::Dotnet));
+        let ok = project(&[("Zeta.csproj", ""), ("Alpha.csproj", "")]);
+        assert_eq!(csproj_name(ok.path()).as_deref(), Some("Alpha"));
+    }
+
+    #[test]
+    fn rails_plan_installs_the_database_client_libraries_and_uses_mysql2() {
+        let dir = project(&[(
+            "Gemfile",
+            "source \"https://rubygems.org\"\ngem \"rails\", \"~> 8.0\"\n",
+        )]);
+        let mut req = request(&dir, Stack::Rails);
+        req.services = vec![Service::Mysql];
+        let plan = preview(&req).unwrap();
+        let dockerfile = &file(&plan, DOCKERFILE).content;
+        assert!(dockerfile.contains("FROM ruby:3.4-slim"));
+        assert!(dockerfile.contains("default-libmysqlclient-dev"));
+        assert!(!dockerfile.contains("libpq-dev"));
+        assert!(
+            dockerfile.contains("rm -f tmp/pids/server.pid && bin/rails server -b 0.0.0.0 -p 3000")
+        );
+        let compose = &file(&plan, COMPOSE_FILE).content;
+        assert!(compose.contains("RAILS_ENV: \"development\""));
+        assert!(compose.contains("      - .:/rails\n"));
+        assert!(file(&plan, ENV_FILE)
+            .content
+            .contains("DATABASE_URL=mysql2://app:"));
+    }
+
+    #[test]
+    fn detects_go_dotnet_rails_and_node_frameworks_from_manifests_only() {
+        let dir = project(&[
+            ("go.mod", "module x"),
+            ("App.csproj", "<Project/>"),
+            ("Gemfile", "# gem \"rails\"\ngem \"sinatra\"\n"),
+        ]);
+        let found = detect_stacks(&dir.path().to_string_lossy()).unwrap();
+        let stacks: Vec<Stack> = found.iter().map(|s| s.stack).collect();
+        assert!(stacks.contains(&Stack::Go));
+        assert!(stacks.contains(&Stack::Dotnet));
+        assert!(
+            !stacks.contains(&Stack::Rails),
+            "a commented or different gem is not Rails"
+        );
+        let rails = project(&[("Gemfile", "gem 'rails', '~> 7.2'\n")]);
+        assert_eq!(
+            detect_stacks(&rails.path().to_string_lossy()).unwrap()[0].stack,
+            Stack::Rails
+        );
+
+        let next = project(&[(
+            "package.json",
+            r#"{"dependencies":{"next":"16.0.0","react":"19"}}"#,
+        )]);
+        let found = detect_stacks(&next.path().to_string_lossy()).unwrap();
+        assert_eq!(found[0].stack, Stack::Nodejs);
+        assert_eq!(found[0].node_framework, Some(NodeFramework::Nextjs));
+        let nest = project(&[(
+            "package.json",
+            r#"{"devDependencies":{"@nestjs/core":"11"}}"#,
+        )]);
+        assert_eq!(
+            detect_stacks(&nest.path().to_string_lossy()).unwrap()[0].node_framework,
+            Some(NodeFramework::Nestjs)
+        );
+        let plain = project(&[("package.json", r#"{"dependencies":{"express":"4"}}"#)]);
+        assert_eq!(
+            detect_stacks(&plain.path().to_string_lossy()).unwrap()[0].node_framework,
+            None
+        );
+    }
+
+    #[test]
+    fn compose_names_the_project_and_every_container_after_it() {
+        let dir = project(&[("package.json", "{}")]);
+        let mut req = request(&dir, Stack::Nodejs);
+        req.project_name = Some("loja-online".into());
+        req.services = vec![Service::Postgres, Service::Redis, Service::Adminer];
+        let compose = file(&preview(&req).unwrap(), COMPOSE_FILE).content.clone();
+        assert!(compose.contains("\nname: loja-online\nservices:\n"));
+        assert!(compose.contains("  app:\n    build: .\n    container_name: loja-online\n"));
+        assert!(compose.contains(
+            "  postgres:\n    container_name: loja-online-postgres\n    image: postgres:16-alpine"
+        ));
+        assert!(compose.contains("  redis:\n    container_name: loja-online-redis\n"));
+        assert!(compose.contains("  adminer:\n    container_name: loja-online-adminer\n"));
+        assert!(
+            !compose.to_lowercase().contains("autodock-"),
+            "no container is named after AutoDock"
+        );
+    }
+
+    #[test]
+    fn new_go_and_dotnet_projects_get_starters_and_rails_is_not_offered() {
+        use crate::i18n::{with_lang, Lang};
+        let go = project(&[]);
+        let mut req = request(&go, Stack::Go);
+        req.new_project = true;
+        req.project_name = Some("meu-servico".into());
+        req.port = 8081;
+        let plan = with_lang(Lang::Pt, || preview(&req).unwrap());
+        assert_eq!(
+            file(&plan, "go.mod").content,
+            "module meu-servico\n\ngo 1.26\n"
+        );
+        let main = &file(&plan, "main.go").content;
+        assert!(main.contains("meu-servico está no ar"));
+        assert!(main.contains("\"GET /health\"") && main.contains("port = \"8081\""));
+        assert!(file(&plan, ".gitignore").content.contains("bin/"));
+
+        let net = project(&[]);
+        let mut req = request(&net, Stack::Dotnet);
+        req.new_project = true;
+        req.project_name = Some("meu-servico".into());
+        let plan = preview(&req).unwrap();
+        assert!(file(&plan, "app.csproj")
+            .content
+            .contains("<TargetFramework>net10.0</TargetFramework>"));
+        assert!(file(&plan, "Program.cs")
+            .content
+            .contains("MapGet(\"/health\""));
+        assert!(file(&plan, DOCKERFILE).content.contains("\"app.dll\""));
+
+        let rails = project(&[]);
+        let mut req = request(&rails, Stack::Rails);
+        req.new_project = true;
+        assert!(preview(&req).is_err());
+    }
+
+    #[test]
+    fn unsupported_runtime_versions_are_rejected_for_the_new_stacks() {
+        for (stack, manifest, bad) in [
+            (Stack::Go, "go.mod", "1.20"),
+            (Stack::Dotnet, "app.csproj", "6.0"),
+            (Stack::Rails, "Gemfile", "2.7"),
+        ] {
+            let dir = project(&[(manifest, "x")]);
+            let mut req = request(&dir, stack);
+            req.runtime_version = Some(bad.into());
+            assert!(preview(&req).unwrap_err().contains(bad));
+        }
     }
 }
