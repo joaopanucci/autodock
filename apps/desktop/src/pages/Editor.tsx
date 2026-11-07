@@ -1,0 +1,660 @@
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  File as FileIcon,
+  FilePlus2,
+  FolderClosed,
+  FolderOpen,
+  FolderPlus,
+  Link2,
+  LoaderCircle,
+  Save,
+  ShieldAlert,
+  X,
+} from "lucide-react";
+import { call } from "../ipc";
+import { CodeEditor, type CodeEditorHandle } from "../components/CodeEditor";
+import { EmptyState, Panel } from "../components/ui";
+import { baseName, joinPath, languageFor, parentOf } from "../editor/languages";
+import { displayPath } from "../model";
+import { useI18n } from "../i18n";
+import type {
+  EditorEntry,
+  EditorFile,
+  EditorListing,
+  EditorRoot,
+  EditorSaveReport,
+  SessionProject,
+} from "../types";
+
+const message = (error: unknown) =>
+  typeof error === "string" ? error : error instanceof Error ? error.message : String(error);
+
+type Tab = {
+  path: string;
+  dirty: boolean;
+  /** Last change on disk, as read or saved: sent back so a change made elsewhere is noticed. */
+  modifiedMs: number;
+  bom: boolean;
+  sensitive: boolean;
+};
+
+type Dir = { entries: EditorEntry[]; truncated: boolean; loading: boolean; error: string };
+
+export function Editor({ sessionProjects }: { sessionProjects: SessionProject[] }) {
+  const { t } = useI18n();
+  const editor = useRef<CodeEditorHandle>(null);
+
+  const [root, setRoot] = useState<EditorRoot | null>(null);
+  const [dirs, setDirs] = useState<Record<string, Dir>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** What was last clicked in the tree: new files and folders go inside it. */
+  const [selected, setSelected] = useState<{ path: string; dir: boolean }>({ path: "", dir: true });
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [active, setActive] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [flash, setFlash] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [conflict, setConflict] = useState<string | null>(null);
+  const [closing, setClosing] = useState<string | null>(null);
+  const [creating, setCreating] = useState<"file" | "dir" | null>(null);
+  const [newName, setNewName] = useState("");
+  const [typedPath, setTypedPath] = useState("");
+  const [cursor, setCursor] = useState<{ line: number; col: number } | null>(null);
+
+  // The callbacks of the editor always see the latest tabs and folder.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const rootRef = useRef(root);
+  rootRef.current = root;
+
+  const rootPath = root?.path ?? "";
+  const activeTab = tabs.find((tab) => tab.path === active) ?? null;
+
+  const say = (text: string) => {
+    setFlash(text);
+    window.setTimeout(() => setFlash((current) => (current === text ? "" : current)), 3500);
+  };
+
+  // ───────────── folders ─────────────
+
+  const loadDir = useCallback(async (folder: string, relative: string) => {
+    setDirs((current) => ({
+      ...current,
+      [relative]: { entries: current[relative]?.entries ?? [], truncated: false, loading: true, error: "" },
+    }));
+    try {
+      const listing = await call<EditorListing>("editor_list", { root: folder, path: relative });
+      setDirs((current) => ({
+        ...current,
+        [relative]: { entries: listing.entries, truncated: listing.truncated, loading: false, error: "" },
+      }));
+    } catch (e) {
+      setDirs((current) => ({
+        ...current,
+        [relative]: { entries: [], truncated: false, loading: false, error: message(e) },
+      }));
+    }
+  }, []);
+
+  async function openFolder(path: string) {
+    setError("");
+    try {
+      const info = await call<EditorRoot>("editor_open_root", { path });
+      tabsRef.current.forEach((tab) => editor.current?.close(tab.path));
+      editor.current?.show(null);
+      setRoot(info);
+      setDirs({});
+      setExpanded(new Set([""]));
+      setSelected({ path: "", dir: true });
+      setTabs([]);
+      setActive(null);
+      setConflict(null);
+      setClosing(null);
+      setCursor(null);
+      await loadDir(info.path, "");
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  async function pickFolder() {
+    try {
+      const folder = await open({ directory: true, multiple: false, title: t("editor.pick.dialog") });
+      if (folder) await openFolder(folder);
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  function closeFolder() {
+    tabsRef.current.forEach((tab) => editor.current?.close(tab.path));
+    editor.current?.show(null);
+    setRoot(null);
+    setTabs([]);
+    setActive(null);
+    setClosing(null);
+    setConflict(null);
+  }
+
+  function toggleDir(relative: string) {
+    setSelected({ path: relative, dir: true });
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(relative)) next.delete(relative);
+      else next.add(relative);
+      return next;
+    });
+    if (!dirs[relative]) void loadDir(rootPath, relative);
+  }
+
+  // ───────────── files ─────────────
+
+  const activate = useCallback((path: string | null) => {
+    setActive(path);
+    editor.current?.show(path);
+    setConflict(null);
+  }, []);
+
+  async function openFile(relative: string) {
+    setSelected({ path: relative, dir: false });
+    setError("");
+    if (tabsRef.current.some((tab) => tab.path === relative)) {
+      activate(relative);
+      return;
+    }
+    try {
+      const file = await call<EditorFile>("editor_read", { root: rootPath, path: relative });
+      editor.current?.open(file.path, file.text, languageFor(file.path));
+      setTabs((current) => [
+        ...current,
+        { path: file.path, dirty: false, modifiedMs: file.modifiedMs, bom: file.bom, sensitive: file.sensitive },
+      ]);
+      activate(file.path);
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  const setDirty = useCallback((path: string, dirty: boolean) => {
+    setTabs((current) =>
+      current.map((tab) => (tab.path === path && tab.dirty !== dirty ? { ...tab, dirty } : tab)),
+    );
+  }, []);
+
+  /** Saves a file; `overwrite` keeps going over a change made elsewhere. Returns whether it saved. */
+  const save = useCallback(
+    async (path: string, overwrite = false): Promise<boolean> => {
+      const tab = tabsRef.current.find((item) => item.path === path);
+      const text = editor.current?.value(path);
+      if (!tab || text == null || !rootRef.current) return false;
+      setSaving(true);
+      setError("");
+      try {
+        const report = await call<EditorSaveReport>("editor_write", {
+          root: rootRef.current.path,
+          path,
+          text,
+          bom: tab.bom,
+          expectedMs: tab.modifiedMs,
+          overwrite,
+        });
+        setTabs((current) =>
+          current.map((item) => (item.path === path ? { ...item, modifiedMs: report.modifiedMs } : item)),
+        );
+        editor.current?.markSaved(path);
+        setConflict(null);
+        say(t("editor.saved", { name: baseName(path) }));
+        return true;
+      } catch (e) {
+        const text = message(e);
+        if (text.startsWith("conflict")) setConflict(path);
+        else setError(text);
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    // `t` only changes with the language; the saved message is built when it is shown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  async function reloadFromDisk(path: string) {
+    try {
+      const file = await call<EditorFile>("editor_read", { root: rootPath, path });
+      editor.current?.replace(path, file.text);
+      setTabs((current) =>
+        current.map((tab) => (tab.path === path ? { ...tab, modifiedMs: file.modifiedMs, bom: file.bom } : tab)),
+      );
+      setConflict(null);
+      say(t("editor.reloaded", { name: baseName(path) }));
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  function removeTab(path: string) {
+    editor.current?.close(path);
+    const index = tabsRef.current.findIndex((tab) => tab.path === path);
+    const rest = tabsRef.current.filter((tab) => tab.path !== path);
+    setTabs(rest);
+    setClosing(null);
+    if (active === path) {
+      const next = rest[Math.min(index, rest.length - 1)]?.path ?? null;
+      activate(next);
+    }
+  }
+
+  function closeTab(path: string) {
+    const tab = tabsRef.current.find((item) => item.path === path);
+    if (tab?.dirty) setClosing(path);
+    else removeTab(path);
+  }
+
+  // ───────────── new file / folder ─────────────
+
+  const createParent = selected.dir ? selected.path : parentOf(selected.path);
+
+  async function createEntry() {
+    const kind = creating;
+    const name = newName.trim();
+    if (!kind || !name) return;
+    setError("");
+    try {
+      await call<EditorEntry>("editor_create", { root: rootPath, parent: createParent, name, kind });
+      setCreating(null);
+      setNewName("");
+      setExpanded((current) => new Set(current).add(createParent));
+      await loadDir(rootPath, createParent);
+      if (kind === "file") await openFile(joinPath(createParent, name));
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  // ───────────── session suggestions ─────────────
+
+  const suggestions = sessionProjects.slice(0, 12).map((p) => displayPath(p.scan.project));
+
+  // Keep the editor's own shortcut and the page's save button on the same code path.
+  const onEditorSave = useCallback((path: string) => void save(path), [save]);
+  const onCursor = useCallback((line: number, col: number) => setCursor({ line, col }), []);
+
+  useEffect(() => {
+    if (!active) setCursor(null);
+  }, [active]);
+
+  // ───────────── rendering ─────────────
+
+  const renderDir = (relative: string, depth: number): ReactNode => {
+    const dir = dirs[relative];
+    if (!dir) return null;
+    return (
+      <>
+        {dir.entries.map((entry) => {
+          const path = joinPath(relative, entry.name);
+          if (entry.kind === "dir") {
+            const open = expanded.has(path);
+            return (
+              <li key={path} role="none">
+                <button
+                  type="button"
+                  role="treeitem"
+                  aria-expanded={open}
+                  aria-label={t(open ? "editor.explorer.collapse" : "editor.explorer.expand", { name: entry.name })}
+                  className={`editor-row ${selected.path === path ? "is-selected" : ""}`}
+                  style={{ paddingLeft: 10 + depth * 14 }}
+                  onClick={() => toggleDir(path)}
+                >
+                  {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+                  {open ? <FolderOpen size={15} aria-hidden="true" /> : <FolderClosed size={15} aria-hidden="true" />}
+                  <span>{entry.name}</span>
+                </button>
+                {open && <ul role="group">{renderChildren(path, depth + 1)}</ul>}
+              </li>
+            );
+          }
+          if (entry.kind === "file") {
+            return (
+              <li key={path} role="none">
+                <button
+                  type="button"
+                  role="treeitem"
+                  className={`editor-row ${active === path ? "is-active" : ""} ${selected.path === path ? "is-selected" : ""}`}
+                  style={{ paddingLeft: 10 + depth * 14 + 18 }}
+                  onClick={() => void openFile(path)}
+                >
+                  <FileIcon size={15} aria-hidden="true" />
+                  <span>{entry.name}</span>
+                </button>
+              </li>
+            );
+          }
+          return (
+            <li key={path} role="none">
+              <span
+                className="editor-row is-link"
+                style={{ paddingLeft: 10 + depth * 14 + 18 }}
+                title={t("editor.explorer.link")}
+              >
+                <Link2 size={15} aria-hidden="true" />
+                <span>{entry.name}</span>
+              </span>
+            </li>
+          );
+        })}
+      </>
+    );
+  };
+
+  const renderChildren = (relative: string, depth: number): ReactNode => {
+    const dir = dirs[relative];
+    const pad = { paddingLeft: 10 + depth * 14 + 18 };
+    if (!dir || dir.loading) {
+      return (
+        <li className="editor-note" style={pad}>
+          <LoaderCircle className="spin" size={12} aria-hidden="true" /> {t("editor.explorer.loading")}
+        </li>
+      );
+    }
+    if (dir.error) {
+      return (
+        <li className="editor-note warn" style={pad}>
+          {dir.error}
+        </li>
+      );
+    }
+    return (
+      <>
+        {dir.entries.length === 0 && (
+          <li className="editor-note" style={pad}>
+            {t("editor.explorer.empty")}
+          </li>
+        )}
+        {renderDir(relative, depth)}
+        {dir.truncated && (
+          <li className="editor-note warn" style={pad}>
+            {t("editor.explorer.truncated")}
+          </li>
+        )}
+      </>
+    );
+  };
+
+  const where = createParent || root?.name || "";
+
+  return (
+    <div className="editor-page">
+      {error && (
+        <div className="feedback error" role="alert">
+          <AlertTriangle size={19} aria-hidden="true" />
+          <div>
+            <strong>{t("wizard.error.title")}</strong>
+            <p>{error}</p>
+          </div>
+          <button className="icon-button" aria-label={t("app.closeError")} onClick={() => setError("")}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {!root && (
+        <Panel
+          title={t("editor.pick.title")}
+          eyebrow={t("editor.pick.eyebrow")}
+          action={
+            <button type="button" className="button primary" onClick={() => void pickFolder()}>
+              <FolderOpen size={16} aria-hidden="true" /> {t("editor.pick.button")}
+            </button>
+          }
+        >
+          <p className="section-description">{t("editor.pick.body")}</p>
+          <form
+            className="editor-typed"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (typedPath.trim()) void openFolder(typedPath.trim());
+            }}
+          >
+            <label>
+              <span className="field-label">{t("editor.pick.typed")}</span>
+              <input
+                value={typedPath}
+                placeholder={t("editor.pick.typedPlaceholder")}
+                spellCheck={false}
+                onChange={(event) => setTypedPath(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="button secondary" disabled={!typedPath.trim()}>
+              {t("editor.pick.typedOpen")}
+            </button>
+          </form>
+          {suggestions.length > 0 && (
+            <div className="expo-suggest">
+              <p className="field-label">{t("editor.suggest.title")}</p>
+              <p className="field-hint">{t("editor.suggest.body")}</p>
+              <ul className="expo-projects">
+                {suggestions.map((path) => (
+                  <li key={path}>
+                    <div className="expo-project-main">
+                      <strong>{baseName(path.replace(/\\/g, "/"))}</strong>
+                      <small className="mono">{path}</small>
+                    </div>
+                    <div className="expo-project-actions">
+                      <button type="button" className="button secondary" onClick={() => void openFolder(path)}>
+                        {t("editor.suggest.use")}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Panel>
+      )}
+
+      {/* The editor stays mounted while a folder is open, so its tabs and undo history survive. */}
+      <div className="editor-shell" hidden={!root}>
+        <aside className="editor-explorer" aria-label={t("editor.explorer.aria")}>
+          <div className="editor-explorer-head">
+            <strong title={root ? displayPath(root.path) : ""}>{root?.name ?? t("editor.explorer.title")}</strong>
+            <div className="editor-explorer-actions">
+              <button
+                type="button"
+                className="icon-button"
+                title={t("editor.explorer.newFile")}
+                aria-label={t("editor.explorer.newFile")}
+                onClick={() => {
+                  setCreating("file");
+                  setNewName("");
+                }}
+              >
+                <FilePlus2 size={16} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                title={t("editor.explorer.newFolder")}
+                aria-label={t("editor.explorer.newFolder")}
+                onClick={() => {
+                  setCreating("dir");
+                  setNewName("");
+                }}
+              >
+                <FolderPlus size={16} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                title={t("editor.explorer.close")}
+                aria-label={t("editor.explorer.close")}
+                onClick={closeFolder}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          {creating && (
+            <form
+              className="editor-create"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void createEntry();
+              }}
+            >
+              <label>
+                <span className="field-hint">
+                  {t(creating === "file" ? "editor.create.file" : "editor.create.folder")} (
+                  {t("editor.create.in", { where })})
+                </span>
+                <input
+                  autoFocus
+                  value={newName}
+                  aria-label={t(creating === "file" ? "editor.create.file" : "editor.create.folder")}
+                  onChange={(event) => setNewName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setCreating(null);
+                  }}
+                />
+              </label>
+              <div className="editor-create-actions">
+                <button type="submit" className="button primary" disabled={!newName.trim()}>
+                  {t("editor.create.confirm")}
+                </button>
+                <button type="button" className="button secondary" onClick={() => setCreating(null)}>
+                  {t("editor.create.cancel")}
+                </button>
+              </div>
+            </form>
+          )}
+          <ul className="editor-tree" role="tree" aria-label={t("editor.explorer.aria")}>
+            {renderChildren("", 0)}
+          </ul>
+        </aside>
+
+        <section className="editor-main">
+          <div className="editor-tabs" role="tablist" aria-label={t("editor.tabs.aria")}>
+            {tabs.map((tab) => (
+              <div key={tab.path} className={`editor-tab ${active === tab.path ? "is-active" : ""}`}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active === tab.path}
+                  title={tab.path}
+                  className="editor-tab-name"
+                  onClick={() => activate(tab.path)}
+                  onAuxClick={(event) => {
+                    if (event.button === 1) closeTab(tab.path);
+                  }}
+                >
+                  {baseName(tab.path)}
+                  {tab.dirty && (
+                    <span className="editor-dirty" role="img" aria-label={t("editor.tab.unsaved")} title={t("editor.tab.unsaved")}>
+                      ●
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="editor-tab-close"
+                  aria-label={t("editor.tab.close", { name: baseName(tab.path) })}
+                  onClick={() => closeTab(tab.path)}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+            {activeTab && (
+              <button
+                type="button"
+                className="button secondary editor-save"
+                disabled={saving || !activeTab.dirty}
+                onClick={() => void save(activeTab.path)}
+              >
+                {saving ? <LoaderCircle className="spin" size={14} aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+                {saving ? t("editor.saving") : t("editor.save")}
+              </button>
+            )}
+          </div>
+
+          {activeTab?.sensitive && (
+            <div className="notice warning editor-notice" role="note">
+              <ShieldAlert size={18} aria-hidden="true" />
+              <p>{t("editor.sensitive")}</p>
+            </div>
+          )}
+
+          {conflict && (
+            <div className="notice warning editor-notice" role="alert">
+              <AlertTriangle size={18} aria-hidden="true" />
+              <div>
+                <strong>{t("editor.conflict.title")}</strong>
+                <p>{t("editor.conflict.body", { path: conflict })}</p>
+                <div className="editor-create-actions">
+                  <button type="button" className="button primary" onClick={() => void save(conflict, true)}>
+                    {t("editor.conflict.overwrite")}
+                  </button>
+                  <button type="button" className="button secondary" onClick={() => void reloadFromDisk(conflict)}>
+                    {t("editor.conflict.reload")}
+                  </button>
+                  <button type="button" className="button secondary" onClick={() => setConflict(null)}>
+                    {t("editor.conflict.cancel")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {closing && (
+            <div className="notice warning editor-notice" role="alertdialog" aria-label={t("editor.closing.title", { name: baseName(closing) })}>
+              <AlertTriangle size={18} aria-hidden="true" />
+              <div>
+                <strong>{t("editor.closing.title", { name: baseName(closing) })}</strong>
+                <div className="editor-create-actions">
+                  <button
+                    type="button"
+                    className="button primary"
+                    onClick={() => void save(closing).then((saved) => saved && removeTab(closing))}
+                  >
+                    {t("editor.closing.save")}
+                  </button>
+                  <button type="button" className="button secondary" onClick={() => removeTab(closing)}>
+                    {t("editor.closing.discard")}
+                  </button>
+                  <button type="button" className="button secondary" onClick={() => setClosing(null)}>
+                    {t("editor.closing.cancel")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="editor-stage">
+            <CodeEditor
+              ref={editor}
+              ariaLabel={t("page.editor.title")}
+              onDirty={setDirty}
+              onSave={onEditorSave}
+              onCursor={onCursor}
+            />
+            {tabs.length === 0 && (
+              <div className="editor-empty">
+                <EmptyState title={t("editor.empty.title")} description={t("editor.empty.body")} />
+              </div>
+            )}
+          </div>
+
+          <div className="editor-status" role="status">
+            <span>{activeTab ? languageFor(activeTab.path) : ""}</span>
+            <span>{cursor && activeTab ? t("editor.status.position", { line: cursor.line, col: cursor.col }) : ""}</span>
+            <span>{flash || (activeTab?.dirty ? t("editor.status.unsaved") : "")}</span>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

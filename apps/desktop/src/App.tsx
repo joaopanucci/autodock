@@ -42,6 +42,7 @@ import { Contribute } from "./pages/Contribute";
 import { Learn } from "./pages/Learn";
 import { Expo } from "./pages/Expo";
 import { Java } from "./pages/Java";
+import { Editor } from "./pages/Editor";
 import { LANGUAGES, useI18n, type Lang, type TranslationKey } from "./i18n";
 
 const headings: Record<
@@ -58,6 +59,7 @@ const headings: Record<
   learn: { title: "page.learn.title", description: "page.learn.description" },
   expo: { title: "page.expo.title", description: "page.expo.description" },
   java: { title: "page.java.title", description: "page.java.description" },
+  editor: { title: "page.editor.title", description: "page.editor.description" },
   contribute: { title: "page.contribute.title", description: "page.contribute.description" },
   settings: { title: "page.settings.title", description: "page.settings.description" },
 };
@@ -65,6 +67,10 @@ const headings: Record<
 export default function App() {
   const { t, lang, setLang, locale } = useI18n();
   const [page, setPage] = useState<Page>("overview");
+  const [editorVisited, setEditorVisited] = useState(false);
+  useEffect(() => {
+    if (page === "editor") setEditorVisited(true);
+  }, [page]);
   const [path, setPath] = useState("");
   const [scan, setScan] = useState<Scan | null>(null);
   const [projects, setProjects] = useState<SessionProject[]>([]);
@@ -351,6 +357,13 @@ export default function App() {
           />
         )}
         {page === "java" && <Java sessionProjects={projects} />}
+        {/* Built on the first visit (the code editor is heavy), then kept mounted and only hidden, so
+            the open files and their undo history survive a visit elsewhere. */}
+        {editorVisited && (
+          <div hidden={page !== "editor"}>
+            <Editor sessionProjects={projects} />
+          </div>
+        )}
         {page === "contribute" && <Contribute />}
         {page === "environment" && (
           <Environment

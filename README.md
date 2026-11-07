@@ -55,6 +55,7 @@ Setting up Docker for a local project is repetitive: which base image, which por
 | **Run everything** | One button (after you confirm) runs `docker compose up -d --build`, shows the state of every service and lets you stop or remove the containers. Volumes (your data) are never removed. |
 | **Expo: SDK alerts and upgrade** | Shows the SDK of your Expo projects and tells you when a newer **stable** SDK is out ("your project is on SDK 57, but Expo released SDK 58: upgrade?"). The upgrade follows the official steps (`expo install`, `expo install --fix`, `expo-doctor`) **inside Docker**, one SDK at a time, with a backup of `package.json` and the lock file that is restored by itself if something fails. |
 | **Java: upgrade a legacy project** | Reads an old Maven project (Java 6/7/8, Spring Boot 1.x/2.x) and creates, **next to it** (or in a folder you choose), a copy upgraded to **Java 25 and Spring Boot 4**: it walks the copy up one step at a time (Spring Boot 2.7, Java 17, Spring Boot 3.5 with `javax` → `jakarta`, Spring Boot 4, Java 25) with [OpenRewrite](https://docs.openrewrite.org/) **inside Docker**, compiles after each step, adds the dependencies for APIs the JDK no longer ships (JAXB, `javax.annotation`…) and runs the project's own tests. Your project is never modified. |
+| **Code editor** | Open a project folder and edit its files without leaving AutoDock. It uses Monaco, the editor of VS Code: file explorer, tabs, colours for many languages, new files and folders, and save with a check that the file did not change on disk in the meantime. It only sees the folder you choose, never follows links that lead outside it, and works offline. |
 | **Updates inside the app** | When a new version is released, AutoDock tells you and updates itself with one click (no new download). The update is **verified with a signature** before it is installed, nothing is installed without your click, and the check (once a day, one request to GitHub) can be turned off in Settings. |
 | **Open in your IDE** | After creating, opens the project in whichever of VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed or Sublime you have installed. |
 | **Environment view** | Analyzes projects, diagnoses your environment, lists containers, shows metrics and logs, all read-only. |
@@ -306,6 +307,8 @@ npm --prefix apps/desktop run tauri dev
 - [ ] Spring Initializr (choose dependencies)
 - [x] Expo: detect the SDK, alert when a newer stable one is out and upgrade with backup
 - [x] Java: upgrade a legacy Maven project to the current JDK and Spring Boot (in a copy)
+- [x] Code editor inside the app (explorer, tabs, save)
+- [ ] Editor: compare an upgrade with the original, search in all files, integrated terminal, extensions
 - [ ] Gradle and more services (Kafka, MinIO…)
 - [ ] Production Dockerfiles (multi-stage)
 - [x] Updates inside the app (signed, with your confirmation)

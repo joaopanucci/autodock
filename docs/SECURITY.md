@@ -56,6 +56,18 @@ Inspecting a Java project only reads `pom.xml` files (DTDs are not expanded) and
 - The build output (`target`) is removed from the copy afterwards. On failure the copy stays for inspection (the report names the step and shows the compiler output); if Docker is missing, nothing ran and the copy is removed again.
 - Gradle projects, and folders that are a module of a larger Maven tree (a parent pom outside the folder), are refused with the reason.
 
+## Code editor
+
+The editor reads and writes files, so it is held to strict rules (`autodock-core::editor_fs`):
+
+- It only sees the folder the person chose. Every path from the interface must be relative and made of plain names: no `..`, no drive or leading separator, no control characters, at most 64 parts and 255 bytes per name. A backslash is always a separator.
+- Every part of a path that exists must be a real folder or file. **Links are never followed**: symbolic links and, on Windows, junctions and any other reparse point are refused for reading, listing, writing and creating, so nothing can lead outside the chosen folder. A link is listed as a link and cannot be opened.
+- Files above 2 MB, binary files (a NUL byte in the first 8,000 bytes) and files that are not UTF-8 are refused with the reason instead of being cut or converted, because saving them would corrupt them. A UTF-8 byte order mark is kept on save.
+- Saving writes a temporary file next to the original and renames it over it (a crash never leaves half a file), keeps the permissions, and only works on an existing regular file. The editor sends back the modified time it read; if the file changed on disk since, nothing is written unless the person chooses to overwrite.
+- New files and folders are created exclusively (`create_new`): nothing is ever overwritten, and the name must be one plain component.
+- Names that usually hold secrets (`.env` and variants other than examples, keys, certificates, `id_rsa`…) show a notice. Their content is only shown on the screen and never sent anywhere. Nothing in the editor executes files.
+- Monaco is bundled with the app: its workers are files of the app, the page's security policy (`default-src 'self'`) is unchanged and no code or font comes from a network. It is loaded on the first visit to the page.
+
 ## In-app updates
 
 AutoDock updates itself with the official Tauri updater, with these limits:

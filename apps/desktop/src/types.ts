@@ -47,6 +47,7 @@ export type Page =
   | "learn"
   | "expo"
   | "java"
+  | "editor"
   | "settings";
 
 export type DockerContainer = {
@@ -518,3 +519,25 @@ export type JavaUpgradeReport = {
   durationMs: number;
   nextSteps: string[];
 };
+
+export type EditorRoot = { path: string; name: string };
+
+export type EditorEntry = {
+  name: string;
+  kind: "file" | "dir" | "link" | "other";
+  size: number;
+};
+
+export type EditorListing = { entries: EditorEntry[]; truncated: boolean };
+
+export type EditorFile = {
+  path: string;
+  text: string;
+  size: number;
+  modifiedMs: number;
+  bom: boolean;
+  /** The name suggests secrets (.env, keys, certificates). */
+  sensitive: boolean;
+};
+
+export type EditorSaveReport = { modifiedMs: number; size: number };

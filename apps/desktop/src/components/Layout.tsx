@@ -13,6 +13,7 @@ import {
   GraduationCap,
   Smartphone,
   Coffee,
+  Code2,
   ChevronRight,
   ArrowUpRight,
   type LucideIcon,
@@ -27,16 +28,19 @@ export const navigation: {
   labelKey: TranslationKey;
   icon: LucideIcon;
   planned?: boolean;
+  /** The sidebar group; items without one are listed at the bottom. */
+  group?: "workspace" | "operations";
 }[] = [
-  { id: "overview", labelKey: "nav.overview", icon: LayoutDashboard },
-  { id: "projects", labelKey: "nav.projects", icon: FolderGit2 },
-  { id: "setup", labelKey: "nav.setup", icon: WandSparkles },
-  { id: "expo", labelKey: "nav.expo", icon: Smartphone },
-  { id: "java", labelKey: "nav.java", icon: Coffee },
-  { id: "environment", labelKey: "nav.environment", icon: SlidersHorizontal },
-  { id: "containers", labelKey: "nav.containers", icon: Boxes },
-  { id: "monitoring", labelKey: "nav.monitoring", icon: Activity },
-  { id: "console", labelKey: "nav.console", icon: TerminalSquare },
+  { id: "overview", labelKey: "nav.overview", icon: LayoutDashboard, group: "workspace" },
+  { id: "projects", labelKey: "nav.projects", icon: FolderGit2, group: "workspace" },
+  { id: "setup", labelKey: "nav.setup", icon: WandSparkles, group: "workspace" },
+  { id: "expo", labelKey: "nav.expo", icon: Smartphone, group: "workspace" },
+  { id: "java", labelKey: "nav.java", icon: Coffee, group: "workspace" },
+  { id: "editor", labelKey: "nav.editor", icon: Code2, group: "workspace" },
+  { id: "environment", labelKey: "nav.environment", icon: SlidersHorizontal, group: "operations" },
+  { id: "containers", labelKey: "nav.containers", icon: Boxes, group: "operations" },
+  { id: "monitoring", labelKey: "nav.monitoring", icon: Activity, group: "operations" },
+  { id: "console", labelKey: "nav.console", icon: TerminalSquare, group: "operations" },
   { id: "learn", labelKey: "nav.learn", icon: GraduationCap },
   { id: "settings", labelKey: "nav.settings", icon: Settings2 },
   { id: "contribute", labelKey: "nav.contribute", icon: HeartHandshake },
@@ -78,7 +82,7 @@ export function Layout({
         </div>
         <nav aria-label={t("nav.aria")}>
           <p className="nav-label">{t("nav.group.workspace")}</p>
-          {navigation.slice(0, 5).map((item) => (
+          {navigation.filter((item) => item.group === "workspace").map((item) => (
             <button
               key={item.id}
               aria-current={page === item.id ? "page" : undefined}
@@ -97,7 +101,7 @@ export function Layout({
             </button>
           ))}
           <p className="nav-label secondary-label">{t("nav.group.operations")}</p>
-          {navigation.slice(5, 9).map((item) => (
+          {navigation.filter((item) => item.group === "operations").map((item) => (
             <button
               key={item.id}
               aria-current={page === item.id ? "page" : undefined}
