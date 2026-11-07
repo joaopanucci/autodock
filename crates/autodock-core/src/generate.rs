@@ -1433,6 +1433,8 @@ pub fn preview(request: &GenerateRequest) -> Result<GeneratePlan, String> {
 }
 
 fn create_new(path: &Path, content: &str, private: bool) -> std::io::Result<()> {
+    #[cfg(not(unix))]
+    let _ = private; // permissões 0600/0644 só existem no Unix
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]

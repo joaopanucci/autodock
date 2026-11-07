@@ -343,11 +343,17 @@ pub fn run(request: &ScaffoldRequest) -> Result<ScaffoldReport, String> {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) if started.elapsed() >= TIMEOUT => {
-                let _ = Command::new(&docker)
+                let mut cleanup = Command::new(&docker);
+                cleanup
                     .args(["rm", "-f", &container])
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
+                    .stderr(Stdio::null());
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    cleanup.creation_flags(0x0800_0000);
+                }
+                let _ = cleanup.status();
                 let _ = child.kill();
                 let _ = child.wait();
                 break None;

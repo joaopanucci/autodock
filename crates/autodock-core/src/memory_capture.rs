@@ -12,6 +12,25 @@ use std::{
 
 pub(crate) const STREAM_LIMIT: usize = 128 * 1024;
 
+/// Inicia o comando em um grupo/Job Object sem abrir janela de console no Windows.
+///
+/// `command_group` substitui as flags de criação do `Command` ao iniciar o grupo
+/// (aplica apenas as do builder + `CREATE_SUSPENDED`). Por isso `CREATE_NO_WINDOW`
+/// precisa ser informado pelo builder; defini-lo no `Command` não tem efeito.
+pub(crate) fn spawn_hidden_group(
+    command: &mut Command,
+) -> std::io::Result<command_group::GroupChild> {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.group().creation_flags(CREATE_NO_WINDOW).spawn()
+    }
+    #[cfg(not(windows))]
+    {
+        command.group_spawn()
+    }
+}
+
 #[derive(Default)]
 struct Capture {
     bytes: Vec<u8>,
@@ -98,12 +117,7 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, lines: usize) -> Out
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
-    let mut child = match command.group_spawn() {
+    let mut child = match spawn_hidden_group(command) {
         Ok(child) => child,
         Err(_) => {
             result.detail = tr!(
@@ -224,4 +238,56 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, lines: usize) -> Out
     }
     result.duration_ms = started.elapsed().as_millis();
     result
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use std::os::windows::process::CommandExt;
+
+    const PROBE_ENV: &str = "AUTODOCK_CONSOLE_PROBE_OUT";
+    const TEST_NAME: &str =
+        "memory_capture::tests::child_console_process_has_no_visible_console_window";
+
+    /// Regressão: processos de console iniciados pelo app (GUI, sem console) não podem
+    /// abrir janela. O teste se reexecuta como processo DETACHED (sem console, como o app
+    /// instalado) e verifica que o filho enxerga `GetConsoleWindow() == 0`.
+    #[test]
+    fn child_console_process_has_no_visible_console_window() {
+        if let Some(out_path) = std::env::var_os(PROBE_ENV) {
+            // Modo auxiliar: executa sem console herdado e grava o resultado.
+            let script = "Add-Type -Namespace W -Name N -MemberDefinition \
+                '[DllImport(\"kernel32.dll\")] public static extern System.IntPtr GetConsoleWindow();'; \
+                [Console]::Out.WriteLine([W.N]::GetConsoleWindow().ToInt64())";
+            let mut command = Command::new("powershell.exe");
+            command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+            let output = run(&mut command, Duration::from_secs(30), 10);
+            std::fs::write(
+                out_path,
+                format!("{:?}|{}", output.exit_code, output.stdout.trim()),
+            )
+            .unwrap();
+            return;
+        }
+
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("probe.txt");
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST_NAME, "--test-threads=1"])
+            .env(PROBE_ENV, &out)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(DETACHED_PROCESS)
+            .status()
+            .unwrap();
+
+        assert!(status.success(), "processo auxiliar falhou");
+        assert_eq!(
+            std::fs::read_to_string(out).unwrap(),
+            "Some(0)|0",
+            "o processo filho abriu uma janela de console"
+        );
+    }
 }

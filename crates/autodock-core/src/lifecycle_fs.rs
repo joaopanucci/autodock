@@ -11,6 +11,8 @@ use std::{
 
 pub(crate) struct Directory {
     path: PathBuf,
+    // No Windows o handle só precisa permanecer aberto (fixa o diretório).
+    #[cfg_attr(windows, allow(dead_code))]
     file: File,
     #[cfg(windows)]
     _parents: Vec<File>,

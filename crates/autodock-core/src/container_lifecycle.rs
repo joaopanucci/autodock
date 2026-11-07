@@ -500,7 +500,7 @@ mod tests {
             self.calls += 1;
             assert_eq!(arguments.last(), Some(&id()));
             LifecycleOutput {
-                status: self.status.clone(),
+                status: self.status,
                 exit_code: self.exit,
                 truncated: self.truncated,
                 duration_ms: 1,
