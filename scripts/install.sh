@@ -76,7 +76,7 @@ actual="$(shasum -a 256 "$tmp/${asset}" | awk '{ print $1 }')"
 mkdir -p "$mount"
 if ! hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mount" "$tmp/${asset}" >"$tmp/hdiutil.log" 2>&1; then
   # Show why: a bare "could not open" gives nothing to act on.
-  sed 's/^/  hdiutil: /' "$tmp/hdiutil.log" >&2
+  tail -n 8 "$tmp/hdiutil.log" | sed 's/^/  hdiutil: /' >&2
   die "não foi possível abrir o DMG." "could not open the DMG."
 fi
 [ -d "$mount/AutoDock.app" ] || die "AutoDock.app não está no DMG." "AutoDock.app is not in the DMG."
