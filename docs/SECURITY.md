@@ -40,3 +40,15 @@ Inspecting an Expo project only reads `package.json`, the lock file, `.gitignore
 - Only `package.json` and the lock file may change. Before the container starts, copies of them are written to `~/.autodock/backups/expo/<id>/` (outside the project) with a manifest; if the upgrade fails, times out or Docker is missing, they are put back automatically and a lock file that did not exist before is removed again. The generated `android/` and `ios/` folders are never deleted or edited: the report lists what to do about them.
 - A backup can be restored later (`autodock expo restore`, with confirmation). The backup id is validated (`<digits>-<digits>-<digits>`), the backup must belong to the same project, and the interface warns when `package.json` changed after the upgrade because restoring discards that work.
 - npm falls back to `--legacy-peer-deps` only after an `ERESOLVE` error, and the report says so.
+
+## In-app updates
+
+AutoDock updates itself with the official Tauri updater, with these limits:
+
+- **Signed updates only.** Every installer of a release is signed in the release workflow with a private key that exists only as repository secrets (`TAURI_SIGNING_PRIVATE_KEY` and its password) and on the maintainer's computer. The matching **public key is built into the app** (`plugins.updater.pubkey` in `tauri.conf.json`). The updater verifies the signature of the downloaded file against it and refuses anything else, so a changed file, a compromised download host or a wrong `latest.json` cannot install code.
+- **One endpoint, HTTPS only.** The app reads `https://github.com/joaopanucci/autodock/releases/latest/download/latest.json` (fixed in the config; plain HTTP is refused) and downloads the installer named there from the same release.
+- **What is sent.** One HTTPS request to GitHub when the app opens (at most once a day, and only while *Check for updates when AutoDock opens* is on, which is the default; it can be turned off in Settings, where *Check now* is also available). No project data, path or identifier is added; GitHub sees the request like any download.
+- **Nothing installs by itself.** A new version only shows a notice; the download starts when the user clicks *Update now*. *Later* and *Skip this version* are remembered in `~/.autodock/update.json`, which holds only these choices and the time of the last check.
+- **Notes are text.** The release notes in the notice are shown as plain text, never as HTML.
+- **The webview cannot call the updater.** The updater plugin's own commands are not granted in the capabilities; the interface only calls AutoDock's commands (`update_auto_check`, `update_check_now`, `update_install`, `update_restart` and three for the preferences), which use the fixed endpoint and public key.
+- **Release side.** The *Build installers* workflow fails the release when an installer or its signature is missing, and generates `latest.json` with `scripts/make-latest-json.mjs` (tested in CI).

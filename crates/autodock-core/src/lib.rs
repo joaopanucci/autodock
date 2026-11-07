@@ -8,6 +8,7 @@ pub mod expo_watch;
 pub mod lifecycle_journal;
 pub mod logs;
 mod memory_capture;
+pub mod update_prefs;
 pub use logs::{query_container_logs, LogsReport, LogsRequest};
 pub mod monitoring;
 pub use monitoring::{collect_container_metrics, ContainerMetrics, MonitoringReport};

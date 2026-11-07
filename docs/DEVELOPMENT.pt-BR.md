@@ -81,6 +81,15 @@ Para lançar uma versão:
 2. Depois do merge, envie a tag `vX.Y.Z` na `main`. O workflow **Build installers** gera macOS (universal), Windows e Linux e cria o release (ou anexa a um existente) com um `SHA256SUMS.txt`.
 3. Confira os arquivos e os checksums, escreva as notas do release em inglês e publique.
 
+O workflow também assina os instaladores para o atualizador do app e envia os arquivos `.sig` e um `latest.json` (o manifesto de atualização). Publicar o release é o que torna a nova versão visível para os apps instalados, porque o app lê `releases/latest/download/latest.json`.
+
+### Chave de assinatura das atualizações
+
+- O par de chaves é criado uma vez com `npx tauri signer generate -w ~/.tauri/autodock-updater.key` (dentro de `apps/desktop`). A chave **pública** fica em `plugins.updater.pubkey` de `apps/desktop/src-tauri/tauri.conf.json`; a **privada** e a senha são os segredos do repositório `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Nunca versione a chave privada.
+- **Guarde um backup do arquivo da chave privada e da senha** (um gerenciador de senhas). Se forem perdidos, os apps instalados não aceitam atualizações assinadas por uma chave nova: as pessoas teriam de instalar essa versão à mão uma vez.
+- Builds locais também precisam da chave, porque `createUpdaterArtifacts` está ligado: defina `TAURI_SIGNING_PRIVATE_KEY` (o conteúdo do arquivo) e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` antes do `tauri build`.
+- Testar uma atualização sem publicar: gere duas versões com `--config` apontando `plugins.updater.endpoints` para `http://127.0.0.1:<porta>/latest.json` e `dangerousInsecureTransportProtocol: true` (só nos builds de teste), sirva um `latest.json` que cite o instalador mais novo e o `.sig` dele, instale o mais antigo e deixe-o se atualizar.
+
 O workflow **Smoke test installers** instala um release publicado em runners limpos de Windows, macOS e Linux (pelos scripts `scripts/install.ps1` e `scripts/install.sh`), abre o app e salva um screenshot.
 
 ## Traduções e screenshots

@@ -401,3 +401,32 @@ export type ExpoRestoreReport = {
   removed: string[];
   detail: string;
 };
+
+export type UpdateOffer = {
+  currentVersion: string;
+  version: string;
+  /** Release notes, plain text. */
+  notes: string | null;
+  /** Seconds since the Unix epoch. */
+  date: number | null;
+};
+
+export type UpdateCheck = {
+  /** A request was made (false when the automatic check is off or not due). */
+  checked: boolean;
+  offer: UpdateOffer | null;
+  error: string | null;
+};
+
+export type UpdatePrefs = {
+  schemaVersion: number;
+  checkOnStart: boolean;
+  /** Seconds since the Unix epoch. */
+  lastCheck: number | null;
+  skippedVersion: string | null;
+};
+
+export type DownloadEvent =
+  | { event: "started"; contentLength: number | null }
+  | { event: "progress"; chunkLength: number }
+  | { event: "finished" };

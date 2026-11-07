@@ -16,10 +16,19 @@ import type {
   Page,
   Scan,
   SessionProject,
+  UpdateOffer,
 } from "./types";
 import { displayPath, rememberProject } from "./model";
 import { Layout, navigation } from "./components/Layout";
 import { ExpoAlert } from "./components/ExpoAlert";
+import { UpdateBanner, type UpdateState } from "./components/UpdateBanner";
+import { UpdatesPanel } from "./components/UpdatesPanel";
+import {
+  checkAutomatically,
+  installUpdate as downloadAndInstall,
+  restart as restartApp,
+  skipVersion,
+} from "./updater";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { Badge, Panel } from "./components/ui";
 import { Overview } from "./pages/Overview";
@@ -94,6 +103,43 @@ export default function App() {
       .catch((e) =>
         setError(typeof e === "string" ? e : e instanceof Error ? e.message : String(e)),
       );
+  }
+  // A new AutoDock version. The check when the app opens only reaches the network if the
+  // user left it on and the last one is over a day old; nothing is installed without a click.
+  const [update, setUpdate] = useState<UpdateState | null>(null);
+  const offerUpdate = useCallback(
+    (offer: UpdateOffer) =>
+      setUpdate({ offer, phase: "offer", done: 0, total: null, error: "" }),
+    [],
+  );
+  const updateChecked = useRef(false);
+  useEffect(() => {
+    // Once per start (a re-run of the effect must not ask the network twice).
+    if (updateChecked.current) return;
+    updateChecked.current = true;
+    checkAutomatically()
+      .then((report) => {
+        if (report.offer) offerUpdate(report.offer);
+      })
+      .catch(() => undefined);
+  }, [offerUpdate]);
+  async function startUpdate() {
+    if (!update) return;
+    setUpdate({ ...update, phase: "downloading", done: 0, total: null, error: "" });
+    try {
+      await downloadAndInstall((done, total) =>
+        setUpdate((current) => current && { ...current, done, total }),
+      );
+      setUpdate((current) => current && { ...current, phase: "ready" });
+    } catch (e) {
+      const detail =
+        typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+      setUpdate((current) => current && { ...current, phase: "error", error: detail });
+    }
+  }
+  function skipUpdate() {
+    if (update) void skipVersion(update.offer.version).catch(() => undefined);
+    setUpdate(null);
   }
   useEffect(() => {
     if (previousPage.current === page) return;
@@ -203,6 +249,13 @@ export default function App() {
           </button>
         )}
       </div>
+      <UpdateBanner
+        state={update}
+        install={() => void startUpdate()}
+        later={() => setUpdate(null)}
+        skip={skipUpdate}
+        restart={() => void restartApp().catch(() => undefined)}
+      />
       {page !== "expo" && (
         <ExpoAlert state={expo} open={openExpo} dismiss={dismissExpo} />
       )}
@@ -328,6 +381,7 @@ export default function App() {
                 ))}
               </select>
             </Panel>
+            <UpdatesPanel onOffer={offerUpdate} />
             <div className="requirements-grid">
               <Panel title={t("settings.appearance.title")} eyebrow={t("settings.appearance.eyebrow")}>
                 <div className="setting-row">

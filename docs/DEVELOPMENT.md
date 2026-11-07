@@ -81,6 +81,15 @@ Releasing:
 2. After it is merged, push a tag `vX.Y.Z` on `main`. The **Build installers** workflow builds macOS (universal), Windows and Linux and creates the release (or attaches to an existing one) with a `SHA256SUMS.txt`.
 3. Check the files and checksums, write the release notes in English and publish.
 
+The workflow also signs the installers for the in-app updater and uploads their `.sig` files plus a `latest.json` (the update manifest). Publishing the release is what makes the new version visible to installed apps, because the app reads `releases/latest/download/latest.json`.
+
+### Update signing key
+
+- The key pair is made once with `npx tauri signer generate -w ~/.tauri/autodock-updater.key` (inside `apps/desktop`). The **public** key is in `plugins.updater.pubkey` of `apps/desktop/src-tauri/tauri.conf.json`; the **private** key and its password are the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Never commit the private key.
+- **Keep a backup of the private key file and its password** (a password manager). If they are lost, installed apps cannot accept updates signed with a new key: people would have to install that version by hand once.
+- Local builds need the key too, because `createUpdaterArtifacts` is on: set `TAURI_SIGNING_PRIVATE_KEY` (the file content) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` before `tauri build`.
+- Testing an update without publishing: build two versions with `--config` pointing `plugins.updater.endpoints` to `http://127.0.0.1:<port>/latest.json` and `dangerousInsecureTransportProtocol: true` (test builds only), serve a `latest.json` that names the newer installer and its `.sig`, install the older one and let it update.
+
 The **Smoke test installers** workflow installs a published release on clean Windows, macOS and Linux runners (through `scripts/install.ps1` and `scripts/install.sh`), opens the app and saves a screenshot.
 
 ## Translations and screenshots

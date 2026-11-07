@@ -1,6 +1,6 @@
 [package]
 name = "autodock-desktop"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 license.workspace = true
 
@@ -15,3 +15,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 autodock-core = { path = "../../../crates/autodock-core" }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
