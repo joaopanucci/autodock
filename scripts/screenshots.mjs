@@ -1,6 +1,19 @@
 // Gera as imagens do README com a interface real e dados de exemplo (sem Docker).
 // Uso: cargo build -p autodock-cli && npm --prefix apps/desktop run dev &
 //      node scripts/screenshots.mjs
+//
+// Opções (variáveis de ambiente):
+//   AUTODOCK_LANG=en|pt        idioma da interface (padrão pt)
+//   AUTODOCK_THEME=dark|light  tema (padrão light)
+//   AUTODOCK_OUT=<pasta>       onde gravar (padrão docs/screenshots[/dark][/en])
+//   AUTODOCK_VIEWPORT=1440x810 e AUTODOCK_SCALE=1.3333  tamanho da janela e escala (padrão 1360x860 e 2;
+//                              o exemplo dá imagens de 1920x1080, boas para vídeo)
+//   AUTODOCK_JAVA_DIR=<pasta>  liga as telas de Java, do editor e do terminal (14 a 19). A pasta tem
+//                              in/<projeto> (um projeto Maven legado), out/<projeto>-java25 (a cópia
+//                              atualizada) e os JSON inspect.json, plan.json e report.json de
+//                              `autodock --lang <idioma> java inspect|plan|upgrade <projeto> --into out --json`
+//                              (o upgrade precisa de Docker). Os dados do backend são esses de verdade;
+//                              só o que a tela mostraria sobre Docker, containers e a saída do terminal é de exemplo.
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -14,7 +27,9 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const lang = process.env.AUTODOCK_LANG === "en" ? "en" : "pt";
 // AUTODOCK_THEME=dark writes to docs/screenshots/dark; the default is the light theme.
 const theme = process.env.AUTODOCK_THEME === "dark" ? "dark" : "light";
-const out = path.join(root, "docs/screenshots", theme === "dark" ? "dark" : "", lang === "en" ? "en" : "");
+const out = process.env.AUTODOCK_OUT ?? path.join(root, "docs/screenshots", theme === "dark" ? "dark" : "", lang === "en" ? "en" : "");
+const [viewWidth, viewHeight] = (process.env.AUTODOCK_VIEWPORT ?? "1360x860").split("x").map(Number);
+const viewScale = Number(process.env.AUTODOCK_SCALE ?? 2);
 fs.mkdirSync(out, { recursive: true });
 // UI labels the script clicks, per language.
 const L = {
@@ -151,19 +166,157 @@ const expo = {
   },
 };
 
+// Words of the interface in this language, so the script clicks what a person would read.
+const dictSource = fs.readFileSync(path.join(root, "apps/desktop/src/i18n", `${lang}.ts`), "utf8");
+const dict = Object.fromEntries(
+  [...dictSource.matchAll(/^\s*"([^"]+)":\s*"((?:[^"\\]|\\.)*)",?\s*$/gm)].map(([, key, value]) => [key, JSON.parse(`"${value}"`)]),
+);
+const T = (key, vars = {}) => (dict[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? `{${name}}`));
+const startOf = (text, size = 24) => new RegExp(text.slice(0, size).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
+// Java: real inspection, plan and report of a legacy project, and the real files of the project and
+// of its upgraded copy, shown under a made-up folder so no path of this computer appears.
+let tour = null;
+if (process.env.AUTODOCK_JAVA_DIR) {
+  const javaDir = process.env.AUTODOCK_JAVA_DIR;
+  const shown = "/Users/maria/projetos";
+  const [name] = fs.readdirSync(path.join(javaDir, "in"));
+  const inDir = path.join(javaDir, "in", name);
+  const outDir = path.join(javaDir, "out", `${name}-java25`);
+  const slashes = (text) => text.replaceAll("\\", "/").replace("//?/", "");
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const swaps = [
+    [outDir, `${shown}/${name}-java25`],
+    [inDir, `${shown}/${name}`],
+  ].flatMap(([from, to]) => [[slashes(path.resolve(from)), to], [slashes(fs.realpathSync.native(from)), to]]);
+  const hide = (text) => swaps.reduce((acc, [from, to]) => acc.replace(new RegExp(escape(from), "gi"), to), slashes(text));
+  const deep = (value) =>
+    typeof value === "string" ? hide(value) : Array.isArray(value) ? value.map(deep) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, deep(v)])) : value;
+  const readJson = (file) => deep(JSON.parse(fs.readFileSync(path.join(javaDir, file), "utf8").replace(/^\uFEFF/, "")));
+  const readTree = (dir, prefix = "") =>
+    fs.readdirSync(dir, { withFileTypes: true }).reduce((files, entry) => {
+      if (["target", ".git", "node_modules"].includes(entry.name)) return files;
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) return { ...files, ...readTree(path.join(dir, entry.name), relative) };
+      const bytes = fs.readFileSync(path.join(dir, entry.name));
+      return bytes.length > 200_000 || bytes.includes(0) ? files : { ...files, [relative]: bytes.toString("utf8") };
+    }, {});
+  tour = {
+    name,
+    project: `${shown}/${name}`,
+    copy: `${shown}/${name}-java25`,
+    java: { project: readJson("inspect.json"), plan: readJson("plan.json"), report: readJson("report.json") },
+    fs: { [`${shown}/${name}`]: readTree(inDir), [`${shown}/${name}-java25`]: readTree(outDir) },
+  };
+}
+
 const browser = await chromium.launch({ channel: process.env.AUTODOCK_BROWSER_CHANNEL ?? (process.platform === "win32" ? "msedge" : "chrome") });
-const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: theme, locale: lang === "en" ? "en-US" : "pt-BR" });
+const context = await browser.newContext({ viewport: { width: viewWidth, height: viewHeight }, deviceScaleFactor: viewScale, colorScheme: theme, locale: lang === "en" ? "en-US" : "pt-BR" });
 const page = await context.newPage();
 await page.addInitScript(({ theme, lang }) => {
   localStorage.setItem("autodock.theme", theme);
   localStorage.setItem("autodock.language", lang);
 }, { theme, lang });
-await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes, expo }) => {
+await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes, expo, tour }) => {
+  const callbacks = {};
+  let nextCallback = 1;
+  let ticks = 0;
+  const written = {};
+  const fileList = (root) => ({ ...(tour?.fs[root] ?? {}), ...(written[root] ?? {}) });
   window.__TAURI_INTERNALS__ = {
-    transformCallback: () => 1,
-    invoke: async (command) => {
+    transformCallback: (callback) => {
+      const id = nextCallback++;
+      callbacks[id] = callback;
+      return id;
+    },
+    unregisterCallback: (id) => delete callbacks[id],
+    invoke: async (command, args) => {
       switch (command) {
-        case "plugin:dialog|open": return project;
+        case "plugin:dialog|open": return window.__dialogPath ?? project;
+        case "update_get_prefs": return { schemaVersion: 1, checkOnStart: true, lastCheck: Math.floor(Date.now() / 1000) - 3600, skippedVersion: null };
+        case "update_auto_check":
+        case "update_check_now": return { checked: true, offer: null, error: null };
+        case "update_set_check_on_start": return { schemaVersion: 1, checkOnStart: args.enabled, lastCheck: null, skippedVersion: null };
+        case "collect_container_metrics": {
+          ticks += 1;
+          const wave = (seed, base, amplitude) => Math.max(1, Math.round(base + amplitude * Math.sin(ticks / 2 + seed) + (ticks * seed) % 5));
+          const row = (id, name, seed, cpu, megabytes, limit) => ({
+            id, name, cpuPercent: wave(seed, cpu, cpu / 2), memoryUsageBytes: (megabytes + ticks * seed) * 1e6, memoryLimitBytes: limit * 1e6,
+            memoryPercent: ((megabytes + ticks * seed) / limit) * 100, networkRxBytes: ticks * ticks * 30_000 * seed, networkTxBytes: ticks * ticks * 12_000 * seed,
+          });
+          return {
+            schemaVersion: 1, collectedAtUnixMs: Date.now() - 120_000 + ticks * 5000,
+            containers: [row("a1b2c3d4e5f6", "loja-online", 1, 22, 380, 1024), row("b2c3d4e5f6a1", "loja-online-postgres", 2, 9, 210, 1024), row("c3d4e5f6a1b2", "loja-online-redis", 3, 3, 18, 256)],
+          };
+        }
+        case "execute_console_operation": {
+          const lines = [
+            { ID: "a1b2c3d4e5f6", Names: "loja-online", Image: "loja-online-app", State: "running", Status: "Up 2 hours", Ports: "0.0.0.0:3000->3000/tcp" },
+            { ID: "b2c3d4e5f6a1", Names: "loja-online-postgres", Image: "postgres:16-alpine", State: "running", Status: "Up 2 hours (healthy)", Ports: "127.0.0.1:5432->5432/tcp" },
+            { ID: "c3d4e5f6a1b2", Names: "loja-online-redis", Image: "redis:7-alpine", State: "running", Status: "Up 2 hours (healthy)", Ports: "127.0.0.1:6379->6379/tcp" },
+          ];
+          return {
+            schemaVersion: 1, operation: args.operation, label: args.operation, command: "docker ps --all --format json", status: "available", exitCode: 0,
+            stdout: args.operation === "containers" ? lines.map((line) => JSON.stringify(line)).join("\n") : "Docker version 27.3.1, build ce12230", stderr: "", detail: "", truncated: false, durationMs: 84,
+          };
+        }
+        case "java_inspect": return tour.java.project;
+        case "java_upgrade_plan": return tour.java.plan;
+        case "java_upgrade_run": return tour.java.report;
+        case "editor_open_root": return { path: args.path, name: args.path.split("/").pop() };
+        case "editor_list": {
+          const prefix = args.path ? `${args.path}/` : "";
+          const entries = new Map();
+          for (const [relative, text] of Object.entries(fileList(args.root))) {
+            if (!relative.startsWith(prefix)) continue;
+            const [first, ...more] = relative.slice(prefix.length).split("/");
+            entries.set(first, more.length ? { name: first, kind: "dir", size: 0 } : { name: first, kind: "file", size: text.length });
+          }
+          const sorted = [...entries.values()].sort((a, b) => Number(a.kind !== "dir") - Number(b.kind !== "dir") || a.name.localeCompare(b.name));
+          return { entries: sorted, truncated: false };
+        }
+        case "editor_read": {
+          const text = fileList(args.root)[args.path];
+          if (text === undefined) throw `${args.path}: not found`;
+          return { path: args.path, text, size: text.length, modifiedMs: 1000, bom: false, sensitive: false };
+        }
+        case "editor_write": {
+          written[args.root] = { ...(written[args.root] ?? {}), [args.path]: args.text };
+          return { modifiedMs: 2000, size: args.text.length };
+        }
+        case "editor_search": {
+          const needle = args.caseSensitive ? args.query : args.query.toLowerCase();
+          const matches = [];
+          let filesWithMatches = 0;
+          const all = Object.entries(fileList(args.root)).sort(([a], [b]) => a.localeCompare(b));
+          for (const [relative, text] of all) {
+            let found = false;
+            text.split("\n").forEach((line, index) => {
+              const at = (args.caseSensitive ? line : line.toLowerCase()).indexOf(needle);
+              if (at < 0) return;
+              found = true;
+              const preview = line.trim();
+              matches.push({ path: relative, line: index + 1, column: at + 1, preview, previewStart: at - (line.length - line.trimStart().length), length: needle.length });
+            });
+            if (found) filesWithMatches += 1;
+          }
+          return { matches, filesScanned: all.length, filesWithMatches, filesSkipped: 0, truncated: false };
+        }
+        case "terminal_images": return [
+          { id: "maven-jdk25", label: "Java (Maven + JDK 25)", image: "maven:3.9-eclipse-temurin-25" },
+          { id: "node22", label: "Node.js 22", image: "node:22-bookworm-slim" },
+          { id: "python313", label: "Python 3.13", image: "python:3.13-slim" },
+          { id: "debian", label: "Debian", image: "debian:bookworm-slim" },
+        ];
+        case "terminal_default_image": return "maven-jdk25";
+        case "terminal_start": {
+          let index = 0;
+          window.__terminal = (message) => callbacks[args.onEvent.id]({ index: index++, message });
+          return 1;
+        }
+        case "terminal_write":
+        case "terminal_resize":
+        case "terminal_stop": return null;
         case "scan_project": return scan;
         case "doctor_environment": return doctor;
         case "list_docker_containers": return containers;
@@ -183,7 +336,7 @@ await page.addInitScript(({ scan, doctor, containers, files, project, ports, pre
       }
     },
   };
-}, { scan, doctor, containers, files, project, ports, previewNotes, expo });
+}, { scan, doctor, containers, files, project, ports, previewNotes, expo, tour });
 
 const shot = async (name) => {
   await page.waitForTimeout(250);
@@ -201,6 +354,14 @@ await page.getByRole("button", { name: L.selectFolder }).click();
 await page.getByRole("button", { name: L.analyze }).click();
 await page.getByText(L.modules).first().waitFor();
 await shot("02-analise");
+
+// Visão geral com um projeto analisado e o ambiente verificado
+await nav(T("nav.overview"));
+await page.getByRole("button", { name: T("env.verify") }).first().click();
+await page.getByText("v22.11.0").first().waitFor().catch(() => {});
+await nav(T("nav.overview"));
+await page.waitForTimeout(400);
+await shot("24-visao-geral-projetos");
 
 // Assistente
 await nav(L.assistant);
@@ -245,6 +406,96 @@ await page.getByText(L.upgraded).waitFor();
 await page.evaluate(() => document.querySelectorAll(".expo-report details").forEach((d) => { d.open = true; }));
 await page.locator(".expo-report").scrollIntoViewIfNeeded();
 await shot("13-expo-relatorio");
+
+// Monitoramento, console, aprender e configurações
+await nav(T("nav.monitoring"));
+const refreshMetrics = page.getByRole("button", { name: T("containers.refresh") }).first();
+for (let i = 0; i < 14; i++) {
+  await refreshMetrics.click();
+  await page.waitForTimeout(120);
+}
+await shot("20-monitoramento");
+await page.locator("svg.ad-monitor-chart").nth(2).evaluate((chart) => chart.scrollIntoView({ block: "center" }));
+await shot("25-monitoramento-graficos");
+await nav(T("nav.console"));
+await page.getByRole("button", { name: T("console.run") }).click();
+await page.locator(".console-table").first().waitFor();
+await shot("21-console");
+await page.locator(".console-table").first().evaluate((table) => table.scrollIntoView({ block: "center" }));
+await shot("26-console-resultado");
+await nav(T("nav.learn"));
+await shot("22-aprender");
+await nav(T("nav.settings"));
+await shot("23-configuracoes");
+
+// Java e editor, com os dados de um projeto legado de verdade
+if (tour) {
+  await page.evaluate((folder) => { window.__dialogPath = folder; }, tour.project);
+  await nav(T("nav.java"));
+  await page.getByRole("button", { name: T("java.pick.button") }).first().click();
+  await page.getByRole("button", { name: T("java.project.plan") }).click();
+  const understand = page.getByLabel(startOf(T("java.upgrade.confirm")));
+  await understand.waitFor();
+  await page.locator(".expo-steps").first().evaluate((list) => list.scrollIntoView({ block: "center" }));
+  await shot("14-java-plano");
+  await understand.check();
+  await page.locator(".multi-run-actions").getByRole("button", { name: T("java.upgrade.start") }).click();
+  await page.getByRole("button", { name: T("java.report.review") }).waitFor();
+  // o relatório, do começo, e depois a parte de baixo (testes, revisão e próximos passos)
+  await page.locator("section.panel").filter({ hasText: T("java.report.destination") }).last().evaluate((panel) => panel.scrollIntoView({ block: "start" }));
+  await shot("15-java-relatorio");
+  await page.getByRole("button", { name: T("java.report.review") }).evaluate((button) => button.scrollIntoView({ block: "center" }));
+  await shot("27-java-relatorio-proximos-passos");
+
+  // revisar o upgrade no editor: lado a lado
+  await page.getByRole("button", { name: T("java.report.review") }).click();
+  await page.locator(".editor-changes").waitFor();
+  await page.locator(".editor-changes").getByRole("button", { name: "pom.xml" }).click();
+  await page.getByTestId("diff-editor").waitFor();
+  await page.waitForTimeout(1500);
+  await shot("16-editor-revisao");
+
+  // um arquivo da cópia, no editor
+  await page.getByRole("button", { name: T("editor.tab.close", { name: "pom.xml" }) }).click();
+  await page.getByRole("button", { name: T("editor.review.stop") }).click();
+  await page.getByRole("tab", { name: T("editor.view.files") }).click();
+  const open = async (...parts) => {
+    for (const part of parts.slice(0, -1)) await page.getByRole("treeitem", { name: part }).first().click();
+    await page.getByRole("treeitem", { name: parts.at(-1) }).first().click();
+  };
+  await open("src", "main", "java", "com", "example", "shop", "ProductController.java");
+  await page.waitForTimeout(1200);
+  await shot("17-editor-codigo");
+
+  // buscar no projeto inteiro
+  await page.getByRole("tab", { name: T("editor.view.search") }).click();
+  await page.getByLabel(T("editor.search.label")).fill("jakarta");
+  await page.getByRole("button", { name: T("editor.search.button"), exact: true }).click();
+  await page.locator(".editor-hit").first().waitFor();
+  await page.locator('.editor-hit[aria-label*="ProductController"]').first().click();
+  await page.waitForTimeout(1200);
+  await shot("18-editor-busca");
+
+  // o terminal, que roda num container com a pasta montada
+  await page.getByRole("button", { name: T("terminal.toggle"), exact: true }).click();
+  await page.locator(".terminal-screen .xterm").waitFor();
+  await page.waitForFunction(() => typeof window.__terminal === "function");
+  const prompt = "\x1b[01;32mroot@9f3c2a1b7d40\x1b[00m:\x1b[01;34m/work\x1b[00m# ";
+  const tests = tour.java.report.tests?.run ?? 2;
+  const lines = [
+    `${prompt}java -version`,
+    'openjdk version "25" 2025-09-16 LTS',
+    "OpenJDK Runtime Environment Temurin-25+36 (build 25+36-LTS)",
+    `${prompt}mvn -q test`,
+    "\x1b[1;34m[INFO]\x1b[m  T E S T S",
+    `\x1b[1;34m[INFO]\x1b[m Tests run: ${tests}, Failures: 0, Errors: 0, Skipped: 0`,
+    "\x1b[1;34m[INFO]\x1b[m \x1b[1;32mBUILD SUCCESS\x1b[m",
+    `${prompt}`,
+  ];
+  await page.evaluate((text) => window.__terminal({ event: "data", data: btoa(text) }), lines.join("\r\n"));
+  await page.waitForTimeout(600);
+  await shot("19-editor-terminal");
+}
 
 await browser.close();
 for (const dir of [sample, firstSample, expoDir]) fs.rmSync(dir, { recursive: true, force: true });
