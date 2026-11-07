@@ -18,13 +18,19 @@ pub enum JavaCommand {
     /// Shows what an upgrade would do. Runs nothing and writes nothing.
     Plan {
         path: PathBuf,
+        /// Folder that will hold the upgraded copy (default: next to the project)
+        #[arg(long)]
+        into: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
-    /// Creates an upgraded copy next to the project, inside Docker. The project itself is never
-    /// modified. Needs --yes.
+    /// Creates an upgraded copy next to the project (or in --into), inside Docker. The project
+    /// itself is never modified. Needs --yes.
     Upgrade {
         path: PathBuf,
+        /// Folder that will hold the upgraded copy (default: next to the project)
+        #[arg(long)]
+        into: Option<PathBuf>,
         /// Confirms that you want to run it
         #[arg(long)]
         yes: bool,
@@ -240,8 +246,9 @@ pub fn run(command: JavaCommand) -> Result<bool, String> {
             }
             Ok(true)
         }
-        JavaCommand::Plan { path, json } => {
-            let plan = java_upgrade::plan(&path_text(&path))?;
+        JavaCommand::Plan { path, into, json } => {
+            let into = into.as_deref().map(path_text);
+            let plan = java_upgrade::plan_in(&path_text(&path), into.as_deref())?;
             if json {
                 print_json(&plan);
             } else {
@@ -249,9 +256,15 @@ pub fn run(command: JavaCommand) -> Result<bool, String> {
             }
             Ok(true)
         }
-        JavaCommand::Upgrade { path, yes, json } => {
+        JavaCommand::Upgrade {
+            path,
+            into,
+            yes,
+            json,
+        } => {
             let report = java_upgrade::run(UpgradeRequest {
                 path: path_text(&path),
+                destination: into.as_deref().map(path_text),
                 confirmed: yes,
             })?;
             if json {

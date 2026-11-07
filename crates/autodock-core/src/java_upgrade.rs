@@ -1,6 +1,7 @@
 //! Upgrading a legacy Java (Maven) project to the current JDK and Spring Boot.
 //!
-//! The project folder is **never modified**. AutoDock copies it next to the original
+//! The project folder is **never modified**. AutoDock copies it next to the original (or into
+//! a folder the person chooses)
 //! (`<name>-java25`), adds the dependencies for the APIs the JDK stopped shipping, and
 //! walks the copy up one OpenRewrite recipe at a time, **inside a Docker container**:
 //! Spring Boot to 2.7, Java 17, Spring Boot 3.5, Spring Boot 4.0, Java 25. After each
@@ -86,6 +87,9 @@ pub struct UpgradePlan {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpgradeRequest {
     pub path: String,
+    /// The folder that will hold the upgraded copy (default: the project's parent folder).
+    #[serde(default)]
+    pub destination: Option<String>,
     pub confirmed: bool,
 }
 
@@ -301,14 +305,41 @@ if [ $code -ne 0 ]; then grep -E 'ERROR|FAIL' /tmp/test.log | head -n 40; fi; ec
     text
 }
 
-/// Where the upgraded copy goes: next to the project, never over something that exists.
-fn destination_for(root: &Path) -> Result<PathBuf, String> {
-    let parent = root.parent().ok_or_else(|| {
-        tr!(
-            "Esta pasta não tem uma pasta pai para receber a cópia.",
-            "This folder has no parent folder to hold the copy."
-        )
-    })?;
+/// The folder that will hold the copy: the one the person chose, or the project's parent.
+/// A chosen folder must exist, be a real folder and lie outside the project (a copy made
+/// inside the project would be copied into itself).
+fn holding_folder(root: &Path, into: Option<&str>) -> Result<PathBuf, String> {
+    let Some(into) = into.map(str::trim).filter(|v| !v.is_empty()) else {
+        return root.parent().map(Path::to_path_buf).ok_or_else(|| {
+            tr!(
+                "Esta pasta não tem uma pasta pai para receber a cópia.",
+                "This folder has no parent folder to hold the copy."
+            )
+        });
+    };
+    let folder = Path::new(into)
+        .canonicalize()
+        .map_err(|e| format!("{into}: {e}"))?;
+    if !folder.is_dir() {
+        return Err(tr!(
+            "A pasta escolhida para a cópia não é uma pasta: {}",
+            "The folder chosen for the copy is not a folder: {}",
+            folder.display()
+        ));
+    }
+    if folder.starts_with(root) {
+        return Err(tr!(
+            "Escolha uma pasta fora do projeto: uma cópia dentro dele seria copiada para dentro de si mesma.",
+            "Choose a folder outside the project: a copy inside it would be copied into itself."
+        ));
+    }
+    Ok(folder)
+}
+
+/// Where the upgraded copy goes: `<name>-java25` in the holding folder, never over something
+/// that exists.
+fn destination_for(root: &Path, into: Option<&str>) -> Result<PathBuf, String> {
+    let parent = holding_folder(root, into)?;
     let name = root
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -325,12 +356,17 @@ fn destination_for(root: &Path) -> Result<PathBuf, String> {
         }
     }
     Err(tr!(
-        "Já existem 20 cópias atualizadas ao lado do projeto: apague as que não precisa mais.",
-        "There are already 20 upgraded copies next to the project: delete the ones you no longer need."
+        "Já existem 20 cópias atualizadas nessa pasta: apague as que não precisa mais.",
+        "There are already 20 upgraded copies in that folder: delete the ones you no longer need."
     ))
 }
 
 pub fn plan(path: &str) -> Result<UpgradePlan, String> {
+    plan_in(path, None)
+}
+
+/// Like [`plan`], with the folder that will hold the upgraded copy (default: next to the project).
+pub fn plan_in(path: &str, into: Option<&str>) -> Result<UpgradePlan, String> {
     let project = java::inspect(path)?.ok_or_else(|| {
         tr!(
             "Esta pasta não é um projeto Java com pom.xml.",
@@ -357,7 +393,7 @@ pub fn plan(path: &str) -> Result<UpgradePlan, String> {
     }
     let root = generate::root_of(path)?;
     generate::check_mount_path(&root)?;
-    let destination = destination_for(&root)?;
+    let destination = destination_for(&root, into)?;
     generate::check_mount_path(&destination)?;
     let scans = scan_modules(&root);
     let fixups = fixups_for(&scans);
@@ -390,8 +426,8 @@ pub fn plan(path: &str) -> Result<UpgradePlan, String> {
 
     let mut notes = vec![
         tr!(
-            "O projeto original não é alterado: o AutoDock cria uma cópia ao lado e faz o upgrade nela.",
-            "The original project is not modified: AutoDock creates a copy next to it and upgrades the copy."
+            "O projeto original não é alterado: o AutoDock cria uma cópia (ao lado dele ou na pasta que você escolher) e faz o upgrade nela.",
+            "The original project is not modified: AutoDock creates a copy (next to it or in the folder you choose) and upgrades the copy."
         ),
         tr!(
             "Tudo roda dentro de um container Docker. O Maven e os plugins do projeto nunca rodam no seu computador.",
@@ -870,7 +906,7 @@ fn run_with(
             "Explicit confirmation required."
         ));
     }
-    let plan = plan(&request.path)?;
+    let plan = plan_in(&request.path, request.destination.as_deref())?;
     let root = generate::root_of(&request.path)?;
     let copy = PathBuf::from(&plan.destination);
     let copied = copy_project(&root, &copy)?;
@@ -1161,6 +1197,7 @@ mod tests {
     fn request(path: &str, confirmed: bool) -> UpgradeRequest {
         UpgradeRequest {
             path: path.into(),
+            destination: None,
             confirmed,
         }
     }
@@ -1558,5 +1595,79 @@ mod tests {
         assert_eq!(parsed.tests_exit, Some(0));
         assert_eq!((parsed.tests.run, parsed.test_lines), (2, 1));
         assert!(parse("garbage\nHOP only\nTESTLINE nothing").hops.is_empty());
+    }
+    #[test]
+    fn the_copy_can_go_into_a_folder_the_person_chooses() {
+        let (_base, path) = workspace(&[("pom.xml", PLAIN6)]);
+        let elsewhere = tempfile::tempdir().unwrap();
+        let chosen = elsewhere.path().to_string_lossy().into_owned();
+        let plan = plan_in(&path, Some(&chosen)).unwrap();
+        let destination = Path::new(&plan.destination);
+        assert!(destination.ends_with("shop-java25"));
+        assert_eq!(
+            destination.parent().unwrap().canonicalize().unwrap(),
+            elsewhere.path().canonicalize().unwrap()
+        );
+        // the numbering works in the chosen folder too
+        fs::create_dir(elsewhere.path().join("shop-java25")).unwrap();
+        assert!(plan_in(&path, Some(&chosen))
+            .unwrap()
+            .destination
+            .ends_with("shop-java25-2"));
+        // an empty value means the default place
+        assert!(plan_in(&path, Some("  "))
+            .unwrap()
+            .destination
+            .ends_with("shop-java25"));
+    }
+
+    #[test]
+    fn a_folder_inside_the_project_a_file_or_a_missing_folder_is_refused() {
+        let (_base, path) =
+            workspace(&[("pom.xml", PLAIN6), ("src/main/java/A.java", "class A {}")]);
+        let inside = Path::new(&path).join("src");
+        assert!(plan_in(&path, Some(&inside.to_string_lossy())).is_err());
+        assert!(plan_in(&path, Some(&path)).is_err());
+        let file = Path::new(&path).join("pom.xml");
+        assert!(plan_in(&path, Some(&file.to_string_lossy())).is_err());
+        let missing = Path::new(&path).parent().unwrap().join("nowhere");
+        assert!(plan_in(&path, Some(&missing.to_string_lossy())).is_err());
+    }
+
+    #[test]
+    fn the_upgrade_creates_the_copy_in_the_chosen_folder_and_leaves_the_original_alone() {
+        let (base, path) = workspace(&[("pom.xml", PLAIN6)]);
+        let elsewhere = tempfile::tempdir().unwrap();
+        let mut asked = request(&path, true);
+        asked.destination = Some(elsewhere.path().to_string_lossy().into_owned());
+        let report = run_with(asked, |args, _| {
+            let copy = mounted_copy(args);
+            assert_eq!(
+                copy.parent().unwrap().canonicalize().unwrap(),
+                elsewhere.path().canonicalize().unwrap()
+            );
+            output(
+                ToolStatus::Available,
+                Some(0),
+                "HOP java-17 ok
+CHECK java-17 ok
+HOP java-25 ok
+CHECK java-25 ok
+TESTS
+TESTS_EXIT 0
+",
+            )
+        })
+        .unwrap();
+        assert!(report.succeeded);
+        assert!(elsewhere.path().join("shop-java25/pom.xml").exists());
+        assert!(
+            !base.path().join("shop-java25").exists(),
+            "nothing next to the project"
+        );
+        assert_eq!(
+            fs::read_to_string(Path::new(&path).join("pom.xml")).unwrap(),
+            PLAIN6
+        );
     }
 }

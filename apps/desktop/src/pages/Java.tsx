@@ -19,6 +19,8 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
   const [suggestions, setSuggestions] = useState<JavaProject[]>([]);
 
   const [plan, setPlan] = useState<JavaPlan | null>(null);
+  // Folder chosen to hold the upgraded copy (null: next to the project).
+  const [into, setInto] = useState<string | null>(null);
   const [planning, setPlanning] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [running, setRunning] = useState(false);
@@ -62,6 +64,7 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
   const choose = useCallback(async (path: string) => {
     setError("");
     setProject(null);
+    setInto(null);
     reset();
     setInspecting(true);
     try {
@@ -86,18 +89,45 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
     }
   }
 
-  async function makePlan() {
+  async function makePlan(folder: string | null | undefined = undefined) {
     if (!project || planning) return;
+    const holder = folder === undefined ? into : folder;
     reset();
     setError("");
     setPlanning(true);
     try {
-      setPlan(await call<JavaPlan>("java_upgrade_plan", { path: project.path }));
+      setPlan(
+        await call<JavaPlan>("java_upgrade_plan", {
+          path: project.path,
+          ...(holder ? { destination: holder } : {}),
+        }),
+      );
     } catch (e) {
       setError(message(e));
     } finally {
       setPlanning(false);
     }
+  }
+
+  async function chooseDestination() {
+    try {
+      const folder = await open({
+        directory: true,
+        multiple: false,
+        title: t("java.upgrade.destination.dialog"),
+      });
+      if (folder) {
+        setInto(folder);
+        await makePlan(folder);
+      }
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  async function backToDefaultDestination() {
+    setInto(null);
+    await makePlan(null);
   }
 
   async function runUpgrade() {
@@ -109,7 +139,11 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
     try {
       setReport(
         await call<JavaUpgradeReport>("java_upgrade_run", {
-          request: { path: plan.project.path, confirmed: true },
+          request: {
+            path: plan.project.path,
+            confirmed: true,
+            ...(into ? { destination: into } : {}),
+          },
         }),
       );
       setConfirmed(false);
@@ -215,7 +249,7 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
                     type="button"
                     className="button primary"
                     disabled={planning || running}
-                    onClick={() => void makePlan()}
+                    onClick={() => void makePlan(undefined)}
                   >
                     <Play size={15} aria-hidden="true" /> {t("java.project.plan")}
                   </button>
@@ -322,6 +356,27 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
               <p>
                 <code className="expo-file">{displayPath(plan.destination)}</code>
               </p>
+              <p className="field-hint">{t("java.upgrade.destination.hint")}</p>
+              <div className="multi-run-actions">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={running || planning}
+                  onClick={() => void chooseDestination()}
+                >
+                  <FolderOpen size={16} aria-hidden="true" /> {t("java.upgrade.destination.change")}
+                </button>
+                {into && (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    disabled={running || planning}
+                    onClick={() => void backToDefaultDestination()}
+                  >
+                    {t("java.upgrade.destination.default")}
+                  </button>
+                )}
+              </div>
               <p className="field-label">{t("java.upgrade.notes")}</p>
               <ul className="expo-notes">
                 {plan.notes.map((note) => (

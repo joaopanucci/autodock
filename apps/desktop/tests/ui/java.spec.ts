@@ -59,7 +59,10 @@ async function open(page: Page, options: Options = {}) {
             case "java_inspect":
               return options.none ? null : { ...base, ...options.project };
             case "java_upgrade_plan":
-              return plan;
+              // like the Rust side: the copy goes into the chosen folder, else next to the project
+              return args.destination
+                ? { ...plan, destination: `${args.destination}/legacy-shop-java25` }
+                : plan;
             case "java_upgrade_run":
               if (options.fail) {
                 return {
@@ -88,7 +91,9 @@ async function open(page: Page, options: Options = {}) {
                 nextSteps: ["Compare the copy with the original project and review what changed.", "Install JDK 25 to build on your computer."],
               };
             case "plugin:dialog|open":
-              return "/Users/maria/legacy-shop";
+              return String(args?.options?.title ?? "").includes("copy will be created")
+                ? "/Volumes/backup"
+                : "/Users/maria/legacy-shop";
             default:
               throw new Error(`Unexpected IPC ${command}`);
           }
@@ -242,4 +247,43 @@ test.describe("in Portuguese", () => {
     await expect(how).toContainText("O que sobra para você");
     await expect(how).toContainText("O original nunca é alterado");
   });
+});
+
+test("the person can choose where the upgraded copy is created", async ({ page }) => {
+  await open(page);
+  await choose(page);
+  await page.getByRole("button", { name: "Plan the upgrade" }).click();
+  // by default the copy goes next to the project and the plan is made without a destination
+  await expect(page.getByText("/Users/maria/legacy-shop-java25").first()).toBeVisible();
+  expect(await calls(page, "java_upgrade_plan")).toEqual([{ path: "/Users/maria/legacy-shop", lang: "en" }]);
+  await expect(page.getByRole("button", { name: "Back to next to the project" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Choose another folder" }).click();
+  await expect(page.getByText("/Volumes/backup/legacy-shop-java25").first()).toBeVisible();
+  expect(await calls(page, "java_upgrade_plan")).toEqual([
+    { path: "/Users/maria/legacy-shop", lang: "en" },
+    { path: "/Users/maria/legacy-shop", destination: "/Volumes/backup", lang: "en" },
+  ]);
+
+  // the choice travels with the confirmation
+  await page.getByLabel(/I understand AutoDock will copy the project/).check();
+  await page.locator(".multi-run-actions").getByRole("button", { name: "Create the upgraded copy" }).click();
+  await expect(page.getByText("Upgraded copy created in 312 s")).toBeVisible();
+  const run = await calls(page, "java_upgrade_run");
+  expect(run.map((r: any) => r.request)).toEqual([
+    { path: "/Users/maria/legacy-shop", confirmed: true, destination: "/Volumes/backup" },
+  ]);
+});
+
+test("the chosen folder can be dropped to go back to the default place", async ({ page }) => {
+  await open(page);
+  await choose(page);
+  await page.getByRole("button", { name: "Plan the upgrade" }).click();
+  await page.getByRole("button", { name: "Choose another folder" }).click();
+  await expect(page.getByText("/Volumes/backup/legacy-shop-java25").first()).toBeVisible();
+  await page.getByRole("button", { name: "Back to next to the project" }).click();
+  await expect(page.getByText("/Users/maria/legacy-shop-java25").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to next to the project" })).toHaveCount(0);
+  const plans = await calls(page, "java_upgrade_plan");
+  expect(plans[plans.length - 1]).toEqual({ path: "/Users/maria/legacy-shop", lang: "en" });
 });
