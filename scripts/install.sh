@@ -74,8 +74,11 @@ actual="$(shasum -a 256 "$tmp/${asset}" | awk '{ print $1 }')"
   "checksum does not match. Nothing was installed."
 
 mkdir -p "$mount"
-hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mount" "$tmp/${asset}" >/dev/null 2>&1 \
-  || die "não foi possível abrir o DMG." "could not open the DMG."
+if ! hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mount" "$tmp/${asset}" >"$tmp/hdiutil.log" 2>&1; then
+  # Show why: a bare "could not open" gives nothing to act on.
+  sed 's/^/  hdiutil: /' "$tmp/hdiutil.log" >&2
+  die "não foi possível abrir o DMG." "could not open the DMG."
+fi
 [ -d "$mount/AutoDock.app" ] || die "AutoDock.app não está no DMG." "AutoDock.app is not in the DMG."
 
 if pgrep -x autodock-desktop >/dev/null 2>&1; then
