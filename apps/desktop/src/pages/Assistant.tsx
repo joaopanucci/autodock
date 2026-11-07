@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { call } from "../ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -10,12 +10,14 @@ import {
   Copy,
   FolderOpen,
   FolderSearch,
+  Layers,
   LoaderCircle,
   Sparkles,
   SquareArrowOutUpRight,
 } from "lucide-react";
 import type {
   ApplyReport,
+  AppsReport,
   GeneratePlan,
   GenerateRequest,
   IdeInfo,
@@ -31,39 +33,16 @@ import type {
 import { Badge, Panel } from "../components/ui";
 import { TechLogo, hasLogo } from "../components/TechLogo";
 import { displayPath } from "../model";
+import { STACKS, SERVICES } from "../stacks";
+import { MultiApp } from "./MultiApp";
 import { useI18n, type TranslationKey } from "../i18n";
 
-const STACKS: {
-  id: StackId;
-  title: string;
-  hint: TranslationKey;
-  port: number;
-  versions: string[];
-  versionLabel: TranslationKey;
-}[] = [
-  { id: "nodejs", title: "Node.js", hint: "wizard.stack.nodejs.hint", port: 3000, versions: ["22", "24", "20"], versionLabel: "wizard.stack.nodejs.version" },
-  { id: "spring-boot", title: "Java / Spring Boot", hint: "wizard.stack.spring.hint", port: 8080, versions: ["21", "17"], versionLabel: "wizard.stack.spring.version" },
-  { id: "python", title: "Python", hint: "wizard.stack.python.hint", port: 8000, versions: ["3.12", "3.13", "3.11"], versionLabel: "wizard.stack.python.version" },
-  { id: "laravel", title: "PHP / Laravel", hint: "wizard.stack.laravel.hint", port: 8000, versions: ["8.4", "8.5", "8.3", "8.2"], versionLabel: "wizard.stack.laravel.version" },
-  { id: "go", title: "Go", hint: "wizard.stack.go.hint", port: 8080, versions: ["1.26", "1.25", "1.24"], versionLabel: "wizard.stack.go.version" },
-  { id: "dotnet", title: ".NET / ASP.NET Core", hint: "wizard.stack.dotnet.hint", port: 8080, versions: ["10.0", "9.0", "8.0"], versionLabel: "wizard.stack.dotnet.version" },
-  { id: "rails", title: "Ruby on Rails", hint: "wizard.stack.rails.hint", port: 3000, versions: ["3.4", "3.3", "4.0"], versionLabel: "wizard.stack.rails.version" },
-];
 
 /** Stacks that cannot start a new project from here (existing projects only). */
 const EXISTING_ONLY: StackId[] = ["rails"];
 
 const NODE_FRAMEWORK_TITLES = { nextjs: "Next.js", nestjs: "NestJS" } as const;
 
-const SERVICES: { id: ServiceId; title: string; hint: TranslationKey; group: TranslationKey }[] = [
-  { id: "postgres", title: "PostgreSQL", hint: "wizard.svc.relational", group: "wizard.group.db" },
-  { id: "mysql", title: "MySQL", hint: "wizard.svc.relational", group: "wizard.group.db" },
-  { id: "mongodb", title: "MongoDB", hint: "wizard.svc.document", group: "wizard.group.db" },
-  { id: "redis", title: "Redis", hint: "wizard.svc.cache", group: "wizard.group.cache" },
-  { id: "rabbitmq", title: "RabbitMQ", hint: "wizard.svc.queue", group: "wizard.group.cache" },
-  { id: "adminer", title: "Adminer", hint: "wizard.svc.adminer", group: "wizard.group.dev" },
-  { id: "mailhog", title: "MailHog", hint: "wizard.svc.mailhog", group: "wizard.group.dev" },
-];
 
 const STEP_KEYS: TranslationKey[] = [
   "wizard.step.project",
@@ -119,8 +98,11 @@ export function Assistant({
   path: string;
   setPath: (value: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, tn } = useI18n();
   const [step, setStep] = useState(0);
+  const detectedPath = useRef<string | null>(null);
+  const [appsReport, setAppsReport] = useState<AppsReport | null>(null);
+  const [multi, setMulti] = useState(false);
   const [suggestions, setSuggestions] = useState<StackSuggestion[]>([]);
   const [stack, setStack] = useState<StackId | null>(null);
   const [port, setPort] = useState("3000");
@@ -184,11 +166,17 @@ export function Assistant({
   }
 
   async function detect(value: string) {
+    detectedPath.current = value;
     setBusy("detect");
     setError("");
     try {
-      const found = await call<StackSuggestion[]>("detect_stacks", { path: value });
+      // Several apps in one folder (monorepo, microservices): offer to set up all of them.
+      const [found, apps] = await Promise.all([
+        call<StackSuggestion[]>("detect_stacks", { path: value }),
+        call<AppsReport>("detect_apps", { path: value }).catch(() => null),
+      ]);
       setSuggestions(found);
+      setAppsReport(apps);
       setNewProject(false);
       if (found.length) {
         setEmptyFolder(false);
@@ -199,6 +187,7 @@ export function Assistant({
       }
     } catch (e) {
       setSuggestions([]);
+      setAppsReport(null);
       setStack(null);
       setEmptyFolder(false);
       setError(message(e));
@@ -241,6 +230,8 @@ export function Assistant({
       const picked = await open({ directory: true, multiple: false, title: t("app.dialog.selectProject") });
       if (typeof picked === "string") {
         setPath(picked);
+        setAppsReport(null);
+        setMulti(false);
         setEmptyFolder(false);
         setNewProject(false);
         setScaffold(null);
@@ -396,7 +387,9 @@ export function Assistant({
   // O caminho pode chegar de fora (ex.: botão na tela de Projetos) ou ser digitado.
   useEffect(() => {
     const value = path.trim();
-    if (!value || stack || step !== 0) return;
+    // A path that was already detected (e.g. picked in the dialog) is not detected twice:
+    // the second run could undo what the user did meanwhile.
+    if (!value || stack || step !== 0 || detectedPath.current === value) return;
     const timer = window.setTimeout(() => void detect(value), 500);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -417,6 +410,10 @@ export function Assistant({
         : true;
   const activeFile = plan?.files.find((f) => f.name === active);
   const command = "docker compose up --build";
+
+  if (multi && appsReport) {
+    return <MultiApp path={path} report={appsReport} onBack={() => setMulti(false)} />;
+  }
 
   return (
     <div className="wizard">
@@ -457,6 +454,8 @@ export function Assistant({
                 setPath(e.target.value);
                 setStack(null);
                 setSuggestions([]);
+                setAppsReport(null);
+                setMulti(false);
                 setEmptyFolder(false);
                 setNewProject(false);
                 setScaffold(null);
@@ -490,6 +489,19 @@ export function Assistant({
               </div>
               <button type="button" className="button primary" onClick={startNewProject}>
                 {t("wizard.s1.empty.button")}
+              </button>
+            </div>
+          )}
+          {appsReport && appsReport.apps.length >= 2 && !newProject && (
+            <div className="multi-banner" role="status">
+              <Layers size={22} aria-hidden="true" />
+              <div>
+                <strong>{tn("multi.banner.title", appsReport.apps.length)}</strong>
+                <p>{t("multi.banner.body")}</p>
+                <small>{t("multi.banner.single")}</small>
+              </div>
+              <button type="button" className="button primary" onClick={() => setMulti(true)}>
+                {t("multi.banner.button")}
               </button>
             </div>
           )}

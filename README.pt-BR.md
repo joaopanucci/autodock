@@ -51,6 +51,8 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 | **Projeto existente** | Detecta a tecnologia lendo os manifests e gera `Dockerfile`, `docker-compose.yml`, `.dockerignore` e `.env.docker.example`. |
 | **Projeto novo, em pasta vazia** | Cria um projeto *limpo* ou usa o **instalador oficial** do framework, tudo dentro do Docker. |
 | **Serviços prontos** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer e MailHog, já conectados ao app por variáveis de ambiente, com healthchecks, **senhas fortes geradas** e **portas livres escolhidas automaticamente**. |
+| **Vários apps (monorepos, microsserviços)** | Encontra cada app da pasta (backend, front end, mobile…), escreve **um Dockerfile por app** e **um compose** que roda todos juntos com os serviços compartilhados, já ligados entre si (o front end recebe o endereço do backend). Dockerfiles e compose que já existem são reaproveitados, nunca sobrescritos. |
+| **Subir tudo** | Um botão (depois da sua confirmação) roda `docker compose up -d --build`, mostra o estado de cada serviço e permite parar ou remover os containers. Os volumes (seus dados) nunca são removidos. |
 | **Abrir na sua IDE** | Depois de criar, abre o projeto no VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed ou Sublime que você tiver instalado. |
 | **Visão do ambiente** | Analisa projetos, diagnostica o seu ambiente, lista containers, mostra métricas e logs, tudo em modo leitura. |
 
@@ -202,6 +204,7 @@ O AutoDock mexe nos seus arquivos, então a confiança vem primeiro:
 - **Instaladores de framework isolados.** Rodam em um container descartável com **apenas** a pasta vazia montada.
 - **Portas dos serviços só em `127.0.0.1`.** Bancos e filas não ficam expostos na sua rede.
 - **Nunca lê `.env`** nem executa scripts dos projetos analisados.
+- **Executar é explícito.** A única coisa que o AutoDock executa além de ler é o `docker compose` (up, stop, down), e só depois de você marcar uma confirmação. Ele usa argumentos fixos e um arquivo compose da raiz do projeto, e nunca remove volumes nem imagens. Atenção: construir as imagens roda os passos dos Dockerfiles e subir os containers roda o seu app, ambos dentro do Docker.
 
 Detalhes em [`docs/SECURITY.md`](docs/SECURITY.md).
 
@@ -228,6 +231,12 @@ autodock scaffold ./novo --framework laravel --name loja          # só mostra o
 autodock scaffold ./novo --framework laravel --name loja --run    # executa
 # frameworks: laravel, django, vite-react, vite-vue, nextjs, nestjs
 autodock scaffold ./site --framework nextjs --name site
+
+# projetos com vários apps (monorepo, microsserviços)
+autodock apps ./loja                                   # quais apps existem
+autodock multi ./loja --service postgres               # preview: um Dockerfile por app + compose
+autodock multi ./loja --service postgres --write       # grava os arquivos novos
+autodock compose ./loja up --yes                       # docker compose up -d --build (também: stop, down, status)
 ```
 
 ## 🧱 Arquitetura
@@ -248,13 +257,13 @@ npm --prefix apps/desktop run tauri dev
 
 ## 🗺️ Roadmap
 
+- [x] Projetos com vários apps: um container por app e subir tudo com um clique
 - [x] Assistente Docker para projetos existentes (Node.js, Next.js, NestJS, Spring Boot, Python, Laravel, Go, .NET, Rails)
 - [x] Serviços: PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer, MailHog
 - [x] Projeto novo: limpo ou com instalador oficial (Laravel, Django, Vite, Next.js, NestJS)
 - [x] Abrir o projeto na IDE instalada
 - [x] Instaladores para macOS, Windows e Linux
 - [ ] Spring Initializr (escolher dependências)
-- [ ] Projetos com vários apps (monorepos e microsserviços: um container por app)
 - [ ] Expo: detectar versões antigas do SDK e ajudar na atualização
 - [ ] Gradle, atualização de Java legado e mais serviços (Kafka, MinIO…)
 - [ ] Dockerfiles de produção (multi-stage)

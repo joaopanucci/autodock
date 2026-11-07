@@ -2564,3 +2564,49 @@ select option { background: var(--panel); color: var(--ink); }
 .theme-switch button:focus-visible { outline-offset: -2px; }
 @media (max-width: 560px) { .topbar-actions .local-label { display: none; } }
 input[type="checkbox"], input[type="radio"], progress { accent-color: var(--ink); }
+
+/* Projetos com vários apps */
+.multi-banner {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center;
+  border: 1px solid var(--line-strong); border-left: 3px solid var(--ink); border-radius: 3px;
+  background: var(--panel); padding: 16px 18px; margin: 16px 0;
+}
+.multi-banner p { margin: 4px 0 2px; color: var(--muted); font-size: 13px; }
+.multi-banner small { color: var(--subtle); }
+.multi-apps { list-style: none; margin: 8px 0 14px; padding: 0; border: 1px solid var(--line); border-radius: 3px; }
+.multi-apps > li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(130px, 170px) 110px; gap: 16px;
+  align-items: start; padding: 14px 16px; border-bottom: 1px solid var(--line);
+}
+.multi-apps > li:last-child { border-bottom: 0; }
+.multi-apps > li.is-off { opacity: 0.55; }
+.multi-app-pick { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.multi-app-pick .tech-logo { color: var(--ink); }
+.multi-app-main { min-width: 0; display: grid; gap: 4px; }
+.multi-app-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.multi-app-stack { color: var(--muted); font-size: 12px; }
+.multi-app-main small { color: var(--subtle); }
+.multi-app-field { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+.multi-app-field input { height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 2px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; }
+.multi-app-field input:disabled { opacity: 0.6; }
+.multi-app-field input[aria-invalid="true"] { border-color: var(--red); }
+.field-hint.warn { color: var(--amber); }
+.multi-skipped { margin: 4px 0 12px; }
+.multi-skipped summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.multi-skipped ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; display: grid; gap: 4px; }
+.multi-confirm { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; cursor: pointer; }
+.multi-run-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.multi-status { margin-top: 22px; }
+.multi-status-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.multi-status-table { width: 100%; border-collapse: collapse; margin-top: 8px; border: 1px solid var(--line); font-size: 13px; }
+.multi-status-table th { text-align: left; font-weight: 500; color: var(--subtle); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.multi-status-table th, .multi-status-table td { padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.multi-status-table tr:last-child td { border-bottom: 0; }
+@media (max-width: 860px) {
+  .multi-banner { grid-template-columns: 1fr; }
+  .multi-apps > li { grid-template-columns: auto minmax(0, 1fr); }
+  .multi-app-field { grid-column: 2; }
+}
+.multi-app-field input { width: 100%; min-width: 0; box-sizing: border-box; }
+.multi-run-actions + small { display: block; margin: 8px 0 14px; }
+.multi-app .feedback { margin-top: 14px; }

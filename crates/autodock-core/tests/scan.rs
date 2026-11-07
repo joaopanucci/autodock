@@ -135,3 +135,40 @@ fn does_not_follow_symlink_markers_or_directories() {
     symlink(fixture("node-basic"), dir.path().join("linked")).unwrap();
     assert!(scan(dir.path()).unwrap().components.is_empty());
 }
+#[test]
+fn recognises_go_dotnet_rails_laravel_and_python_from_manifests() {
+    let dir = tempfile::tempdir().unwrap();
+    let put = |path: &str, text: &str| {
+        let full = dir.path().join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, text).unwrap();
+    };
+    put("svc/go.mod", "module svc\n");
+    put("net/Shop.csproj", "<Project/>");
+    put("rb/Gemfile", "gem \"rails\"\n");
+    put(
+        "lara/composer.json",
+        r#"{"require":{"laravel/framework":"^12"}}"#,
+    );
+    put("py/requirements.txt", "fastapi\n");
+    put("plain-php/composer.json", r#"{"require":{}}"#);
+    let result = scan(dir.path()).unwrap();
+    let found: Vec<(&str, &str)> = result
+        .components
+        .iter()
+        .map(|c| (c.path.as_str(), c.technology.as_str()))
+        .collect();
+    for expected in [
+        ("svc", "go"),
+        ("net", "dotnet"),
+        ("rb", "rails"),
+        ("lara", "laravel"),
+        ("py", "python"),
+    ] {
+        assert!(found.contains(&expected), "{expected:?} not in {found:?}");
+    }
+    assert!(
+        !found.iter().any(|(path, _)| *path == "plain-php"),
+        "PHP without Laravel is not reported"
+    );
+}

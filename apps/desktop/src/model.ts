@@ -11,6 +11,11 @@ export const technologyNames: Record<string, string> = {
   nodejs: "Node.js",
   maven: "Maven",
   "spring-boot": "Spring Boot",
+  python: "Python",
+  laravel: "PHP / Laravel",
+  go: "Go",
+  dotnet: ".NET",
+  rails: "Ruby on Rails",
 };
 export const toolNames: Record<string, string> = {
   node: "Node.js",

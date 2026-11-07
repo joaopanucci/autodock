@@ -44,6 +44,49 @@ const SKIP: &[&str] = &[
     "__pycache__",
 ];
 
+/// Other technologies AutoDock can put in Docker, recognised from their
+/// manifests only (nothing is executed).
+fn other_stacks(dir: &Path, root: &Path, report: &mut ScanReport) {
+    use crate::generate::{csproj_name, gemfile_has_rails, read_manifest, regular_file};
+    let path = {
+        let relative = dir
+            .strip_prefix(root)
+            .unwrap_or(dir)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.is_empty() {
+            ".".to_string()
+        } else {
+            relative
+        }
+    };
+    let mut add = |technology: &str, evidence: String| {
+        report.components.push(Component {
+            path: path.clone(),
+            technology: technology.into(),
+            evidence: vec![evidence],
+        })
+    };
+    if regular_file(dir, "go.mod") {
+        add("go", "go.mod".into());
+    }
+    if let Some(project) = csproj_name(dir) {
+        add("dotnet", format!("{project}.csproj"));
+    }
+    if read_manifest(dir, "Gemfile").is_some_and(|text| gemfile_has_rails(&text)) {
+        add("rails", "Gemfile (rails)".into());
+    }
+    if read_manifest(dir, "composer.json").is_some_and(|text| text.contains("laravel/framework")) {
+        add("laravel", "composer.json (laravel/framework)".into());
+    }
+    for manifest in ["requirements.txt", "pyproject.toml"] {
+        if regular_file(dir, manifest) {
+            add("python", manifest.into());
+            break;
+        }
+    }
+}
+
 pub fn scan(path: &Path) -> Result<ScanReport, String> {
     let root = path
         .canonicalize()
@@ -239,6 +282,7 @@ pub fn scan(path: &Path) -> Result<ScanReport, String> {
                 }
             }
         }
+        other_stacks(&dir, &root, &mut report);
         let entries = match fs::read_dir(&dir) {
             Ok(e) => e,
             Err(e) => {

@@ -51,6 +51,8 @@ Setting up Docker for a local project is repetitive: which base image, which por
 | **Existing project** | Detects the technology from its manifests and generates `Dockerfile`, `docker-compose.yml`, `.dockerignore` and `.env.docker.example`. |
 | **New project in an empty folder** | Creates a *clean* project, or uses the framework's **official installer**, all inside Docker. |
 | **Ready-made services** | PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer and MailHog, already wired to your app through environment variables, with healthchecks, **generated strong passwords** and **automatically chosen free ports**. |
+| **Several apps (monorepos, microservices)** | Finds every app in the folder (backend, front end, mobile…), writes **one Dockerfile per app** and **one compose file** that runs them together with the shared services, wired to each other (the front end receives the backend's address). Existing Dockerfiles and compose files are reused, never overwritten. |
+| **Run everything** | One button (after you confirm) runs `docker compose up -d --build`, shows the state of every service and lets you stop or remove the containers. Volumes (your data) are never removed. |
 | **Open in your IDE** | After creating, opens the project in whichever of VS Code, Cursor, Windsurf, IntelliJ, WebStorm, PyCharm, PhpStorm, Zed or Sublime you have installed. |
 | **Environment view** | Analyzes projects, diagnoses your environment, lists containers, shows metrics and logs, all read-only. |
 
@@ -202,6 +204,7 @@ AutoDock touches your files, so trust comes first:
 - **Isolated framework installers.** They run in a throwaway container with **only** the empty folder mounted.
 - **Service ports on `127.0.0.1` only.** Databases and queues are not exposed to your network.
 - **Never reads `.env`** nor runs scripts of the analyzed projects.
+- **Running is explicit.** The only thing AutoDock executes beyond reading is `docker compose` (up, stop, down), and only after you tick a confirmation. It uses fixed arguments and a compose file of the project root, and it never removes volumes or images. Note that building the images runs the steps of the Dockerfiles, and starting the containers runs your app, both inside Docker.
 
 Details in [`docs/SECURITY.md`](docs/SECURITY.md).
 
@@ -228,6 +231,12 @@ autodock scaffold ./new --framework laravel --name shop          # only shows th
 autodock scaffold ./new --framework laravel --name shop --run    # runs it
 # frameworks: laravel, django, vite-react, vite-vue, nextjs, nestjs
 autodock scaffold ./site --framework nextjs --name site
+
+# projects with several apps (monorepo, microservices)
+autodock apps ./shop                                   # which apps are there
+autodock multi ./shop --service postgres               # preview: one Dockerfile per app + compose
+autodock multi ./shop --service postgres --write       # write the new files
+autodock compose ./shop up --yes                       # docker compose up -d --build (also: stop, down, status)
 ```
 
 ## 🧱 Architecture
@@ -248,6 +257,7 @@ npm --prefix apps/desktop run tauri dev
 
 ## 🗺️ Roadmap
 
+- [x] Projects with several apps: one container per app, run everything with one click
 - [x] Docker assistant for existing projects (Node.js, Next.js, NestJS, Spring Boot, Python, Laravel, Go, .NET, Rails)
 - [x] Services: PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer, MailHog
 - [x] New project: clean or with the official installer (Laravel, Django, Vite, Next.js, NestJS)
@@ -258,7 +268,6 @@ npm --prefix apps/desktop run tauri dev
 - [x] Learn area (lessons, quick reference, glossary)
 - [x] Containers and images named after your project
 - [ ] Spring Initializr (choose dependencies)
-- [ ] Projects with several apps (monorepos and microservices: one container per app)
 - [ ] Expo: detect outdated SDK versions and assist the upgrade
 - [ ] Gradle, legacy Java upgrades and more services (Kafka, MinIO…)
 - [ ] Production Dockerfiles (multi-stage)
