@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { AlertTriangle, CheckCircle2, FolderOpen, LoaderCircle, Play, X } from "lucide-react";
 import { call } from "../ipc";
 import { Badge, EmptyState, Panel } from "../components/ui";
+import { JavaExplainer } from "../components/JavaExplainer";
 import { displayPath } from "../model";
 import { useI18n } from "../i18n";
 import type { JavaPlan, JavaProject, JavaUpgradeReport, SessionProject } from "../types";
@@ -502,6 +503,8 @@ export function Java({ sessionProjects }: { sessionProjects: SessionProject[] })
           )}
         </Panel>
       )}
+
+      <JavaExplainer open={!project && !plan && !report} />
     </div>
   );
 }
