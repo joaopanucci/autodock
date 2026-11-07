@@ -260,6 +260,30 @@ async fn expo_backups(
 }
 
 #[tauri::command]
+async fn java_inspect(
+    path: String,
+    lang: Option<String>,
+) -> Result<Option<autodock_core::java::JavaProject>, String> {
+    localized(lang, move || autodock_core::java::inspect(&path)).await?
+}
+
+#[tauri::command]
+async fn java_upgrade_plan(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::java_upgrade::UpgradePlan, String> {
+    localized(lang, move || autodock_core::java_upgrade::plan(&path)).await?
+}
+
+#[tauri::command]
+async fn java_upgrade_run(
+    request: autodock_core::java_upgrade::UpgradeRequest,
+    lang: Option<String>,
+) -> Result<autodock_core::java_upgrade::UpgradeReport, String> {
+    localized(lang, move || autodock_core::java_upgrade::run(request)).await?
+}
+
+#[tauri::command]
 async fn expo_restore(
     path: String,
     backup_id: String,
@@ -333,6 +357,9 @@ pub fn run() {
             expo_upgrade_run,
             expo_backups,
             expo_restore,
+            java_inspect,
+            java_upgrade_plan,
+            java_upgrade_run,
             updater::update_auto_check,
             updater::update_check_now,
             updater::update_install,

@@ -2654,6 +2654,8 @@ input[type="checkbox"], input[type="radio"], progress { accent-color: var(--ink)
   .expo-alert-actions { grid-column: 1 / -1; }
 }
 .expo-page .field-label { margin-top: 18px; }
+.java-hops { list-style: none; margin: 6px 0 14px; padding: 0; display: grid; gap: 8px; }
+.java-hops li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
 
 /* Atualização do próprio app */
 .update-banner {
