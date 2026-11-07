@@ -55,7 +55,6 @@
         }
       }
     },
-    "licenseFile": "../../../LICENSE",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
