@@ -4,6 +4,6 @@ members = ["crates/autodock-core", "crates/autodock-cli", "apps/desktop/src-taur
 default-members = ["crates/autodock-core", "crates/autodock-cli"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 license = "Apache-2.0"
