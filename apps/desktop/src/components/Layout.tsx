@@ -12,6 +12,7 @@ import {
   HeartHandshake,
   GraduationCap,
   Smartphone,
+  Coffee,
   ChevronRight,
   ArrowUpRight,
   type LucideIcon,
@@ -31,6 +32,7 @@ export const navigation: {
   { id: "projects", labelKey: "nav.projects", icon: FolderGit2 },
   { id: "setup", labelKey: "nav.setup", icon: WandSparkles },
   { id: "expo", labelKey: "nav.expo", icon: Smartphone },
+  { id: "java", labelKey: "nav.java", icon: Coffee },
   { id: "environment", labelKey: "nav.environment", icon: SlidersHorizontal },
   { id: "containers", labelKey: "nav.containers", icon: Boxes },
   { id: "monitoring", labelKey: "nav.monitoring", icon: Activity },
@@ -95,7 +97,7 @@ export function Layout({
             </button>
           ))}
           <p className="nav-label secondary-label">{t("nav.group.operations")}</p>
-          {navigation.slice(5, 8).map((item) => (
+          {navigation.slice(5, 9).map((item) => (
             <button
               key={item.id}
               aria-current={page === item.id ? "page" : undefined}

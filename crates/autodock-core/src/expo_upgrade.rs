@@ -147,7 +147,7 @@ echo DOCTOR; npx expo-doctor >/tmp/doctor.log 2>&1; code=$?; tail -n 80 /tmp/doc
     )
 }
 
-fn quote(arg: &str) -> String {
+pub(crate) fn quote(arg: &str) -> String {
     if arg
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b"-_./:=@,+".contains(&b))
@@ -190,13 +190,13 @@ fn docker_args(root: &Path, script: &str) -> Vec<String> {
 }
 
 #[cfg(unix)]
-fn host_ids() -> Option<(u32, u32)> {
+pub(crate) fn host_ids() -> Option<(u32, u32)> {
     // SAFETY: geteuid/getegid have no preconditions.
     Some(unsafe { (libc::geteuid(), libc::getegid()) })
 }
 
 #[cfg(not(unix))]
-fn host_ids() -> Option<(u32, u32)> {
+pub(crate) fn host_ids() -> Option<(u32, u32)> {
     None
 }
 

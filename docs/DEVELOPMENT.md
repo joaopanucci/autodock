@@ -103,6 +103,14 @@ See the *Translations* and *Updating the README screenshots* sections of [CONTRI
 - **Windows installer.** `bundle.windows.nsis` in `tauri.conf.json` sets the per-user install, the license page and the artwork in `src-tauri/installer/` (`sidebar.bmp` 164×314 and `header.bmp` 150×57, 24-bit). `installer/hooks.nsh` refreshes the shell icon cache after installing.
 - **Brand images.** `node scripts/brand-assets.mjs` regenerates the macOS DMG background and `docs/social-preview.png`. Run `scripts/screenshots.mjs` first (it needs `cargo build -p autodock-cli` and the dev server); use `AUTODOCK_THEME=dark` for the dark set. Both scripts work on Windows, macOS and Linux (set `AUTODOCK_BROWSER_CHANNEL` if you do not have Edge or Chrome).
 
+## Java upgrade engine
+
+`crates/autodock-core/src/java.rs` reads a Maven project (Java level, Spring Boot, removed JDK APIs); `java_upgrade.rs` plans and runs the upgrade of a copy inside `maven:3.9-eclipse-temurin-25`. The order of the steps (`hops_for`) is what keeps every intermediate build working: Spring Boot 2.7 first (it still builds on the old level), Java 17 (Spring Boot 3 needs it), Spring Boot 3.5 (`javax` → `jakarta`), Spring Boot 4.0, Java 25.
+
+- The OpenRewrite plugin and the recipe libraries are pinned (`REWRITE_PLUGIN`, `RECIPE_LIBRARIES`) together with the image and the target versions (`TARGET_JAVA`, `TARGET_BOOT`). To move to a newer release, change them together and run the fixtures below end to end; a recipe name that does not exist fails the run (`failOnInvalidActiveRecipes`).
+- `rewrite:runNoFork` is used on purpose: `rewrite:run` compiles first, and a legacy build cannot compile on the new JDK. In a multi-module project `runNoFork` cannot resolve a module that depends on a sibling, so the script runs the `compile` phase with `-Dmaven.main.skip=true` first (see the comment on `script`).
+- The unit tests use a fake runner (no Docker). To check a real upgrade, build small fixtures: a Spring Boot 1.5 project on Java 1.7 (JPA, a REST controller, a JUnit 4 test that uses `javax.xml.bind`), a plain Java 1.6 library with JUnit 4, a multi-module project, and one that uses `sun.misc.BASE64Encoder` (it must stop at the Java 17 step and name it). Then run `autodock java upgrade <folder> --yes` and check that the original is untouched and the copy compiles and passes its tests.
+
 ## Legacy Windows bootstrap
 
 `bootstrap-autodock.ps1` and the PowerShell tests in `tests/` predate the CI matrix. They only apply to a full checkout on Windows, write their reports to `.autodock-bootstrap/` and do not install anything:

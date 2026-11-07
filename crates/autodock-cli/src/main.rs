@@ -27,6 +27,7 @@ macro_rules! say {
 
 // after `say!`, which it uses
 mod expo_cli;
+mod java_cli;
 
 #[derive(Subcommand)]
 enum Commands {
@@ -76,6 +77,12 @@ enum Commands {
     Expo {
         #[command(subcommand)]
         action: expo_cli::ExpoCommand,
+    },
+    /// Legacy Java (Maven) projects: inspect them and upgrade a copy to the current JDK and
+    /// Spring Boot (inside Docker; the project itself is never modified).
+    Java {
+        #[command(subcommand)]
+        action: java_cli::JavaCommand,
     },
     /// Creates a project with the framework's official installer, inside Docker.
     /// Without --run it only shows the command.
@@ -550,6 +557,14 @@ fn run(command: Commands) -> ExitCode {
             }
         },
         Commands::Expo { action } => match expo_cli::run(action) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(error) => {
+                eprintln!("{}", say!("Erro: {error}", "Error: {error}"));
+                ExitCode::FAILURE
+            }
+        },
+        Commands::Java { action } => match java_cli::run(action) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
             Err(error) => {

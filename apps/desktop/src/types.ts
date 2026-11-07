@@ -46,6 +46,7 @@ export type Page =
   | "console"
   | "learn"
   | "expo"
+  | "java"
   | "settings";
 
 export type DockerContainer = {
@@ -430,3 +431,83 @@ export type DownloadEvent =
   | { event: "started"; contentLength: number | null }
   | { event: "progress"; chunkLength: number }
   | { event: "finished" };
+
+export type JavaApi = { name: string; files: number; fixable: boolean };
+
+export type JavaProject = {
+  schemaVersion: number;
+  path: string;
+  name: string;
+  buildTool: string;
+  packaging: string;
+  javaLevel: number | null;
+  javaDeclared: string | null;
+  springBoot: string | null;
+  modules: string[];
+  jdkApis: JavaApi[];
+  upgradeAvailable: boolean;
+  upgradeSupported: boolean;
+  unsupportedReason: string | null;
+};
+
+export type JavaHopPlan = { id: string; label: string; recipe: string; checked: boolean };
+export type JavaFixup = { module: string; dependency: string; because: string };
+
+export type JavaPlan = {
+  schemaVersion: number;
+  project: JavaProject;
+  fromJava: number | null;
+  toJava: number;
+  fromSpringBoot: string | null;
+  toSpringBoot: string | null;
+  image: string;
+  hops: JavaHopPlan[];
+  fixups: JavaFixup[];
+  destination: string;
+  command: string;
+  notes: string[];
+  warnings: string[];
+  links: { label: string; url: string }[];
+};
+
+export type JavaHopResult = {
+  id: string;
+  label: string;
+  status: "ok" | "failed" | "skipped";
+  compiled: boolean | null;
+};
+
+export type JavaTests = {
+  run: number;
+  failures: number;
+  errors: number;
+  skipped: number;
+  passed: boolean;
+};
+
+export type JavaChanges = {
+  modified: string[];
+  added: string[];
+  removed: string[];
+  truncated: boolean;
+  total: number;
+};
+
+export type JavaUpgradeReport = {
+  schemaVersion: number;
+  succeeded: boolean;
+  destination: string;
+  fromJava: number | null;
+  toJava: number;
+  fromSpringBoot: string | null;
+  toSpringBoot: string | null;
+  hops: JavaHopResult[];
+  failedHop: string | null;
+  fixups: JavaFixup[];
+  changes: JavaChanges;
+  tests: JavaTests | null;
+  output: string;
+  detail: string;
+  durationMs: number;
+  nextSteps: string[];
+};

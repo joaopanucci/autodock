@@ -41,6 +41,7 @@ import { Assistant } from "./pages/Assistant";
 import { Contribute } from "./pages/Contribute";
 import { Learn } from "./pages/Learn";
 import { Expo } from "./pages/Expo";
+import { Java } from "./pages/Java";
 import { LANGUAGES, useI18n, type Lang, type TranslationKey } from "./i18n";
 
 const headings: Record<
@@ -56,6 +57,7 @@ const headings: Record<
   console: { title: "page.console.title", description: "page.console.description" },
   learn: { title: "page.learn.title", description: "page.learn.description" },
   expo: { title: "page.expo.title", description: "page.expo.description" },
+  java: { title: "page.java.title", description: "page.java.description" },
   contribute: { title: "page.contribute.title", description: "page.contribute.description" },
   settings: { title: "page.settings.title", description: "page.settings.description" },
 };
@@ -348,6 +350,7 @@ export default function App() {
             clearFocus={clearExpoFocus}
           />
         )}
+        {page === "java" && <Java sessionProjects={projects} />}
         {page === "contribute" && <Contribute />}
         {page === "environment" && (
           <Environment

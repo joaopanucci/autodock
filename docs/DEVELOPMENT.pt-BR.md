@@ -103,6 +103,14 @@ Veja as seções *Traduções* e *Atualizando os screenshots do README* do [CONT
 - **Instalador do Windows.** `bundle.windows.nsis` no `tauri.conf.json` define a instalação por usuário, a página de licença e a arte em `src-tauri/installer/` (`sidebar.bmp` 164×314 e `header.bmp` 150×57, 24 bits). O `installer/hooks.nsh` renova o cache de ícones do Windows após instalar.
 - **Imagens da marca.** `node scripts/brand-assets.mjs` regera o fundo do DMG do macOS e o `docs/social-preview.png`. Rode antes o `scripts/screenshots.mjs` (precisa de `cargo build -p autodock-cli` e do servidor de desenvolvimento); use `AUTODOCK_THEME=dark` para o conjunto escuro. Os dois scripts funcionam no Windows, macOS e Linux (defina `AUTODOCK_BROWSER_CHANNEL` se não tiver Edge ou Chrome).
 
+## Motor de upgrade de Java
+
+`crates/autodock-core/src/java.rs` lê um projeto Maven (nível do Java, Spring Boot, APIs removidas do JDK); `java_upgrade.rs` planeja e executa o upgrade de uma cópia dentro de `maven:3.9-eclipse-temurin-25`. A ordem dos passos (`hops_for`) é o que mantém cada build intermediário funcionando: Spring Boot 2.7 primeiro (ainda compila no nível antigo), Java 17 (o Spring Boot 3 exige), Spring Boot 3.5 (`javax` → `jakarta`), Spring Boot 4.0 e Java 25.
+
+- O plugin do OpenRewrite e as bibliotecas de receitas são fixados (`REWRITE_PLUGIN`, `RECIPE_LIBRARIES`) junto com a imagem e as versões-alvo (`TARGET_JAVA`, `TARGET_BOOT`). Para subir de versão, troque tudo junto e rode os projetos de teste abaixo de ponta a ponta; um nome de receita que não existe faz a execução falhar (`failOnInvalidActiveRecipes`).
+- Usamos `rewrite:runNoFork` de propósito: o `rewrite:run` compila antes, e um build legado não compila no JDK novo. Num projeto multimódulo o `runNoFork` não resolve um módulo que depende de um irmão, então o script roda antes a fase `compile` com `-Dmaven.main.skip=true` (veja o comentário em `script`).
+- Os testes unitários usam um executor falso (sem Docker). Para conferir um upgrade de verdade, monte projetos pequenos: um Spring Boot 1.5 em Java 1.7 (JPA, um controller REST, um teste JUnit 4 que usa `javax.xml.bind`), uma biblioteca Java 1.6 simples com JUnit 4, um projeto multimódulo e um que usa `sun.misc.BASE64Encoder` (deve parar no passo do Java 17 e dizer qual). Depois rode `autodock java upgrade <pasta> --yes` e confira que o original ficou intacto e que a cópia compila e passa nos testes.
+
 ## Bootstrap legado do Windows
 
 `bootstrap-autodock.ps1` e os testes PowerShell em `tests/` são anteriores à matriz de CI. Só valem para um checkout completo no Windows, gravam seus relatórios em `.autodock-bootstrap/` e não instalam nada:

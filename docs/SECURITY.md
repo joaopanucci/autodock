@@ -41,6 +41,20 @@ Inspecting an Expo project only reads `package.json`, the lock file, `.gitignore
 - A backup can be restored later (`autodock expo restore`, with confirmation). The backup id is validated (`<digits>-<digits>-<digits>`), the backup must belong to the same project, and the interface warns when `package.json` changed after the upgrade because restoring discards that work.
 - npm falls back to `--legacy-peer-deps` only after an `ERESOLVE` error, and the report says so.
 
+## Java upgrades
+
+Inspecting a Java project only reads `pom.xml` files (DTDs are not expanded) and the text of `.java` files under `src/main/java` and `src/test/java` as data, to find the Java level, the Spring Boot version and the removed JDK APIs the sources use. Nothing of the project is executed to do it, and symbolic links are never followed.
+
+**The project is never modified.** The upgrade works on a copy:
+
+- The copy is created **next to the project** (`<name>-java25`, then `-2`, `-3`… up to 20) with `create_dir`, which fails when the folder exists, so nothing is ever copied over something. `.git`, `.idea`, `node_modules`, `.gradle`, `.svn`, `.hg`, the `target` folder of a Maven module, `.env` and `.env.*` files (except `.env.example`, `.env.sample` and `.env.template`), `*.iml` files and symbolic links are not copied. The copy is refused above 1 GB or 100,000 files. If copying fails, the new folder is removed.
+- Everything that runs project code (the build plugins in the `pom.xml`, the tests, the OpenRewrite recipes) runs **inside a container** (`maven:3.9-eclipse-temurin-25`) that sees **only the copy**. The original folder is not mounted. The container has no privileged mode, no extra mounts and no Docker socket. The Maven artifacts it downloads (from Maven Central, by Maven itself) are kept in a named Docker volume (`autodock-maven-cache`) that never mixes with the `~/.m2` of the computer; `docker volume rm autodock-maven-cache` removes it.
+- The OpenRewrite plugin and the recipe libraries are **pinned to exact versions** in the code (`rewrite-maven-plugin`, `rewrite-spring`, `rewrite-migrate-java`), the combination that was run end to end, and the plugin is told to fail on an unknown recipe name. Only these constants, the step names and, on Linux and macOS, the user and group ids (integers) reach the script that runs in the container. The folder path goes in a comma-separated `--mount` value, so a path with a comma, a quote or a control character is refused.
+- It needs an explicit confirmation on every call (`confirmed: true` from the interface, `--yes` in the CLI); the plan can be read without running anything (`autodock java plan`).
+- Before the container starts, AutoDock itself adds `<dependency>` entries to the `pom.xml` of the module that uses an API the JDK stopped shipping (JAXB, `javax.annotation`, `javax.activation`, JAX-WS, JTA). The pom is rewritten through a temporary file and an artifact that is already declared is skipped. APIs with no replacement (`sun.*`, CORBA) are only reported.
+- The build output (`target`) is removed from the copy afterwards. On failure the copy stays for inspection (the report names the step and shows the compiler output); if Docker is missing, nothing ran and the copy is removed again.
+- Gradle projects, and folders that are a module of a larger Maven tree (a parent pom outside the folder), are refused with the reason.
+
 ## In-app updates
 
 AutoDock updates itself with the official Tauri updater, with these limits:
