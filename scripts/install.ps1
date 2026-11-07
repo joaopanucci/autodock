@@ -14,7 +14,7 @@
   installer is still unsigned, and you can read this whole script before running it.
 
 .PARAMETER Version
-  Release tag to install, for example v0.5.0 (default: latest). Also read from the
+  Release tag to install, for example v0.5.1 (default: latest). Also read from the
   AUTODOCK_VERSION environment variable.
 
 .PARAMETER NoLaunch
