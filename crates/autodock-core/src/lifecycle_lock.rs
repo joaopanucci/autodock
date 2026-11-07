@@ -1,8 +1,10 @@
 use fs4::TryLockError;
+#[cfg(unix)]
+use std::fs;
 #[cfg(windows)]
 use std::fs::OpenOptions;
 use std::{
-    fs::{self, File},
+    fs::File,
     path::{Path, PathBuf},
 };
 
@@ -156,6 +158,7 @@ pub fn lock_path_for(journal_directory: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn secure_test_tempdir() -> tempfile::TempDir {
         tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()

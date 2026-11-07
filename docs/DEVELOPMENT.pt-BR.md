@@ -87,6 +87,13 @@ O workflow **Smoke test installers** instala um release publicado em runners lim
 
 Veja as seções *Traduções* e *Atualizando os screenshots do README* do [CONTRIBUTING](../CONTRIBUTING.pt-BR.md).
 
+## Tema, ícone e imagens da marca
+
+- **Tema.** O app tem tema claro e escuro (`apps/desktop/src/theme.ts`, seletor na barra superior e em Configurações). A escolha fica no `localStorage` (`autodock.theme`); o padrão segue o sistema operacional. As cores vivem em tokens: `src/theme-tokens.css` define cada cor `--c-*` duas vezes (claro em `:root`, escuro em `:root[data-theme="dark"]`) e os tokens escritos à mão (`--bg`, `--panel`, `--ink`, `--line`…) ficam no fim de `src/style.css`. Para mudar uma cor, edite nos **dois** lugares; não escreva hex novo nas regras.
+- **Ícone.** A fonte é `apps/desktop/src-tauri/icons/app-icon.svg`. Renderize em PNG de 1024 px (`app-icon.png`, cantos transparentes) e rode `npx tauri icon src-tauri/icons/app-icon.png` em `apps/desktop` para regerar todos os tamanhos.
+- **Instalador do Windows.** `bundle.windows.nsis` no `tauri.conf.json` define a instalação por usuário, a página de licença e a arte em `src-tauri/installer/` (`sidebar.bmp` 164×314 e `header.bmp` 150×57, 24 bits). O `installer/hooks.nsh` renova o cache de ícones do Windows após instalar.
+- **Imagens da marca.** `node scripts/brand-assets.mjs` regera o fundo do DMG do macOS e o `docs/social-preview.png`. Rode antes o `scripts/screenshots.mjs` (precisa de `cargo build -p autodock-cli` e do servidor de desenvolvimento); use `AUTODOCK_THEME=dark` para o conjunto escuro. Os dois scripts funcionam no Windows, macOS e Linux (defina `AUTODOCK_BROWSER_CHANNEL` se não tiver Edge ou Chrome).
+
 ## Bootstrap legado do Windows
 
 `bootstrap-autodock.ps1` e os testes PowerShell em `tests/` são anteriores à matriz de CI. Só valem para um checkout completo no Windows, gravam seus relatórios em `.autodock-bootstrap/` e não instalam nada:

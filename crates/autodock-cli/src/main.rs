@@ -39,7 +39,7 @@ enum Commands {
     /// Without --run it only shows the command.
     Scaffold {
         path: PathBuf,
-        /// laravel, django, vite-react ou vite-vue
+        /// laravel, django, vite-react, vite-vue, nextjs ou nestjs
         #[arg(long)]
         framework: String,
         #[arg(long)]
@@ -50,7 +50,7 @@ enum Commands {
     /// Generates Dockerfile and docker-compose.yml. Without --write it only previews.
     Generate {
         path: PathBuf,
-        /// nodejs, spring-boot, python ou laravel
+        /// nodejs, spring-boot, python, laravel, go, dotnet ou rails
         #[arg(long)]
         stack: String,
         #[arg(long)]

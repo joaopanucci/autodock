@@ -29,6 +29,7 @@ import type {
   StackSuggestion,
 } from "../types";
 import { Badge, Panel } from "../components/ui";
+import { TechLogo, hasLogo } from "../components/TechLogo";
 import { displayPath } from "../model";
 import { useI18n, type TranslationKey } from "../i18n";
 
@@ -44,7 +45,15 @@ const STACKS: {
   { id: "spring-boot", title: "Java / Spring Boot", hint: "wizard.stack.spring.hint", port: 8080, versions: ["21", "17"], versionLabel: "wizard.stack.spring.version" },
   { id: "python", title: "Python", hint: "wizard.stack.python.hint", port: 8000, versions: ["3.12", "3.13", "3.11"], versionLabel: "wizard.stack.python.version" },
   { id: "laravel", title: "PHP / Laravel", hint: "wizard.stack.laravel.hint", port: 8000, versions: ["8.4", "8.5", "8.3", "8.2"], versionLabel: "wizard.stack.laravel.version" },
+  { id: "go", title: "Go", hint: "wizard.stack.go.hint", port: 8080, versions: ["1.26", "1.25", "1.24"], versionLabel: "wizard.stack.go.version" },
+  { id: "dotnet", title: ".NET / ASP.NET Core", hint: "wizard.stack.dotnet.hint", port: 8080, versions: ["10.0", "9.0", "8.0"], versionLabel: "wizard.stack.dotnet.version" },
+  { id: "rails", title: "Ruby on Rails", hint: "wizard.stack.rails.hint", port: 3000, versions: ["3.4", "3.3", "4.0"], versionLabel: "wizard.stack.rails.version" },
 ];
+
+/** Stacks that cannot start a new project from here (existing projects only). */
+const EXISTING_ONLY: StackId[] = ["rails"];
+
+const NODE_FRAMEWORK_TITLES = { nextjs: "Next.js", nestjs: "NestJS" } as const;
 
 const SERVICES: { id: ServiceId; title: string; hint: TranslationKey; group: TranslationKey }[] = [
   { id: "postgres", title: "PostgreSQL", hint: "wizard.svc.relational", group: "wizard.group.db" },
@@ -71,6 +80,8 @@ const STARTERS: Record<StackId, StarterOption[]> = {
     { id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.node.clean" },
     { id: "vite-react", title: "Vite + React", hint: "wizard.starter.vite" },
     { id: "vite-vue", title: "Vite + Vue", hint: "wizard.starter.vite" },
+    { id: "nextjs", title: "Next.js", hint: "wizard.starter.next" },
+    { id: "nestjs", title: "NestJS", hint: "wizard.starter.nest" },
   ],
   "spring-boot": [
     { id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.spring.clean" },
@@ -80,6 +91,9 @@ const STARTERS: Record<StackId, StarterOption[]> = {
     { id: "django", title: "Django", hint: "wizard.starter.django" },
   ],
   laravel: [{ id: "laravel", title: "Laravel", hint: "wizard.starter.laravel" }],
+  go: [{ id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.go.clean" }],
+  dotnet: [{ id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.dotnet.clean" }],
+  rails: [{ id: "clean", title: CLEAN, translateTitle: true, hint: "wizard.starter.node.clean" }],
 };
 
 function suggestName(path: string) {
@@ -151,9 +165,11 @@ export function Assistant({
       startScript:
         stack !== "nodejs"
           ? undefined
-          : starter.startsWith("vite")
+          : starter.startsWith("vite") || starter === "nextjs"
             ? "dev"
-            : newProject
+            : starter === "nestjs"
+              ? "start:dev"
+              : newProject
               ? undefined
               : startScript.trim() || undefined,
       pythonFramework:
@@ -198,13 +214,24 @@ export function Assistant({
     setStarter(STARTERS[id][0].id);
     setScaffoldPlan(null);
     setPort(String(hint?.vite ? 5173 : info.port));
-    setVersion(info.versions[0]);
+    // NestJS dependencies fail to install with the npm that ships with Node 22.
+    setVersion(hint?.nodeFramework === "nestjs" ? "24" : info.versions[0]);
     setPlan(null);
     setResult(null);
     if (hint?.packageManager) setPackageManager(hint.packageManager);
     if (id === "nodejs") {
       const scripts = hint?.scripts ?? [];
-      setStartScript(scripts.includes("start") ? "start" : scripts.includes("dev") ? "dev" : scripts[0] ?? "start");
+      const preferred =
+        hint?.nodeFramework === "nextjs" ? "dev" : hint?.nodeFramework === "nestjs" ? "start:dev" : "start";
+      setStartScript(
+        scripts.includes(preferred)
+          ? preferred
+          : scripts.includes("start")
+            ? "start"
+            : scripts.includes("dev")
+              ? "dev"
+              : scripts[0] ?? "start",
+      );
     }
     if (hint?.pythonFramework) setFramework(hint.pythonFramework);
   }
@@ -471,7 +498,10 @@ export function Assistant({
               <CheckCircle2 size={16} aria-hidden="true" />{" "}
               {t("wizard.s1.found", {
                 list: suggestions
-                  .map((s) => `${STACKS.find((x) => x.id === s.stack)?.title} (${s.evidence})`)
+                  .map(
+                    (s) =>
+                      `${STACKS.find((x) => x.id === s.stack)?.title}${s.nodeFramework ? ` · ${NODE_FRAMEWORK_TITLES[s.nodeFramework]}` : ""} (${s.evidence})`,
+                  )
                   .join(", "),
               })}
             </p>
@@ -485,15 +515,16 @@ export function Assistant({
           eyebrow={stepLabel(2)}
         >
           <div className="choice-grid" role="radiogroup" aria-label={t("wizard.s2.techAria")}>
-            {STACKS.map((s) => (
+            {STACKS.filter((s) => !(newProject && EXISTING_ONLY.includes(s.id))).map((s) => (
               <button
                 key={s.id}
                 type="button"
                 role="radio"
                 aria-checked={stack === s.id}
-                className={`choice ${stack === s.id ? "selected" : ""}`}
+                className={`choice with-logo ${stack === s.id ? "selected" : ""}`}
                 onClick={() => chooseStack(s.id)}
               >
+                <TechLogo id={s.id} />
                 <strong>{s.title}</strong>
                 <span>{t(s.hint)}</span>
                 {detected(s.id) && <Badge tone="green">{t("wizard.s2.detected")}</Badge>}
@@ -525,14 +556,16 @@ export function Assistant({
                     type="button"
                     role="radio"
                     aria-checked={starter === option.id}
-                    className={`choice ${starter === option.id ? "selected" : ""}`}
+                    className={`choice with-logo ${starter === option.id ? "selected" : ""}`}
                     onClick={() => {
                       setStarter(option.id);
+                      setVersion(option.id === "nestjs" ? "24" : meta.versions[0]);
                       setPort(option.id.startsWith("vite") ? "5173" : String(meta.port));
                       setPlan(null);
                       setScaffoldPlan(null);
                     }}
                   >
+                    <TechLogo id={option.id === "clean" ? stack! : option.id} />
                     <strong>{option.translateTitle ? t(option.title as TranslationKey) : option.title}</strong>
                     <span>{t(option.hint)}</span>
                     {option.id !== "clean" && <Badge tone="blue">{t("wizard.s2.official")}</Badge>}
@@ -634,12 +667,13 @@ export function Assistant({
               <legend>{t(group)}</legend>
               <div className="choice-grid">
                 {items.map((s) => (
-                  <label key={s.id} className={`choice ${services.includes(s.id) ? "selected" : ""}`}>
+                  <label key={s.id} className={`choice ${hasLogo(s.id) ? "with-logo" : ""} ${services.includes(s.id) ? "selected" : ""}`}>
                     <input
                       type="checkbox"
                       checked={services.includes(s.id)}
                       onChange={() => toggleService(s.id)}
                     />
+                    <TechLogo id={s.id} />
                     <strong>{s.title}</strong>
                     <span>{t(s.hint)}</span>
                   </label>

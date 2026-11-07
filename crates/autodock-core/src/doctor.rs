@@ -1,4 +1,3 @@
-use command_group::CommandGroup;
 use serde::Serialize;
 use std::{
     io::{Read, Seek, SeekFrom},
@@ -130,8 +129,6 @@ pub fn probe(name: &str, program: &str, args: &[&str], timeout: Duration) -> Too
         let mut command = Command::new(&path);
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000); // CREATE_NO_WINDOW
             if path
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
@@ -154,7 +151,6 @@ pub fn probe(name: &str, program: &str, args: &[&str], timeout: Duration) -> Too
                     )
                 })?;
                 command = Command::new(node);
-                command.creation_flags(0x08000000);
                 command.arg(script);
             }
         }
@@ -165,7 +161,8 @@ pub fn probe(name: &str, program: &str, args: &[&str], timeout: Duration) -> Too
         command
             .stdout(stdout.try_clone().map_err(|e| e.to_string())?)
             .stderr(stderr.try_clone().map_err(|e| e.to_string())?);
-        let mut child = command.group_spawn().map_err(|e| e.to_string())?;
+        let mut child =
+            crate::memory_capture::spawn_hidden_group(&mut command).map_err(|e| e.to_string())?;
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {

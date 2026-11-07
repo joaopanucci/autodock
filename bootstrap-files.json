@@ -123,5 +123,9 @@
   "scripts/Diagnostics.ps1",
   "scripts/verify-icons.ps1",
   "tests/Bootstrap.Tests.ps1",
-  "tests/Diagnostics.Tests.ps1"
+  "tests/Diagnostics.Tests.ps1",
+  "apps/desktop/src-tauri/icons/app-icon.svg",
+  "apps/desktop/src-tauri/installer/header.bmp",
+  "apps/desktop/src-tauri/installer/sidebar.bmp",
+  "apps/desktop/src-tauri/installer/hooks.nsh"
 ]

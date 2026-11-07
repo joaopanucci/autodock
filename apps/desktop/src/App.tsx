@@ -13,6 +13,7 @@ import {
 import type { Doctor, Page, Scan, SessionProject } from "./types";
 import { displayPath, rememberProject } from "./model";
 import { Layout, navigation } from "./components/Layout";
+import { ThemeSwitch } from "./components/ThemeSwitch";
 import { Badge, Panel } from "./components/ui";
 import { Overview } from "./pages/Overview";
 import { Projects } from "./pages/Projects";
@@ -277,7 +278,7 @@ export default function App() {
                     <strong>{t("settings.theme.title")}</strong>
                     <p>{t("settings.theme.body")}</p>
                   </div>
-                  <Badge tone="blue">{t("settings.theme.badge")}</Badge>
+                  <ThemeSwitch />
                 </div>
                 <div className="setting-row">
                   <div>

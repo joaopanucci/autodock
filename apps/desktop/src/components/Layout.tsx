@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { Page } from "../types";
 import { useI18n, type TranslationKey } from "../i18n";
+import { ThemeSwitch } from "./ThemeSwitch";
 import logo from "../../src-tauri/icons/128x128.png";
 
 export const navigation: {
@@ -148,9 +149,12 @@ export function Layout({
             <ChevronRight size={14} aria-hidden="true" />
             <strong>{t(navigation.find((n) => n.id === page)!.labelKey)}</strong>
           </div>
-          <span className="local-label">
-            <ShieldCheck size={14} aria-hidden="true" /> {t("layout.topbar.confirm")}
-          </span>
+          <div className="topbar-actions">
+            <span className="local-label">
+              <ShieldCheck size={14} aria-hidden="true" /> {t("layout.topbar.confirm")}
+            </span>
+            <ThemeSwitch />
+          </div>
         </header>
         <main id="content" tabIndex={-1}>
           {children}

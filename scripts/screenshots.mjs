@@ -6,12 +6,15 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(new URL("../apps/desktop/package.json", import.meta.url));
 const { chromium } = require("@playwright/test");
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const lang = process.env.AUTODOCK_LANG === "en" ? "en" : "pt";
-const out = path.join(root, "docs/screenshots", lang === "en" ? "en" : "");
+// AUTODOCK_THEME=dark writes to docs/screenshots/dark; the default is the light theme.
+const theme = process.env.AUTODOCK_THEME === "dark" ? "dark" : "light";
+const out = path.join(root, "docs/screenshots", theme === "dark" ? "dark" : "", lang === "en" ? "en" : "");
 fs.mkdirSync(out, { recursive: true });
 // UI labels the script clicks, per language.
 const L = {
@@ -19,7 +22,7 @@ const L = {
   en: { projects: "Projects", assistant: "Docker assistant", selectFolder: "Select folder", analyze: "Analyze project", modules: "modules found", found: /Found:/, next: /Continue/, review: /Review/, reviewTitle: "Review before creating", view: "view", create: /Create \d+ file/, openIn: "Open the project in:", containers: "Containers", environment: "Environment", contribute: "Contribute", refresh: /Load|Refresh|List/, check: /Check|Refresh/ },
 }[lang];
 const base = process.env.AUTODOCK_URL ?? "http://127.0.0.1:1420";
-const cli = path.join(root, "target/debug/autodock");
+const cli = path.join(root, "target/debug", process.platform === "win32" ? "autodock.exe" : "autodock");
 
 // Docker files generated for real by AutoDock. Two sample projects share one port
 // registry, so the second one shows the automatic port adjustment.
@@ -97,15 +100,19 @@ const doctor = {
 const containers = {
   schemaVersion: 1,
   containers: [
-    { id: "a1b2c3d4e5f6", name: "loja-online-app-1", image: "loja-online-app", state: "running", status: "Up 2 hours", ports: "0.0.0.0:3000->3000/tcp", project: "loja-online", service: "app", health: null },
-    { id: "b2c3d4e5f6a1", name: "loja-online-postgres-1", image: "postgres:16-alpine", state: "running", status: "Up 2 hours (healthy)", ports: "127.0.0.1:5432->5432/tcp", project: "loja-online", service: "postgres", health: "healthy" },
-    { id: "c3d4e5f6a1b2", name: "loja-online-redis-1", image: "redis:7-alpine", state: "running", status: "Up 2 hours (healthy)", ports: "127.0.0.1:6379->6379/tcp", project: "loja-online", service: "redis", health: "healthy" },
+    { id: "a1b2c3d4e5f6", name: "loja-online", image: "loja-online-app", state: "running", status: "Up 2 hours", ports: "0.0.0.0:3000->3000/tcp", project: "loja-online", service: "app", health: null },
+    { id: "b2c3d4e5f6a1", name: "loja-online-postgres", image: "postgres:16-alpine", state: "running", status: "Up 2 hours (healthy)", ports: "127.0.0.1:5432->5432/tcp", project: "loja-online", service: "postgres", health: "healthy" },
+    { id: "c3d4e5f6a1b2", name: "loja-online-redis", image: "redis:7-alpine", state: "running", status: "Up 2 hours (healthy)", ports: "127.0.0.1:6379->6379/tcp", project: "loja-online", service: "redis", health: "healthy" },
   ],
 };
 
-const browser = await chromium.launch({ channel: process.env.AUTODOCK_BROWSER_CHANNEL ?? "chrome" });
-const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark", locale: lang === "en" ? "en-US" : "pt-BR" });
+const browser = await chromium.launch({ channel: process.env.AUTODOCK_BROWSER_CHANNEL ?? (process.platform === "win32" ? "msedge" : "chrome") });
+const context = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: theme, locale: lang === "en" ? "en-US" : "pt-BR" });
 const page = await context.newPage();
+await page.addInitScript(({ theme, lang }) => {
+  localStorage.setItem("autodock.theme", theme);
+  localStorage.setItem("autodock.language", lang);
+}, { theme, lang });
 await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes }) => {
   window.__TAURI_INTERNALS__ = {
     transformCallback: () => 1,

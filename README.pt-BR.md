@@ -10,8 +10,8 @@
 Responda algumas perguntas. O AutoDock cria o `Dockerfile`, o `docker-compose.yml` e até o projeto, se você ainda não tiver um. Você revisa tudo antes de gravar.
 
 [![CI](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml/badge.svg?branch=main)](https://github.com/joaopanucci/autodock/actions/workflows/rust-ci.yml)
-[![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=709fe5&label=vers%C3%A3o)](https://github.com/joaopanucci/autodock/releases/latest)
-[![Licença](https://img.shields.io/badge/licen%C3%A7a-Apache--2.0-7bc6a8)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/joaopanucci/autodock?color=22252a&label=vers%C3%A3o)](https://github.com/joaopanucci/autodock/releases/latest)
+[![Licença](https://img.shields.io/badge/licen%C3%A7a-Apache--2.0-22252a)](LICENSE)
 ![Plataformas](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-4d6fa8)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-core-CE422B?logo=rust&logoColor=white)
@@ -39,6 +39,9 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 - 🔌 **Sem conflito de portas.** O AutoDock testa quais portas estão livres e lembra as de outros projetos, então 10 projetos não disputam a 5432.
 - 🧰 **Sem instalar nada além do Docker.** Os instaladores oficiais dos frameworks rodam *dentro* de containers.
 - 🖥️ **Local e open source.** Seu código não sai do seu computador. Licença Apache-2.0.
+- 🏷️ **Com o nome do seu projeto.** O projeto do compose, os containers e as imagens levam o nome do seu projeto (`loja`, `loja-postgres`…), nunca um nome genérico.
+- 🌗 **Claro e escuro.** Troque o tema em qualquer tela; ele também pode seguir o sistema.
+- 🎓 **Aprenda usando.** 13 lições curtas, um guia rápido com comandos para PowerShell, CMD e Bash e um glossário, tudo dentro do app.
 - 🌍 **Português e inglês.** A interface e as mensagens seguem o idioma do sistema e podem ser trocadas em Configurações.
 
 ## 🚀 O que ele faz
@@ -55,10 +58,13 @@ Configurar Docker para um projeto local é repetitivo: qual imagem base, qual po
 
 | Tecnologia | Projeto existente | Projeto novo (limpo) | Projeto novo (framework oficial) |
 |---|:---:|:---:|:---:|
-| **Node.js** | ✅ npm · pnpm · yarn, Vite | ✅ Express | ✅ Vite + React · Vite + Vue (TypeScript) |
+| **Node.js** | ✅ npm · pnpm · yarn, Vite, Next.js, NestJS | ✅ Express | ✅ Vite + React · Vite + Vue · Next.js · NestJS (TypeScript) |
 | **Java / Spring Boot** | ✅ Maven | ✅ Spring Boot + Maven | 🔜 Spring Initializr |
 | **Python** | ✅ FastAPI · Django · Flask | ✅ FastAPI · Flask | ✅ Django |
 | **PHP / Laravel** | ✅ Composer | — | ✅ Laravel |
+| **Go** | ✅ `go.mod` (build em duas etapas) | ✅ `net/http` | — |
+| **.NET / ASP.NET Core** | ✅ `.csproj` (build em duas etapas) | ✅ minimal API | — |
+| **Ruby on Rails** | ✅ Gemfile | — | — |
 
 ## 📦 Baixar
 
@@ -66,10 +72,10 @@ Pegue o instalador da sua plataforma na [página de releases](https://github.com
 
 | Sistema | Arquivo | Como instalar |
 |---|---|---|
-| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.1.2_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
-| 🪟 **Windows** (64 bits) | [`AutoDock_0.1.2_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_x64-setup.exe) | Execute o instalador. |
-| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.1.2_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_amd64.deb) | `sudo apt install ./AutoDock_0.1.2_amd64.deb` |
-| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.1.2_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.1.2/AutoDock_0.1.2_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.2.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
+| 🪟 **Windows** (64 bits) | [`AutoDock_0.2.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_x64-setup.exe) | Execute o instalador. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.2.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_amd64.deb) | `sudo apt install ./AutoDock_0.2.0_amd64.deb` |
+| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.2.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.2.0/AutoDock_0.2.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
 > **Requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução para criar e rodar os ambientes.
 
@@ -87,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.1.2`.
+Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.2.0`.
 
 <details>
 <summary><b>⚠️ Baixou pelo navegador e apareceu "desenvolvedor não identificado"? É esperado</b></summary>
@@ -103,7 +109,7 @@ O AutoDock é um projeto open source e os instaladores **ainda não são assinad
 Conferir a integridade do arquivo:
 
 ```bash
-shasum -a 256 AutoDock_0.1.2_universal.dmg   # compare com o SHA256SUMS.txt
+shasum -a 256 AutoDock_0.2.0_universal.dmg   # compare com o SHA256SUMS.txt
 ```
 
 </details>
@@ -114,7 +120,7 @@ shasum -a 256 AutoDock_0.1.2_universal.dmg   # compare com o SHA256SUMS.txt
 
 ### 1. Escolha a pasta do projeto
 
-Selecione a pasta. O AutoDock lê **apenas** os arquivos de configuração (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`) para sugerir a tecnologia. Nenhum código seu é executado.
+Selecione a pasta. O AutoDock lê **apenas** os arquivos de configuração (`package.json`, `pom.xml`, `requirements.txt`, `composer.json`, `go.mod`, `*.csproj`, `Gemfile`) para sugerir a tecnologia. Nenhum código seu é executado.
 
 <img src="docs/screenshots/03-assistente-projeto.png" alt="Passo 1: escolher a pasta e detectar a tecnologia" width="820" />
 
@@ -158,6 +164,15 @@ docker compose up --build
 <tr>
 <td width="50%"><b>Diagnostique o ambiente</b><br/>Node, Git, Docker, Compose e Engine, sem supor nada.<br/><img src="docs/screenshots/09-ambiente.png" alt="Diagnóstico do ambiente" /></td>
 <td width="50%"><b>Visão geral</b><br/>Seus projetos e o estado do ambiente em um só lugar.<br/><img src="docs/screenshots/01-visao-geral.png" alt="Visão geral" /></td>
+</tr>
+</table>
+
+### 🌗 Claro e escuro
+
+<table>
+<tr>
+<td width="50%"><b>Claro</b><br/><img src="docs/screenshots/04-assistente-tecnologia.png" alt="Passo da tecnologia, tema claro" /></td>
+<td width="50%"><b>Escuro</b><br/><img src="docs/screenshots/dark/04-assistente-tecnologia.png" alt="Passo da tecnologia, tema escuro" /></td>
 </tr>
 </table>
 
@@ -207,8 +222,12 @@ autodock generate ./meu-projeto --stack nodejs --port 3000 --service postgres --
 
 # projeto novo em pasta vazia
 autodock generate ./novo --new --stack python --port 8000 --write
+# stacks: nodejs, spring-boot, python, laravel, go, dotnet, rails
+autodock generate ./api --stack go --port 8080 --service postgres
 autodock scaffold ./novo --framework laravel --name loja          # só mostra o comando
 autodock scaffold ./novo --framework laravel --name loja --run    # executa
+# frameworks: laravel, django, vite-react, vite-vue, nextjs, nestjs
+autodock scaffold ./site --framework nextjs --name site
 ```
 
 ## 🧱 Arquitetura
@@ -229,16 +248,21 @@ npm --prefix apps/desktop run tauri dev
 
 ## 🗺️ Roadmap
 
-- [x] Assistente Docker para projetos existentes (Node.js, Spring Boot, Python, Laravel)
+- [x] Assistente Docker para projetos existentes (Node.js, Next.js, NestJS, Spring Boot, Python, Laravel, Go, .NET, Rails)
 - [x] Serviços: PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Adminer, MailHog
-- [x] Projeto novo: limpo ou com instalador oficial (Laravel, Django, Vite)
+- [x] Projeto novo: limpo ou com instalador oficial (Laravel, Django, Vite, Next.js, NestJS)
 - [x] Abrir o projeto na IDE instalada
 - [x] Instaladores para macOS, Windows e Linux
 - [ ] Spring Initializr (escolher dependências)
-- [ ] Gradle e mais frameworks (Next.js, NestJS, Rails…)
+- [ ] Projetos com vários apps (monorepos e microsserviços: um container por app)
+- [ ] Expo: detectar versões antigas do SDK e ajudar na atualização
+- [ ] Gradle, atualização de Java legado e mais serviços (Kafka, MinIO…)
 - [ ] Dockerfiles de produção (multi-stage)
 - [ ] Assinatura e notarização dos instaladores
 - [x] Interface em inglês e português
+- [x] Temas claro e escuro
+- [x] Área Aprender (lições, guia rápido, glossário)
+- [x] Containers e imagens com o nome do seu projeto
 
 ## 🤝 Contribuir
 
