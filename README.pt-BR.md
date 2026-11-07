@@ -77,10 +77,10 @@ Pegue o instalador da sua plataforma na [página de releases](https://github.com
 
 | Sistema | Arquivo | Como instalar |
 |---|---|---|
-| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.4.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
-| 🪟 **Windows** (64 bits) | [`AutoDock_0.4.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_x64-setup.exe) | Execute o instalador. |
-| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.4.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_amd64.deb) | `sudo apt install ./AutoDock_0.4.0_amd64.deb` |
-| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.4.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.4.0/AutoDock_0.4.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.5.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.5.0/AutoDock_0.5.0_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
+| 🪟 **Windows** (64 bits) | [`AutoDock_0.5.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.5.0/AutoDock_0.5.0_x64-setup.exe) | Execute o instalador. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.5.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.5.0/AutoDock_0.5.0_amd64.deb) | `sudo apt install ./AutoDock_0.5.0_amd64.deb` |
+| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.5.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.5.0/AutoDock_0.5.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
 > **Requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução para criar e rodar os ambientes.
 
@@ -98,7 +98,7 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.4.0`.
+Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.5.0`.
 
 <details>
 <summary><b>⚠️ Baixou pelo navegador e apareceu "desenvolvedor não identificado"? É esperado</b></summary>
@@ -114,7 +114,7 @@ O AutoDock é um projeto open source e os instaladores **ainda não são assinad
 Conferir a integridade do arquivo:
 
 ```bash
-shasum -a 256 AutoDock_0.4.0_universal.dmg   # compare com o SHA256SUMS.txt
+shasum -a 256 AutoDock_0.5.0_universal.dmg   # compare com o SHA256SUMS.txt
 ```
 
 </details>
