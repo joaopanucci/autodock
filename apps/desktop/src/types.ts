@@ -541,3 +541,14 @@ export type EditorFile = {
 };
 
 export type EditorSaveReport = { modifiedMs: number; size: number };
+
+/** The Java page asks the editor to review the changes of an upgrade. */
+export type EditorReview = {
+  /** Changes with the same id are handled once. */
+  id: number;
+  /** The project as it was. */
+  original: string;
+  /** The upgraded copy, opened as the project. */
+  copy: string;
+  changes: JavaChanges;
+};

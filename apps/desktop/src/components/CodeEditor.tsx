@@ -73,8 +73,15 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
         ariaLabel,
       });
       editorRef.current = editor;
-      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-        if (current.current) callbacks.current.onSave(current.current);
+      // `addAction`, not `addCommand`: a command binds the key for every editor on the page, so the
+      // side-by-side editor would take the shortcut of this one.
+      editor.addAction({
+        id: "autodock.save",
+        label: "Save",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+        run: () => {
+          if (current.current) callbacks.current.onSave(current.current);
+        },
       });
       editor.onDidChangeCursorPosition((event) => {
         callbacks.current.onCursor(event.position.lineNumber, event.position.column);
