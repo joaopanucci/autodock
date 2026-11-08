@@ -578,3 +578,47 @@ export type TerminalImage = { id: string; label: string; image: string };
 export type TerminalEvent =
   | { event: "data"; data: string }
   | { event: "exit"; code: number | null };
+
+export type JavaBuildSystem = {
+  kind: "maven" | "gradle" | "ant" | "ivy" | "eclipse" | "intellij" | "netbeans" | "make";
+  files: string[];
+};
+
+export type JavaSourceRoot = {
+  dir: string;
+  kind: "main" | "test" | "mixed";
+  files: number;
+  packages: number;
+  topPackage: string;
+};
+
+export type JavaMainClass = { file: string; class: string };
+
+export type JavaLibrary = {
+  path: string;
+  size: number;
+  sha256: string | null;
+  artifact: string;
+  version: string | null;
+};
+
+/** What a Java folder holds, whatever its layout (no pom.xml needed). */
+export type JavaMap = {
+  schemaVersion: number;
+  path: string;
+  name: string;
+  layout: "maven" | "standard" | "custom" | "none";
+  buildSystems: JavaBuildSystem[];
+  sourceRoots: JavaSourceRoot[];
+  scatteredFiles: string[];
+  scatteredCount: number;
+  mainClasses: JavaMainClass[];
+  libraries: JavaLibrary[];
+  libraryCount: number;
+  webApps: string[];
+  javaLevel: { level: number; declared: string; source: string } | null;
+  counts: { java: number; jars: number; xml: number; properties: number; other: number; folders: number; bytes: number };
+  nonUtf8Files: number;
+  truncated: boolean;
+  notes: string[];
+};

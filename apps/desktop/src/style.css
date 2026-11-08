@@ -2665,6 +2665,12 @@ input[type="checkbox"], input[type="radio"], progress { accent-color: var(--ink)
 .java-how-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .java-how .field-label { display: flex; align-items: center; gap: 6px; }
 .java-example { margin-top: 16px; }
+.java-map > * + * { margin-top: 10px; }
+.java-map-scroll { overflow-x: auto; }
+.java-map-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.java-map-table th, .java-map-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.java-map-table th { color: var(--subtle); font-weight: 500; font-size: 12px; }
+.java-map-details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 6px 0; }
 .editor-page > * + * { margin-top: 16px; }
 .editor-typed { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 14px; }
 .editor-typed label { flex: 1 1 320px; display: grid; gap: 4px; }

@@ -340,6 +340,14 @@ async fn java_inspect(
 }
 
 #[tauri::command]
+async fn java_map(
+    path: String,
+    lang: Option<String>,
+) -> Result<autodock_core::java_map::JavaMap, String> {
+    localized(lang, move || autodock_core::java_map::map(&path)).await?
+}
+
+#[tauri::command]
 async fn java_upgrade_plan(
     path: String,
     destination: Option<String>,
@@ -447,6 +455,7 @@ pub fn run() {
             terminal::terminal_resize,
             terminal::terminal_stop,
             java_inspect,
+            java_map,
             java_upgrade_plan,
             java_upgrade_run,
             updater::update_auto_check,

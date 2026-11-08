@@ -26,7 +26,9 @@ struct Preset {
     id: &'static str,
     label: &'static str,
     image: &'static str,
-    /// Shares the Maven download cache of the Java upgrade (volume `autodock-maven-cache`).
+    /// Shares the Maven download cache of the Java upgrade (volume `autodock-maven-cache`); only
+    /// where the shell runs as root (Windows), because on Unix it runs as the user.
+    #[cfg_attr(unix, allow(dead_code))]
     maven: bool,
 }
 

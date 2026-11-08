@@ -108,7 +108,7 @@ fn parts_of(relative: &str) -> Result<Vec<&str>, String> {
 }
 
 /// True for symbolic links and, on Windows, for junctions and any other reparse point.
-fn is_link(meta: &fs::Metadata) -> bool {
+pub(crate) fn is_link(meta: &fs::Metadata) -> bool {
     if meta.file_type().is_symlink() {
         return true;
     }

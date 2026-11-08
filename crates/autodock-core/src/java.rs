@@ -198,7 +198,7 @@ pub(crate) struct ModuleScan {
 }
 
 /// `1.7` → 7, `8` → 8, `17` → 17.
-fn level_of(text: &str) -> Option<u32> {
+pub(crate) fn level_of(text: &str) -> Option<u32> {
     let text = text.trim();
     let text = match text.strip_prefix("1.") {
         Some(rest) if rest.len() == 1 => rest,
