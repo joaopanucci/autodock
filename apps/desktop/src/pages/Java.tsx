@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, FolderOpen, GitCompare, LoaderCircle, Play
 import { call } from "../ipc";
 import { Badge, EmptyState, Panel } from "../components/ui";
 import { JavaExplainer } from "../components/JavaExplainer";
+import { JavaConvertPanel } from "../components/JavaConvertPanel";
 import { JavaMapPanel } from "../components/JavaMapPanel";
 import { displayPath } from "../model";
 import { useI18n } from "../i18n";
@@ -332,6 +333,12 @@ export function Java({
       {map && (
         <Panel title={t("java.map.title")} eyebrow={t("java.map.eyebrow")}>
           <JavaMapPanel map={map} />
+        </Panel>
+      )}
+
+      {map && map.layout !== "maven" && (
+        <Panel title={t("java.convert.title")} eyebrow={t("java.convert.eyebrow")}>
+          <JavaConvertPanel key={map.path} map={map} onContinue={(path) => void choose(path)} />
         </Panel>
       )}
 

@@ -7,6 +7,7 @@ pub mod expo;
 pub mod expo_upgrade;
 pub mod expo_watch;
 pub mod java;
+pub mod java_convert;
 pub mod java_map;
 pub mod java_upgrade;
 pub mod lifecycle_journal;

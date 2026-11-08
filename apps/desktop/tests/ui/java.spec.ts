@@ -45,6 +45,35 @@ const plan = {
   links: [{ label: "OpenRewrite recipes", url: "https://docs.openrewrite.org/recipes/java/migrate" }],
 };
 
+const convertPlan = (over: Record<string, unknown> = {}) => ({
+  schemaVersion: 1,
+  path: "/Users/maria/legacy-shop",
+  name: "legacy-shop",
+  destination: "/Users/maria/legacy-shop-maven",
+  groupId: "com.acme",
+  artifactId: "legacy-shop",
+  version: "1.0.0-SNAPSHOT",
+  packaging: "jar",
+  javaLevel: 6,
+  javaLevelDeclared: true,
+  encoding: "UTF-8",
+  counts: {
+    mainSources: 120, testSources: 31, mainResources: 12, testResources: 3, webappFiles: 0,
+    movedToTheirPackage: 2, librariesKnown: 2, librariesLocal: 1, notCopied: 9,
+  },
+  moves: [{ from: "src/com/acme/shop/App.java", to: "src/main/java/com/acme/shop/App.java" }],
+  dependencies: [
+    { groupId: "commons-lang", artifactId: "commons-lang", version: "2.6", scope: "compile", jar: "lib/commons-lang-2.6.jar", known: true },
+    { groupId: "junit", artifactId: "junit", version: "4.12", scope: "test", jar: "lib/junit-4.12.jar", known: true },
+    { groupId: "local", artifactId: "acme-legacy", version: "1.0", scope: "system", jar: "lib/acme-legacy-1.0.jar", known: false },
+  ],
+  leftOut: ["build.xml"],
+  pom: "<project>\n  <groupId>com.acme</groupId>\n</project>\n",
+  notes: ["The original project is not modified: AutoDock creates a copy."],
+  warnings: ["src2/com/acme/A.java would land where src/com/acme/A.java already goes: only the first was kept."],
+  ...over,
+});
+
 type Options = {
   project?: Record<string, unknown>;
   fail?: boolean;
@@ -52,11 +81,13 @@ type Options = {
   none?: boolean;
   /** What `java_map` answers (when absent the command fails, as a folder that cannot be read). */
   map?: Record<string, unknown>;
+  /** What `java_convert_plan` answers; a string makes it fail with that text. */
+  convert?: Record<string, unknown> | string;
 };
 
 async function open(page: Page, options: Options = {}) {
   await page.addInitScript(
-    ({ plan, options, base }) => {
+    ({ plan, options, base, convertBase }) => {
       const w = window as any;
       w.calls = [];
       w.__TAURI_INTERNALS__ = {
@@ -64,7 +95,32 @@ async function open(page: Page, options: Options = {}) {
           w.calls.push({ command, args });
           switch (command) {
             case "java_inspect":
-              return options.none ? null : { ...base, ...options.project };
+              // the Maven copy of a folder without a pom is a Maven project
+              if (options.none && !String(args.path).endsWith("-maven")) return null;
+              return { ...base, ...options.project };
+            case "java_convert_plan": {
+              if (typeof options.convert === "string") throw options.convert;
+              const given = args.options ?? {};
+              const plan = { ...convertBase, ...(options.convert ?? {}) } as any;
+              return {
+                ...plan,
+                groupId: given.groupId ?? plan.groupId,
+                artifactId: given.artifactId ?? plan.artifactId,
+                version: given.version ?? plan.version,
+                javaLevel: given.javaLevel ?? plan.javaLevel,
+                destination: given.into ? `${given.into}/legacy-shop-maven` : plan.destination,
+              };
+            }
+            case "java_convert_run":
+              return {
+                schemaVersion: 1,
+                succeeded: true,
+                destination: "/Users/maria/legacy-shop-maven",
+                filesWritten: 5,
+                counts: convertBase.counts,
+                packaging: "jar",
+                nextSteps: ["Open the copy's pom.xml and check the coordinates, the Java level and the dependencies."],
+              };
             case "java_upgrade_plan":
               // like the Rust side: the copy goes into the chosen folder, else next to the project
               return args.destination
@@ -117,7 +173,7 @@ async function open(page: Page, options: Options = {}) {
               if (!options.map) throw "cannot map";
               return options.map;
             case "plugin:dialog|open":
-              return String(args?.options?.title ?? "").includes("copy will be created")
+              return /copy will be created|Maven copy/.test(String(args?.options?.title ?? ""))
                 ? "/Volumes/backup"
                 : "/Users/maria/legacy-shop";
             default:
@@ -126,7 +182,7 @@ async function open(page: Page, options: Options = {}) {
         },
       };
     },
-    { plan, options, base: project() },
+    { plan, options, base: project(), convertBase: convertPlan() },
   );
   await page.goto("/");
   await page.getByRole("navigation").getByRole("button", { name: "Java" }).click();
@@ -284,6 +340,99 @@ test("a folder with Java code but no pom.xml shows a map of what is in it", asyn
   await expect(map).toContainText("src/old/Place.java");
   expect(await calls(page, "java_map")).toEqual([{ path: "/Users/maria/legacy-shop", lang: "en" }]);
   await expect(page.getByRole("button", { name: "Plan the upgrade" })).toHaveCount(0);
+});
+
+test("a folder without a pom.xml is planned as a Maven copy and made only after a confirmation", async ({ page }) => {
+  await open(page, { none: true, map: messyMap() });
+  await choose(page);
+  const panel = page.getByTestId("java-convert");
+  await expect(panel).toBeVisible();
+  // nothing is planned or written until the person asks
+  expect(await calls(page, "java_convert_plan")).toEqual([]);
+  await panel.getByRole("button", { name: "Plan the Maven copy" }).click();
+  expect(await calls(page, "java_convert_plan")).toEqual([
+    { path: "/Users/maria/legacy-shop", options: { into: null, groupId: null, artifactId: null, version: null, javaLevel: null }, lang: "en" },
+  ]);
+  await expect(panel).toContainText("Packaging: jar");
+  await expect(panel).toContainText("Java 6");
+  await expect(panel.getByLabel("groupId")).toHaveValue("com.acme");
+  await expect(panel.getByLabel("artifactId")).toHaveValue("legacy-shop");
+  await expect(panel.getByLabel("Java level")).toHaveValue("6");
+  await expect(panel).toContainText("120 source(s) in src/main/java and 31 test(s) in src/test/java");
+  await expect(panel).toContainText("15 resource(s)");
+  await expect(panel).toContainText("2 source(s) were in a folder that does not match their package");
+  await expect(panel).toContainText("9 file(s) do not go into the copy");
+  await expect(panel).toContainText("Dependencies (3)");
+  await expect(panel).toContainText("commons-lang:commons-lang:2.6 · compile");
+  await expect(panel).toContainText("junit:junit:4.12 · tests");
+  await expect(panel).toContainText("local:acme-legacy:1.0 · local jar · no known coordinates: the jar stays in lib/");
+  await expect(panel).toContainText("only the first was kept");
+  await expect(panel).toContainText("/Users/maria/legacy-shop-maven");
+  await panel.getByText("The pom.xml that will be written").click();
+  await expect(panel).toContainText("<groupId>com.acme</groupId>");
+  await panel.getByText("Where each file goes (1)").click();
+  await expect(panel).toContainText("src/main/java/com/acme/shop/App.java");
+
+  // the copy needs a confirmation
+  const start = panel.getByRole("button", { name: "Create the Maven copy" });
+  await expect(start).toBeDisabled();
+  expect(await calls(page, "java_convert_run")).toEqual([]);
+  await panel.getByLabel(/I understand AutoDock will copy the project files/).check();
+  await start.click();
+  await expect(panel).toContainText("Maven copy created (5 files)");
+  expect(await calls(page, "java_convert_run")).toEqual([
+    {
+      request: {
+        path: "/Users/maria/legacy-shop",
+        options: { into: null, groupId: "com.acme", artifactId: "legacy-shop", version: "1.0.0-SNAPSHOT", javaLevel: 6 },
+        confirmed: true,
+      },
+      lang: "en",
+    },
+  ]);
+  // the copy is a Maven project now: the page goes on to the upgrade with it
+  await panel.getByRole("button", { name: "Continue: plan the upgrade of the copy" }).click();
+  expect(await calls(page, "java_inspect")).toEqual([
+    { path: "/Users/maria/legacy-shop", lang: "en" },
+    { path: "/Users/maria/legacy-shop-maven", lang: "en" },
+  ]);
+  await expect(page.locator(".expo-projects")).toContainText("legacy-shop");
+  await expect(page.getByRole("button", { name: "Plan the upgrade" })).toBeVisible();
+  await expect(page.getByTestId("java-convert")).toHaveCount(0);
+});
+
+test("the coordinates and the folder of the Maven copy can be changed before it is made", async ({ page }) => {
+  await open(page, { none: true, map: messyMap() });
+  await choose(page);
+  const panel = page.getByTestId("java-convert");
+  await panel.getByRole("button", { name: "Plan the Maven copy" }).click();
+  await panel.getByLabel("artifactId").fill("shop");
+  await panel.getByLabel("version").fill("2.0");
+  await panel.getByLabel("Java level").fill("11");
+  await panel.getByRole("button", { name: "Update the plan" }).click();
+  await expect.poll(async () => (await calls(page, "java_convert_plan")).length).toBe(2);
+  expect((await calls(page, "java_convert_plan"))[1].options).toEqual({
+    into: null, groupId: "com.acme", artifactId: "shop", version: "2.0", javaLevel: 11,
+  });
+  // the typed values stay in the fields after the plan answers
+  await expect(panel.getByLabel("artifactId")).toHaveValue("shop");
+
+  await panel.getByRole("button", { name: "Choose another folder" }).click();
+  await expect(panel).toContainText("/Volumes/backup/legacy-shop-maven");
+  expect((await calls(page, "java_convert_plan"))[2].options).toMatchObject({ into: "/Volumes/backup", artifactId: "shop" });
+  await panel.getByRole("button", { name: "Back to next to the project" }).click();
+  await expect(panel).toContainText("/Users/maria/legacy-shop-maven");
+  expect((await calls(page, "java_convert_plan"))[3].options.into).toBeNull();
+});
+
+test("a plan the backend refuses is shown and nothing is made", async ({ page }) => {
+  await open(page, { none: true, map: messyMap(), convert: "This folder already has a pom.xml: use the upgrade." });
+  await choose(page);
+  const panel = page.getByTestId("java-convert");
+  await panel.getByRole("button", { name: "Plan the Maven copy" }).click();
+  await expect(panel.getByRole("alert")).toContainText("This folder already has a pom.xml");
+  await expect(panel.getByRole("button", { name: "Create the Maven copy" })).toHaveCount(0);
+  expect(await calls(page, "java_convert_run")).toEqual([]);
 });
 
 test("a Maven project is not mapped, and a Gradle one shows its notice and the map", async ({ page }) => {

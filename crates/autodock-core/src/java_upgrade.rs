@@ -328,7 +328,7 @@ if [ -n \"$failed\" ]; then exit 1; fi",
 /// The folder that will hold the copy: the one the person chose, or the project's parent.
 /// A chosen folder must exist, be a real folder and lie outside the project (a copy made
 /// inside the project would be copied into itself).
-fn holding_folder(root: &Path, into: Option<&str>) -> Result<PathBuf, String> {
+pub(crate) fn holding_folder(root: &Path, into: Option<&str>) -> Result<PathBuf, String> {
     let Some(into) = into.map(str::trim).filter(|v| !v.is_empty()) else {
         return root.parent().map(Path::to_path_buf).ok_or_else(|| {
             tr!(
@@ -563,7 +563,7 @@ fn has_tests(root: &Path, module: &ModuleScan) -> bool {
 /// Folders never copied, at any depth.
 const SKIPPED_DIRS: [&str; 6] = [".git", ".idea", "node_modules", ".gradle", ".svn", ".hg"];
 
-fn skipped_file(name: &str) -> bool {
+pub(crate) fn skipped_file(name: &str) -> bool {
     let env = name == ".env"
         || (name.starts_with(".env.")
             && !["example", "sample", "template"]

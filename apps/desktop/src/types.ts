@@ -622,3 +622,65 @@ export type JavaMap = {
   truncated: boolean;
   notes: string[];
 };
+
+export type ConvertOptions = {
+  into: string | null;
+  groupId: string | null;
+  artifactId: string | null;
+  version: string | null;
+  javaLevel: number | null;
+};
+
+export type ConvertDependency = {
+  groupId: string;
+  artifactId: string;
+  version: string;
+  scope: "compile" | "provided" | "test" | "system";
+  jar: string;
+  /** The coordinates are known from the file name (false: kept as a local jar). */
+  known: boolean;
+};
+
+export type ConvertCounts = {
+  mainSources: number;
+  testSources: number;
+  mainResources: number;
+  testResources: number;
+  webappFiles: number;
+  movedToTheirPackage: number;
+  librariesKnown: number;
+  librariesLocal: number;
+  notCopied: number;
+};
+
+/** What turning a folder without a pom.xml into a Maven project would do (the copy). */
+export type ConvertPlan = {
+  schemaVersion: number;
+  path: string;
+  name: string;
+  destination: string;
+  groupId: string;
+  artifactId: string;
+  version: string;
+  packaging: "jar" | "war";
+  javaLevel: number;
+  javaLevelDeclared: boolean;
+  encoding: string;
+  counts: ConvertCounts;
+  moves: { from: string; to: string }[];
+  dependencies: ConvertDependency[];
+  leftOut: string[];
+  pom: string;
+  notes: string[];
+  warnings: string[];
+};
+
+export type ConvertReport = {
+  schemaVersion: number;
+  succeeded: boolean;
+  destination: string;
+  filesWritten: number;
+  counts: ConvertCounts;
+  packaging: string;
+  nextSteps: string[];
+};
