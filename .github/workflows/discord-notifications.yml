@@ -2,6 +2,8 @@
 name: Discord Community Notifications
 
 on:
+  push:
+    tags: ['v*']
   release:
     types: [published]
   pull_request_target:
@@ -24,6 +26,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
+          REF_NAME: ${{ github.ref_name }}
           RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
           PR_WEBHOOK: ${{ secrets.DISCORD_PULL_REQUESTS_WEBHOOK }}
           ISSUES_WEBHOOK: ${{ secrets.DISCORD_ISSUES_WEBHOOK }}
@@ -31,6 +34,7 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import re
           import time
           import urllib.error
           import urllib.request
@@ -44,7 +48,18 @@ jobs:
           name = os.environ["EVENT_NAME"]
           action = os.environ["EVENT_ACTION"]
 
-          if name == "release":
+          if name == "push":
+              tag = os.environ["REF_NAME"]
+              if not re.fullmatch(r"v[0-9A-Za-z.+-]{1,40}", tag):
+                  raise SystemExit("Unexpected tag name")
+              item = {
+                  "name": tag,
+                  "html_url": f"https://github.com/joaopanucci/autodock/releases/tag/{tag}",
+              }
+              hook = os.environ.get("RELEASE_WEBHOOK", "")
+              title = "🏷️ Nova tag em build / New tag building"
+
+          elif name == "release":
               item = event["release"]
               hook = os.environ.get("RELEASE_WEBHOOK", "")
               title = "🚀 Nova versão / New release"
