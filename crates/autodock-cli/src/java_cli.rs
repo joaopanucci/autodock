@@ -1,7 +1,9 @@
 //! `autodock java …`: inspect a legacy Maven project and upgrade a copy of it to the
 //! current JDK and Spring Boot (inside Docker, after an explicit `--yes`).
 use autodock_core::{
-    java, java_map,
+    java,
+    java_convert::{self, ConvertOptions, ConvertRequest},
+    java_map,
     java_upgrade::{self, UpgradeRequest},
 };
 use clap::Subcommand;
@@ -19,6 +21,29 @@ pub enum JavaCommand {
     /// Shows the Java level and Spring Boot version of a Maven project (read-only, runs nothing).
     Inspect {
         path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Turns a folder with Java code but no pom.xml into a Maven project, in a copy next to it
+    /// (or in --into): the Maven layout, a generated pom.xml and the libraries as dependencies.
+    /// Without --yes it only shows the plan. The folder itself is never modified.
+    Convert {
+        path: PathBuf,
+        /// Folder that will hold the copy (default: next to the project)
+        #[arg(long)]
+        into: Option<PathBuf>,
+        #[arg(long)]
+        group_id: Option<String>,
+        #[arg(long)]
+        artifact_id: Option<String>,
+        #[arg(long)]
+        version: Option<String>,
+        /// Java level the project was written for (default: what its files declare, else 8)
+        #[arg(long)]
+        java_level: Option<u32>,
+        /// Makes the copy
+        #[arg(long)]
+        yes: bool,
         #[arg(long)]
         json: bool,
     },
@@ -129,6 +154,58 @@ fn print_map(map: &java_map::JavaMap) {
         }
     }
     for note in &map.notes {
+        println!("- {note}");
+    }
+}
+
+fn print_convert_plan(plan: &java_convert::ConvertPlan) {
+    println!(
+        "{}",
+        say!(
+            "Conversão de {} para Maven ({}, Java {})",
+            "Conversion of {} to Maven ({}, Java {})",
+            plan.name,
+            plan.packaging,
+            plan.java_level
+        )
+    );
+    println!("  {}:{}:{}", plan.group_id, plan.artifact_id, plan.version);
+    let counts = &plan.counts;
+    println!(
+        "  {}",
+        say!(
+            "{} fonte(s), {} de teste, {} recurso(s), {} arquivo(s) web, {} movido(s) para a pasta do package",
+            "{} source(s), {} test(s), {} resource(s), {} web file(s), {} moved to their package folder",
+            counts.main_sources,
+            counts.test_sources,
+            counts.main_resources + counts.test_resources,
+            counts.webapp_files,
+            counts.moved_to_their_package
+        )
+    );
+    for dependency in &plan.dependencies {
+        println!(
+            "  + {}:{}:{} ({}){}",
+            dependency.group_id,
+            dependency.artifact_id,
+            dependency.version,
+            dependency.scope,
+            if dependency.known {
+                String::new()
+            } else {
+                say!(" — jar local em lib/", " — local jar in lib/")
+            }
+        );
+    }
+    println!(
+        "{}: {}",
+        say!("A cópia vai para", "The copy goes to"),
+        plan.destination
+    );
+    for warning in &plan.warnings {
+        println!("{} {warning}", say!("Atenção:", "Warning:"));
+    }
+    for note in &plan.notes {
         println!("- {note}");
     }
 }
@@ -335,6 +412,62 @@ pub fn run(command: JavaCommand) -> Result<bool, String> {
                 print_json(&project);
             } else {
                 print_project(&project);
+            }
+            Ok(true)
+        }
+        JavaCommand::Convert {
+            path,
+            into,
+            group_id,
+            artifact_id,
+            version,
+            java_level,
+            yes,
+            json,
+        } => {
+            let options = ConvertOptions {
+                into: into.as_deref().map(path_text),
+                group_id,
+                artifact_id,
+                version,
+                java_level,
+            };
+            if !yes {
+                let plan = java_convert::plan(&path_text(&path), &options)?;
+                if json {
+                    print_json(&plan);
+                } else {
+                    print_convert_plan(&plan);
+                    println!(
+                        "{}",
+                        say!(
+                            "Nada foi gravado. Rode de novo com --yes para criar a cópia.",
+                            "Nothing was written. Run again with --yes to create the copy."
+                        )
+                    );
+                }
+                return Ok(true);
+            }
+            let report = java_convert::run(ConvertRequest {
+                path: path_text(&path),
+                options,
+                confirmed: true,
+            })?;
+            if json {
+                print_json(&report);
+            } else {
+                println!(
+                    "{}",
+                    say!(
+                        "Cópia Maven criada em {} ({} arquivo(s))",
+                        "Maven copy created at {} ({} file(s))",
+                        report.destination,
+                        report.files_written
+                    )
+                );
+                for step in &report.next_steps {
+                    println!("- {step}");
+                }
             }
             Ok(true)
         }

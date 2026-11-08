@@ -348,6 +348,26 @@ async fn java_map(
 }
 
 #[tauri::command]
+async fn java_convert_plan(
+    path: String,
+    options: autodock_core::java_convert::ConvertOptions,
+    lang: Option<String>,
+) -> Result<autodock_core::java_convert::ConvertPlan, String> {
+    localized(lang, move || {
+        autodock_core::java_convert::plan(&path, &options)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn java_convert_run(
+    request: autodock_core::java_convert::ConvertRequest,
+    lang: Option<String>,
+) -> Result<autodock_core::java_convert::ConvertReport, String> {
+    localized(lang, move || autodock_core::java_convert::run(request)).await?
+}
+
+#[tauri::command]
 async fn java_upgrade_plan(
     path: String,
     destination: Option<String>,
@@ -456,6 +476,8 @@ pub fn run() {
             terminal::terminal_stop,
             java_inspect,
             java_map,
+            java_convert_plan,
+            java_convert_run,
             java_upgrade_plan,
             java_upgrade_run,
             updater::update_auto_check,

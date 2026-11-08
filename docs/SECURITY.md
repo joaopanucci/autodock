@@ -86,6 +86,16 @@ The terminal lets a person run commands, so it is built so that they run **in a 
 - It needs Docker running; without it the terminal says so and nothing else happens. The first run of an environment downloads its image (Docker shows the progress in the terminal).
 - xterm.js (MIT) is bundled with the app and loaded the first time the terminal is opened; it does not change the page's security policy.
 
+### Converting a folder into a Maven project
+
+The conversion (`autodock-core::java_convert`, `autodock java convert`, the *Turn it into a Maven project* panel) works on a **copy** and follows the same rules as the Java upgrade:
+
+- The original folder is only read. The copy goes next to it (`<name>-maven`) or in a folder the person chooses (it must exist, be a real folder and lie outside the project) and is created with `create_dir`: it never goes over something that exists (a second copy is `-2`, up to 20). On any error the new folder is removed again.
+- It needs an explicit confirmation on every run (`confirmed: true` from the interface, `--yes` in the CLI); the plan, which shows every dependency, the destination and the `pom.xml` as it will be written, can be read without writing anything.
+- Only files the walk found are copied (links and junctions were never followed), and each one is checked again right before it is copied: a file that became a link or stopped being a file refuses the whole copy. `.env` files, editor files (`*.iml`), build scripts (`build.xml`, `.classpath`…) and compiled classes are not copied. The copy is limited to 1 GB.
+- Nothing is executed or compiled: an Ant script is never run, jars are copied or replaced by a dependency but never opened, and no network request is made (a known library becomes a dependency from its file name; Maven downloads the real jar later, when the copy is built).
+- The coordinates typed by the person (`groupId`, `artifactId`, `version`) are validated (letters, digits, dot, dash and underscore) and every value that reaches the `pom.xml` is XML-escaped.
+
 ## In-app updates
 
 AutoDock updates itself with the official Tauri updater, with these limits:

@@ -140,13 +140,13 @@ pub struct JavaMap {
 }
 
 /// What one `.java` file tells from its first bytes.
-struct SourceInfo {
+pub(crate) struct SourceInfo {
     /// Folder relative to the project folder.
-    dir: String,
-    file: String,
-    package: String,
-    is_test: bool,
-    has_main: bool,
+    pub dir: String,
+    pub file: String,
+    pub package: String,
+    pub is_test: bool,
+    pub has_main: bool,
 }
 
 /// The `.java` file after the comments: its `package` (empty when it has none).
@@ -206,7 +206,7 @@ fn has_main(text: &str) -> bool {
 }
 
 /// `commons-lang-2.6.jar` → (`commons-lang`, `2.6`); `activation.jar` → (`activation`, none).
-fn artifact_of(file_name: &str) -> (String, Option<String>) {
+pub(crate) fn artifact_of(file_name: &str) -> (String, Option<String>) {
     let stem = file_name.strip_suffix(".jar").unwrap_or(file_name);
     let split = stem
         .char_indices()
@@ -306,7 +306,7 @@ fn sha256_of(path: &Path) -> Option<String> {
 
 /// The folder a source file's `package` says it belongs to, `None` when the folder does not
 /// match the package.
-fn source_root(dir: &str, package: &str) -> Option<String> {
+pub(crate) fn source_root(dir: &str, package: &str) -> Option<String> {
     let folders: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
     let parts: Vec<&str> = package.split('.').filter(|p| !p.is_empty()).collect();
     if parts.len() > folders.len() || folders[folders.len() - parts.len()..] != parts[..] {
@@ -341,9 +341,25 @@ fn join(prefix: &str, name: &str) -> String {
     }
 }
 
-/// Reads a folder and describes what is in it.
-pub fn map(path: &str) -> Result<JavaMap, String> {
-    let root: PathBuf = generate::root_of(path)?;
+/// What walking a folder found, before it is interpreted.
+pub(crate) struct Walk {
+    pub counts: Counts,
+    pub systems: BTreeMap<&'static str, Vec<String>>,
+    pub sources: Vec<SourceInfo>,
+    /// Relative path, real path and size of every `.jar`.
+    pub jars: Vec<(String, PathBuf, u64)>,
+    pub web_apps: BTreeSet<String>,
+    pub hints: Vec<(u8, JavaHint)>,
+    pub non_utf8: usize,
+    pub truncated: bool,
+    /// Every regular file that was visited, relative to the folder, folder by folder in name order.
+    pub files: Vec<String>,
+}
+
+/// Walks a folder (links never followed, build output skipped, everything bounded).
+pub(crate) fn walk(root: &Path) -> Walk {
+    let root: PathBuf = root.to_path_buf();
+    let mut files: Vec<String> = vec![];
     let mut counts = Counts::default();
     let mut systems: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
     let mut sources: Vec<SourceInfo> = vec![];
@@ -396,6 +412,7 @@ pub fn map(path: &str) -> Result<JavaMap, String> {
                 break;
             }
             counts.bytes += meta.len();
+            files.push(relative.clone());
             if let Some(kind) = build_kind(&name, &parent_name) {
                 let files = systems.entry(kind).or_default();
                 if files.len() < MAX_BUILD_FILES {
@@ -475,6 +492,36 @@ pub fn map(path: &str) -> Result<JavaMap, String> {
         pending.extend(folders);
     }
 
+    Walk {
+        counts,
+        systems,
+        sources,
+        jars,
+        web_apps,
+        hints,
+        non_utf8,
+        truncated,
+        files,
+    }
+}
+
+/// Reads a folder and describes what is in it.
+pub fn map(path: &str) -> Result<JavaMap, String> {
+    let root: PathBuf = generate::root_of(path)?;
+    let walked = walk(&root);
+    Ok(build(&root, &walked))
+}
+
+/// Interprets what the walk found.
+pub(crate) fn build(root: &Path, walked: &Walk) -> JavaMap {
+    let counts = walked.counts.clone();
+    let sources = &walked.sources;
+    let mut jars = walked.jars.clone();
+    let systems = walked.systems.clone();
+    let web_apps = walked.web_apps.clone();
+    let mut hints = walked.hints.clone();
+    let non_utf8 = walked.non_utf8;
+    let truncated = walked.truncated;
     // Where the sources are: the folder above the package path of each file.
     struct Root {
         files: usize,
@@ -485,7 +532,7 @@ pub fn map(path: &str) -> Result<JavaMap, String> {
     let mut scattered: Vec<String> = vec![];
     let mut scattered_count = 0usize;
     let mut main_classes: Vec<MainClass> = vec![];
-    for source in &sources {
+    for source in sources {
         let relative = join(&source.dir, &source.file);
         if source.has_main && main_classes.len() < MAX_LISTED {
             let stem = source.file.strip_suffix(".java").unwrap_or(&source.file);
@@ -632,9 +679,9 @@ pub fn map(path: &str) -> Result<JavaMap, String> {
         ));
     }
 
-    Ok(JavaMap {
+    JavaMap {
         schema_version: 1,
-        path: generate::plain_path(&root),
+        path: generate::plain_path(root),
         name: root
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -653,7 +700,7 @@ pub fn map(path: &str) -> Result<JavaMap, String> {
         non_utf8_files: non_utf8,
         truncated,
         notes,
-    })
+    }
 }
 
 #[cfg(test)]
