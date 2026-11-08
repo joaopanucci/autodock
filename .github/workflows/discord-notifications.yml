@@ -24,7 +24,6 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
-          EVENT_PATH: ${{ github.event_path }}
           RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
           PR_WEBHOOK: ${{ secrets.DISCORD_PULL_REQUESTS_WEBHOOK }}
           ISSUES_WEBHOOK: ${{ secrets.DISCORD_ISSUES_WEBHOOK }}
@@ -36,7 +35,10 @@ jobs:
           import urllib.error
           import urllib.request
 
-          with open(os.environ["EVENT_PATH"], encoding="utf-8") as f:
+          # GitHub Actions provides this variable automatically.
+          event_path = os.environ["GITHUB_EVENT_PATH"]
+
+          with open(event_path, encoding="utf-8") as f:
               event = json.load(f)
 
           name = os.environ["EVENT_NAME"]
@@ -44,26 +46,30 @@ jobs:
 
           if name == "release":
               item = event["release"]
-              hook = os.environ["RELEASE_WEBHOOK"]
+              hook = os.environ.get("RELEASE_WEBHOOK", "")
               title = "🚀 Nova versão / New release"
 
           elif name == "pull_request_target":
               item = event["pull_request"]
-              hook = os.environ["PR_WEBHOOK"]
+              hook = os.environ.get("PR_WEBHOOK", "")
 
               if action == "closed":
                   if not item.get("merged"):
                       print("Closed without merge. Skipping.")
                       raise SystemExit(0)
+
                   title = "✅ PR mesclada / Pull request merged"
+
               elif action == "reopened":
                   title = "🔄 PR reaberta / Pull request reopened"
+
               else:
                   title = "🔀 Nova PR / New pull request"
 
           elif name == "issues":
               item = event["issue"]
-              hook = os.environ["ISSUES_WEBHOOK"]
+              hook = os.environ.get("ISSUES_WEBHOOK", "")
+
               title = (
                   "🔄 Issue reaberta / Issue reopened"
                   if action == "reopened"
@@ -71,11 +77,32 @@ jobs:
               )
 
           else:
-              raise SystemExit("Unsupported event")
+              print("Unsupported event. Skipping.")
+              raise SystemExit(0)
 
+          # Validate webhook configuration.
           if not hook:
-              raise SystemExit("Missing Discord webhook secret")
+              raise SystemExit(
+                  "Missing Discord webhook secret for this event"
+              )
 
+          hook = hook.strip()
+
+          if (
+              not hook.startswith(
+                  (
+                      "https://discord.com/api/webhooks/",
+                      "https://discordapp.com/api/webhooks/"
+                  )
+              )
+              or '"' in hook
+              or "'" in hook
+          ):
+              raise SystemExit(
+                  "Invalid Discord webhook URL. Check GitHub Secrets."
+              )
+
+          # Validate repository URL.
           url = item["html_url"]
 
           if not url.startswith(
@@ -83,17 +110,22 @@ jobs:
           ):
               raise SystemExit("Unexpected repository URL")
 
+          # Sanitize title.
           label = str(
               item.get("name")
               or item.get("title")
               or "AutoDock"
           ).replace("@", "＠")[:180]
 
+          # Prepare Discord message.
           payload = json.dumps({
               "content": f"{title}\n**{label}**\n{url}",
-              "allowed_mentions": {"parse": []}
+              "allowed_mentions": {
+                  "parse": []
+              }
           }).encode("utf-8")
 
+          # Send with retries.
           for attempt in range(3):
               request = urllib.request.Request(
                   hook,
@@ -107,13 +139,25 @@ jobs:
 
               try:
                   with urllib.request.urlopen(
-                      request, timeout=15
+                      request,
+                      timeout=15
                   ) as response:
-                      print("Discord HTTP", response.status)
+                      print(
+                          "Discord notification sent successfully.",
+                          "HTTP",
+                          response.status
+                      )
                       break
 
               except urllib.error.HTTPError as error:
-                  if error.code not in (429, 500, 502, 503, 504):
+                  if error.code not in (
+                      429, 500, 502, 503, 504
+                  ):
+                      print(
+                          "Discord request failed.",
+                          "HTTP",
+                          error.code
+                      )
                       raise
 
                   if attempt == 2:
@@ -123,17 +167,33 @@ jobs:
 
                   if error.code == 429:
                       retry = error.headers.get("Retry-After")
+
                       if retry:
                           try:
-                              delay = max(1, min(float(retry), 30))
+                              delay = max(
+                                  1,
+                                  min(float(retry), 30)
+                              )
                           except ValueError:
                               pass
 
-                  print("Retrying Discord request")
+                  print(
+                      "Temporary Discord error.",
+                      "Retrying in",
+                      delay,
+                      "seconds."
+                  )
+
                   time.sleep(delay)
 
-              except (urllib.error.URLError, TimeoutError):
+              except (
+                  urllib.error.URLError,
+                  TimeoutError
+              ):
                   if attempt == 2:
                       raise
-                  time.sleep(2 ** attempt)
+
+                  delay = 2 ** attempt
+                  print("Network error. Retrying.")
+                  time.sleep(delay)
           PY
