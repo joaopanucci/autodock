@@ -387,6 +387,10 @@ fn compose(
         if let Some(volumes) = dev_volumes(app) {
             out.push_str(&volumes);
         }
+        out.push_str(&generate::watch_block(
+            app.request.stack,
+            &build_context(&app.request.path),
+        ));
         let mut depends = String::new();
         for service in services {
             match service {
