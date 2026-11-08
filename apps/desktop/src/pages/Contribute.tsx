@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
-import { Check, Copy, GitPullRequest, HeartHandshake, Info, Star } from "lucide-react";
+import { Check, Copy, GitPullRequest, HeartHandshake, Info, MessageCircle, Star } from "lucide-react";
 import { Panel, Badge } from "../components/ui";
 import { CONTRIBUTION } from "../contribution";
 import { useI18n } from "../i18n";
@@ -43,7 +43,7 @@ export function Contribute() {
   const { t } = useI18n();
   const [amount, setAmount] = useState<number | undefined>();
   const [custom, setCustom] = useState("");
-  const [copied, setCopied] = useState<"pix" | "repo" | null>(null);
+  const [copied, setCopied] = useState<"pix" | "repo" | "discord" | null>(null);
   const configured = !!CONTRIBUTION.pixKey && !!CONTRIBUTION.city;
 
   const payload = useMemo(() => {
@@ -60,7 +60,7 @@ export function Contribute() {
     }
   }, [configured, amount]);
 
-  async function copy(kind: "pix" | "repo", text: string) {
+  async function copy(kind: "pix" | "repo" | "discord", text: string) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(kind);
@@ -170,6 +170,19 @@ export function Contribute() {
         </Panel>
         <Panel title={t("contribute.other.title")} eyebrow={t("contribute.other.eyebrow")}>
           <ul className="help-list">
+            <li>
+              <MessageCircle size={18} aria-hidden="true" />
+              <div>
+                <strong>{t("contribute.community.title")}</strong>
+                <p>{t("contribute.community.body")}</p>
+                <p className="command">
+                  <code>{CONTRIBUTION.discord}</code>
+                  <button type="button" className="link-button" onClick={() => void copy("discord", CONTRIBUTION.discord)}>
+                    <Copy size={13} aria-hidden="true" /> {copied === "discord" ? t("logs.copied") : t("console.copy")}
+                  </button>
+                </p>
+              </div>
+            </li>
             <li>
               <Star size={18} aria-hidden="true" />
               <div>

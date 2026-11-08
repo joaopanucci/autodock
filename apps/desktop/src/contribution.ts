@@ -6,5 +6,6 @@ export const CONTRIBUTION = {
   receiverName: "João Paulo Panucci Bernardes",
   city: "Campo Grande",
   repository: "https://github.com/joaopanucci/autodock",
+  discord: "https://discord.gg/AqKSFaQ8g3",
   suggestedAmounts: [10, 25, 50],
 } as const;

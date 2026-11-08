@@ -332,6 +332,21 @@ test("contribute tab shows the PIX QR and copy action", async ({
   await expect(page.getByRole("button", { name: /Copiar PIX copia e cola/ })).toBeVisible();
 });
 
+test("contribute tab offers the Discord invite and copies it", async ({ page }) => {
+  await page.evaluate(() => {
+    (window as any).copied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: async (text: string) => (window as any).copied.push(text) },
+      configurable: true,
+    });
+  });
+  await page.getByRole("navigation").getByRole("button", { name: "Contribuir", exact: true }).click();
+  await expect(page.getByText("Entre na comunidade no Discord")).toBeVisible();
+  await expect(page.getByText("https://discord.gg/AqKSFaQ8g3")).toBeVisible();
+  await page.locator(".help-list li", { hasText: "Discord" }).getByRole("button", { name: "Copiar" }).click();
+  expect(await page.evaluate(() => (window as any).copied)).toEqual(["https://discord.gg/AqKSFaQ8g3"]);
+});
+
 test("docker assistant is reachable and starts at the project step", async ({
   page,
 }) => {

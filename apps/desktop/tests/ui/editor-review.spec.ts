@@ -136,7 +136,7 @@ test("the upgrade report opens the copy in the editor with the list of changes",
   await reviewUpgrade(page);
   await expect(page.getByRole("heading", { name: "Code editor" })).toBeVisible();
   // the copy is the open project, and nothing from the original is opened as the project
-  expect(await calls(page, "editor_open_root")).toEqual([{ path: COPY, lang: "en" }]);
+  await expect.poll(() => calls(page, "editor_open_root")).toEqual([{ path: COPY, lang: "en" }]);
   await expect(page.getByText(/Reviewing the upgrade of legacy-shop/)).toBeVisible();
   await expect(page.getByRole("tab", { name: "Changes (4)" })).toHaveAttribute("aria-selected", "true");
   const list = page.locator(".editor-changes");
