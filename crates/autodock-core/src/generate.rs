@@ -1109,6 +1109,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"/app/app.jar\"]\n"
                 PythonFramework::Fastapi => json_array(&[
                     "uvicorn".into(),
                     r.module.clone(),
+                    "--reload".into(),
                     "--host".into(),
                     "0.0.0.0".into(),
                     "--port".into(),
@@ -1125,6 +1126,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"/app/app.jar\"]\n"
                     "--app".into(),
                     r.module.clone(),
                     "run".into(),
+                    "--debug".into(),
                     "--host".into(),
                     "0.0.0.0".into(),
                     "--port".into(),
@@ -1372,7 +1374,14 @@ pub(crate) fn app_environment(
     let mut plain: Vec<(String, String)> = vec![("PORT".into(), r.port.to_string())];
     let mut secret: Vec<(String, String)> = vec![];
     match r.stack {
-        Stack::Nodejs => push(&mut plain, "HOST", "0.0.0.0"),
+        Stack::Nodejs => {
+            push(&mut plain, "HOST", "0.0.0.0");
+            // Edits made on the host do not always raise file events inside the
+            // container (Docker Desktop), so the watchers poll.
+            push(&mut plain, "CHOKIDAR_USEPOLLING", "true");
+            push(&mut plain, "WATCHPACK_POLLING", "true");
+        }
+        Stack::Python => push(&mut plain, "WATCHFILES_FORCE_POLLING", "true"),
         Stack::SpringBoot => push(&mut plain, "SERVER_PORT", &r.port.to_string()),
         Stack::Dotnet => push(
             &mut plain,
@@ -1520,6 +1529,29 @@ fn env_content(r: &Resolved, pw: &Passwords, example: bool) -> String {
     out
 }
 
+/// `develop.watch` of the compiled stacks: `docker compose watch` rebuilds and
+/// restarts the container when the code changes (they have no bind mount).
+pub(crate) fn watch_block(stack: Stack, src: &str) -> String {
+    let paths: Vec<String> = match stack {
+        Stack::SpringBoot => vec![format!("{src}/src"), format!("{src}/pom.xml")],
+        Stack::Go | Stack::Dotnet => vec![src.to_string()],
+        _ => return String::new(),
+    };
+    let mut out = String::from(
+        "    develop:
+      watch:
+",
+    );
+    for path in paths {
+        out.push_str(&format!(
+            "        - action: rebuild
+          path: {path}
+"
+        ));
+    }
+    out
+}
+
 pub(crate) fn service_block(r: &Resolved, service: Service) -> String {
     let hp = |name: &str| host_port(r, name);
     match service {
@@ -1582,9 +1614,10 @@ fn compose(r: &Resolved) -> String {
             out.push_str("    volumes:\n      - .:/var/www/html\n      - /var/www/html/vendor\n")
         }
         Stack::Rails => out.push_str("    volumes:\n      - .:/rails\n"),
-        // Compiled stacks: code changes need `docker compose up --build`.
+        // Compiled stacks: `docker compose watch` rebuilds when the code changes.
         Stack::SpringBoot | Stack::Go | Stack::Dotnet => {}
     }
+    out.push_str(&watch_block(r.stack, "."));
     let waits: Vec<Service> = r
         .services
         .iter()
@@ -1699,13 +1732,13 @@ fn notes(r: &Resolved) -> Vec<String> {
             "Create Laravel's .env (copy .env.example) and run php artisan key:generate inside the container."
         )),
         Stack::Go => notes.push(tr!(
-            "O build compila o pacote main da raiz (go build .) e a aplicação precisa escutar na porta da variável PORT ({}). Alterações no código exigem docker compose up --build.",
-            "The build compiles the main package at the root (go build .) and the application must listen on the port in the PORT variable ({}). Code changes need docker compose up --build.",
+            "O build compila o pacote main da raiz (go build .) e a aplicação precisa escutar na porta da variável PORT ({}). Para recompilar a cada alteração, rode docker compose watch.",
+            "The build compiles the main package at the root (go build .) and the application must listen on the port in the PORT variable ({}). To rebuild on every save, run docker compose watch.",
             r.port
         )),
         Stack::Dotnet => notes.push(tr!(
-            "O build publica {}.csproj da raiz e a aplicação escuta em ASPNETCORE_URLS (porta {}). Alterações no código exigem docker compose up --build; soluções com vários projetos podem exigir ajuste.",
-            "The build publishes {}.csproj from the root and the application listens on ASPNETCORE_URLS (port {}). Code changes need docker compose up --build; multi-project solutions may need adjusting.",
+            "O build publica {}.csproj da raiz e a aplicação escuta em ASPNETCORE_URLS (porta {}). Para recompilar a cada alteração, rode docker compose watch; soluções com vários projetos podem exigir ajuste.",
+            "The build publishes {}.csproj from the root and the application listens on ASPNETCORE_URLS (port {}). To rebuild on every save, run docker compose watch; multi-project solutions may need adjusting.",
             r.dotnet_project,
             r.port
         )),
@@ -2110,9 +2143,9 @@ mod tests {
         let mut python = request(&dir, Stack::Python);
         python.port = 8000;
         let plan = preview(&python).unwrap();
-        assert!(file(&plan, DOCKERFILE)
-            .content
-            .contains(r#"CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]"#));
+        assert!(file(&plan, DOCKERFILE).content.contains(
+            r#"CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]"#
+        ));
     }
 
     #[test]
@@ -2852,6 +2885,73 @@ mod tests {
             let mut req = request(&dir, stack);
             req.runtime_version = Some(bad.into());
             assert!(preview(&req).unwrap_err().contains(bad));
+        }
+    }
+
+    #[test]
+    fn saving_a_file_reaches_the_running_container() {
+        // Stacks that run from source: the folder is mounted and the watchers poll.
+        let node = project(&[("package.json", "{}")]);
+        let plan = preview(&request(&node, Stack::Nodejs)).unwrap();
+        let compose = &file(&plan, COMPOSE_FILE).content;
+        assert!(compose.contains(
+            "      - .:/app
+"
+        ));
+        assert!(compose.contains("CHOKIDAR_USEPOLLING: \"true\""));
+        assert!(compose.contains("WATCHPACK_POLLING: \"true\""));
+        assert!(!compose.contains("develop:"));
+
+        let python = project(&[(
+            "requirements.txt",
+            "fastapi
+",
+        )]);
+        let plan = preview(&request(&python, Stack::Python)).unwrap();
+        assert!(file(&plan, COMPOSE_FILE)
+            .content
+            .contains("WATCHFILES_FORCE_POLLING: \"true\""));
+
+        let mut flask = request(&python, Stack::Python);
+        flask.python_framework = Some(PythonFramework::Flask);
+        let plan = preview(&flask).unwrap();
+        assert!(file(&plan, DOCKERFILE)
+            .content
+            .contains("\"run\", \"--debug\""));
+
+        // Compiled stacks have no mount: `docker compose watch` rebuilds them.
+        let spring = project(&[("pom.xml", "<project/>")]);
+        let plan = preview(&request(&spring, Stack::SpringBoot)).unwrap();
+        let compose = &file(&plan, COMPOSE_FILE).content;
+        assert!(compose.contains(
+            "    develop:
+      watch:
+"
+        ));
+        assert!(compose.contains(
+            "        - action: rebuild
+          path: ./src
+"
+        ));
+        assert!(compose.contains(
+            "          path: ./pom.xml
+"
+        ));
+        assert!(!compose.contains("CHOKIDAR"));
+
+        for (stack, manifest) in [(Stack::Go, "go.mod"), (Stack::Dotnet, "app.csproj")] {
+            let dir = project(&[(manifest, "x")]);
+            let plan = preview(&request(&dir, stack)).unwrap();
+            let compose = &file(&plan, COMPOSE_FILE).content;
+            assert!(compose.contains(
+                "        - action: rebuild
+          path: .
+"
+            ));
+            assert!(plan
+                .notes
+                .iter()
+                .any(|n| n.contains("docker compose watch")));
         }
     }
 }
