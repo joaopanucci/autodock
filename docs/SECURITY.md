@@ -56,6 +56,10 @@ Inspecting a Java project only reads `pom.xml` files (DTDs are not expanded) and
 - The build output (`target`) is removed from the copy afterwards. On failure the copy stays for inspection (the report names the step and shows the compiler output); if Docker is missing, nothing ran and the copy is removed again.
 - Gradle projects, and folders that are a module of a larger Maven tree (a parent pom outside the folder), are refused with the reason.
 
+### The folder map
+
+A folder without a `pom.xml` gets a map (`autodock-core::java_map`, `autodock java map`, the Java page). It is read only: nothing is executed, nothing is written and nothing leaves the computer. It follows the same discipline as the editor: **links and Windows junctions are never followed**, folders of build output, dependencies and version control (`.git`, `.svn`, `node_modules`, `target`, `build`, `bin`, `out`, `dist`…) are skipped, the walk is in name order (the same folder always gives the same map) and every step is bounded (at most 100,000 files, 40 levels of folders, the first 256 KB of a source file, 200 entries per list; the counts are always complete). `.java` files are read as text to find their `package`, imports and `main` and are never compiled or run; `.jar` files are never opened or run, only hashed (SHA-256, up to 128 MB each and 400 files) so they can be matched to Maven coordinates later. Project files (`.classpath`, `build.xml`, `*.iml`…) are read as text to find the Java level, never executed (an Ant `build.xml` is not run).
+
 ## Code editor
 
 The editor reads and writes files, so it is held to strict rules (`autodock-core::editor_fs`):

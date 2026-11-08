@@ -4,9 +4,10 @@ import { AlertTriangle, CheckCircle2, FolderOpen, GitCompare, LoaderCircle, Play
 import { call } from "../ipc";
 import { Badge, EmptyState, Panel } from "../components/ui";
 import { JavaExplainer } from "../components/JavaExplainer";
+import { JavaMapPanel } from "../components/JavaMapPanel";
 import { displayPath } from "../model";
 import { useI18n } from "../i18n";
-import type { JavaChanges, JavaPlan, JavaProject, JavaUpgradeReport, SessionProject } from "../types";
+import type { JavaChanges, JavaMap, JavaPlan, JavaProject, JavaUpgradeReport, SessionProject } from "../types";
 
 const message = (error: unknown) =>
   typeof error === "string" ? error : error instanceof Error ? error.message : String(error);
@@ -22,6 +23,8 @@ export function Java({
   const { t } = useI18n();
   const [error, setError] = useState("");
   const [project, setProject] = useState<JavaProject | null>(null);
+  /** A folder with Java code but no Maven project: what is in it. */
+  const [map, setMap] = useState<JavaMap | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [suggestions, setSuggestions] = useState<JavaProject[]>([]);
 
@@ -71,15 +74,23 @@ export function Java({
   const choose = useCallback(async (path: string) => {
     setError("");
     setProject(null);
+    setMap(null);
     setInto(null);
     reset();
     setInspecting(true);
     try {
       const found = await call<JavaProject | null>("java_inspect", { path });
-      if (!found) {
+      // Anything that is not a Maven project is mapped, so the person sees what is in the folder.
+      let mapped: JavaMap | null = null;
+      if (!found || found.buildTool !== "maven") {
+        mapped = await call<JavaMap>("java_map", { path }).catch(() => null);
+        if (mapped && mapped.counts.java === 0) mapped = null;
+      }
+      if (!found && !mapped) {
         setError(t("java.pick.empty.body"));
       }
       setProject(found);
+      setMap(mapped);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -214,7 +225,7 @@ export function Java({
           </p>
         )}
 
-        {!project && !inspecting && (
+        {!project && !map && !inspecting && (
           <EmptyState title={t("java.pick.empty.title")} description={t("java.pick.empty.body")} />
         )}
 
@@ -317,6 +328,12 @@ export function Java({
           </div>
         )}
       </Panel>
+
+      {map && (
+        <Panel title={t("java.map.title")} eyebrow={t("java.map.eyebrow")}>
+          <JavaMapPanel map={map} />
+        </Panel>
+      )}
 
       {(planning || plan) && (
         <Panel
@@ -587,7 +604,7 @@ export function Java({
         </Panel>
       )}
 
-      <JavaExplainer open={!project && !plan && !report} />
+      <JavaExplainer open={!project && !map && !plan && !report} />
     </div>
   );
 }

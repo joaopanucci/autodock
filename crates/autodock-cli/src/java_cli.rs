@@ -1,7 +1,7 @@
 //! `autodock java …`: inspect a legacy Maven project and upgrade a copy of it to the
 //! current JDK and Spring Boot (inside Docker, after an explicit `--yes`).
 use autodock_core::{
-    java,
+    java, java_map,
     java_upgrade::{self, UpgradeRequest},
 };
 use clap::Subcommand;
@@ -9,6 +9,13 @@ use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub enum JavaCommand {
+    /// Maps a folder with Java code, whatever its layout (no pom.xml needed): build files,
+    /// where the sources are, libraries, main classes, the Java level. Read-only.
+    Map {
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
     /// Shows the Java level and Spring Boot version of a Maven project (read-only, runs nothing).
     Inspect {
         path: PathBuf,
@@ -48,6 +55,82 @@ fn print_json<T: serde::Serialize>(value: &T) {
         "{}",
         serde_json::to_string_pretty(value).expect("report serializable")
     );
+}
+
+fn print_map(map: &java_map::JavaMap) {
+    println!(
+        "{}",
+        say!(
+            "Pasta Java: {} (layout: {})",
+            "Java folder: {} (layout: {})",
+            map.name,
+            map.layout
+        )
+    );
+    let counts = &map.counts;
+    println!(
+        "  {}",
+        say!(
+            "{} arquivo(s) .java, {} .jar, {} .xml, {} .properties, {} outros",
+            "{} .java file(s), {} .jar, {} .xml, {} .properties, {} others",
+            counts.java,
+            counts.jars,
+            counts.xml,
+            counts.properties,
+            counts.other
+        )
+    );
+    for system in &map.build_systems {
+        println!("  Build: {} ({})", system.kind, system.files.join(", "));
+    }
+    if let Some(level) = &map.java_level {
+        println!("  Java: {} ({})", level.declared, level.source);
+    }
+    for root in &map.source_roots {
+        println!(
+            "  {} {}: {} {} ({} {})",
+            say!("Fontes", "Sources"),
+            if root.dir.is_empty() { "." } else { &root.dir },
+            root.files,
+            say!("arquivo(s)", "file(s)"),
+            root.kind,
+            if root.top_package.is_empty() {
+                say!("sem package comum", "no common package")
+            } else {
+                root.top_package.clone()
+            }
+        );
+    }
+    for main in &map.main_classes {
+        println!("  main: {} ({})", main.class, main.file);
+    }
+    for app in &map.web_apps {
+        println!(
+            "  {}: {}",
+            say!("Aplicação web", "Web application"),
+            if app.is_empty() { "." } else { app }
+        );
+    }
+    if map.library_count > 0 {
+        println!(
+            "  {}: {}",
+            say!("Bibliotecas", "Libraries"),
+            map.library_count
+        );
+        for library in map.libraries.iter().take(10) {
+            println!(
+                "    {} ({})",
+                library.path,
+                library.version.as_deref().unwrap_or("?")
+            );
+        }
+        if map.library_count > 10 {
+            println!("    …");
+        }
+    }
+    for note in &map.notes {
+        println!("- {note}");
+    }
 }
 
 fn print_project(project: &java::JavaProject) {
@@ -232,6 +315,15 @@ fn print_report(report: &java_upgrade::UpgradeReport) {
 /// Returns whether the command succeeded (used for the exit code).
 pub fn run(command: JavaCommand) -> Result<bool, String> {
     match command {
+        JavaCommand::Map { path, json } => {
+            let map = java_map::map(&path_text(&path))?;
+            if json {
+                print_json(&map);
+            } else {
+                print_map(&map);
+            }
+            Ok(true)
+        }
         JavaCommand::Inspect { path, json } => {
             let project = java::inspect(&path_text(&path))?.ok_or_else(|| {
                 say!(

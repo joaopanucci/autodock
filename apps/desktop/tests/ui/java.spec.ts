@@ -45,7 +45,14 @@ const plan = {
   links: [{ label: "OpenRewrite recipes", url: "https://docs.openrewrite.org/recipes/java/migrate" }],
 };
 
-type Options = { project?: Record<string, unknown>; fail?: boolean; partial?: boolean; none?: boolean };
+type Options = {
+  project?: Record<string, unknown>;
+  fail?: boolean;
+  partial?: boolean;
+  none?: boolean;
+  /** What `java_map` answers (when absent the command fails, as a folder that cannot be read). */
+  map?: Record<string, unknown>;
+};
 
 async function open(page: Page, options: Options = {}) {
   await page.addInitScript(
@@ -106,6 +113,9 @@ async function open(page: Page, options: Options = {}) {
                 output: "", detail: "", durationMs: 312000,
                 nextSteps: ["Compare the copy with the original project and review what changed.", "Install JDK 25 to build on your computer."],
               };
+            case "java_map":
+              if (!options.map) throw "cannot map";
+              return options.map;
             case "plugin:dialog|open":
               return String(args?.options?.title ?? "").includes("copy will be created")
                 ? "/Volumes/backup"
@@ -211,6 +221,103 @@ test("a project that is already current offers no upgrade", async ({ page }) => 
   await choose(page);
   await expect(page.locator(".expo-projects")).toContainText("Already up to date");
   await expect(page.getByRole("button", { name: "Plan the upgrade" })).toHaveCount(0);
+});
+
+const messyMap = (over: Record<string, unknown> = {}) => ({
+  schemaVersion: 1,
+  path: "/Users/maria/legacy-shop",
+  name: "legacy-shop",
+  layout: "custom",
+  buildSystems: [
+    { kind: "ant", files: ["build.xml"] },
+    { kind: "eclipse", files: [".classpath", ".project"] },
+  ],
+  sourceRoots: [
+    { dir: "src", kind: "main", files: 120, packages: 14, topPackage: "com.acme.shop" },
+    { dir: "test", kind: "test", files: 31, packages: 6, topPackage: "com.acme.shop" },
+  ],
+  scatteredFiles: ["src/old/Place.java"],
+  scatteredCount: 1,
+  mainClasses: [{ file: "src/com/acme/shop/App.java", class: "com.acme.shop.App" }],
+  libraries: [
+    { path: "lib/commons-lang-2.6.jar", size: 284220, sha256: "ab", artifact: "commons-lang", version: "2.6" },
+    { path: "lib/activation.jar", size: 55000, sha256: "cd", artifact: "activation", version: null },
+  ],
+  libraryCount: 2,
+  webApps: ["WebContent"],
+  javaLevel: { level: 6, declared: "1.6", source: ".classpath" },
+  counts: { java: 151, jars: 2, xml: 9, properties: 4, other: 30, folders: 22, bytes: 1_000_000 },
+  nonUtf8Files: 0,
+  truncated: false,
+  notes: ["The folder has no pom.xml: the upgrade to Java 25 and Spring Boot 4 needs a Maven project."],
+  ...over,
+});
+
+test("a folder with Java code but no pom.xml shows a map of what is in it", async ({ page }) => {
+  await open(page, { none: true, map: messyMap() });
+  await choose(page);
+  // it is not an error: the folder is read, and nothing offers an upgrade it cannot do
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const map = page.getByTestId("java-map");
+  await expect(map).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Folder map" })).toBeVisible();
+  await expect(map).toContainText("Sources in custom folders");
+  await expect(map).toContainText("Java 1.6");
+  await expect(map).toContainText("151 .java · 2 .jar");
+  await expect(map).toContainText("The Java level comes from .classpath.");
+  await expect(map.getByText("Ant", { exact: true })).toBeVisible();
+  await expect(map.getByText("Eclipse", { exact: true })).toBeVisible();
+  const rows = map.locator(".java-map-table tbody tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("src");
+  await expect(rows.nth(0)).toContainText("code");
+  await expect(rows.nth(0)).toContainText("120");
+  await expect(rows.nth(0)).toContainText("com.acme.shop");
+  await expect(rows.nth(1)).toContainText("tests");
+  await expect(map).toContainText("com.acme.shop.App");
+  await expect(map).toContainText("WebContent");
+  await expect(map).toContainText("The folder has no pom.xml");
+  await map.getByText("Libraries in the folder (2)").click();
+  await expect(map).toContainText("lib/commons-lang-2.6.jar");
+  await expect(map).toContainText("commons-lang 2.6");
+  await map.getByText("Files in a folder that does not match their package (1)").click();
+  await expect(map).toContainText("src/old/Place.java");
+  expect(await calls(page, "java_map")).toEqual([{ path: "/Users/maria/legacy-shop", lang: "en" }]);
+  await expect(page.getByRole("button", { name: "Plan the upgrade" })).toHaveCount(0);
+});
+
+test("a Maven project is not mapped, and a Gradle one shows its notice and the map", async ({ page }) => {
+  await open(page);
+  await choose(page);
+  await expect(page.locator(".expo-projects")).toContainText("legacy-shop");
+  expect(await calls(page, "java_map")).toEqual([]);
+  await expect(page.getByTestId("java-map")).toHaveCount(0);
+
+  await page.reload();
+  await open(page, {
+    project: {
+      buildTool: "gradle",
+      upgradeAvailable: false,
+      upgradeSupported: false,
+      unsupportedReason: "Gradle projects are not supported yet: the upgrade uses Maven.",
+      jdkApis: [],
+      springBoot: null,
+      javaDeclared: null,
+      javaLevel: null,
+    },
+    map: messyMap({ layout: "standard", buildSystems: [{ kind: "gradle", files: ["build.gradle"] }], notes: [] }),
+  });
+  await choose(page);
+  await expect(page.locator(".expo-projects")).toContainText("Gradle projects are not supported yet");
+  await expect(page.getByTestId("java-map")).toContainText("Maven-style folders, no pom.xml");
+  await expect(page.getByTestId("java-map")).toContainText("Gradle");
+});
+
+test("a folder with no Java code at all is still reported as not a Java project", async ({ page }) => {
+  await open(page, { none: true, map: messyMap({ layout: "none", counts: { java: 0, jars: 0, xml: 0, properties: 0, other: 3, folders: 1, bytes: 10 } }) });
+  await choose(page);
+  await expect(page.getByRole("alert")).toContainText("Choose a folder to see the project");
+  await expect(page.getByTestId("java-map")).toHaveCount(0);
 });
 
 test("a folder that is not a Java project is reported", async ({ page }) => {
