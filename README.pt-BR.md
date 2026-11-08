@@ -18,8 +18,9 @@ Depois, mantenha seus projetos em dia: atualize projetos **Java (Maven)** antigo
 ![Rust](https://img.shields.io/badge/Rust-core-CE422B?logo=rust&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 [![PRs bem-vindos](https://img.shields.io/badge/PRs-bem--vindos-7bc6a8)](CONTRIBUTING.pt-BR.md)
+[![Discord](https://img.shields.io/badge/Discord-entre%20na%20comunidade-5865F2?logo=discord&logoColor=white)](https://discord.gg/AqKSFaQ8g3)
 
-[**Baixar**](#-baixar) · [**Passo a passo**](#-passo-a-passo) · [**CLI**](#-linha-de-comando) · [**Contribuir**](#-contribuir)
+[**Baixar**](#-baixar) · [**Passo a passo**](#-passo-a-passo) · [**CLI**](#-linha-de-comando) · [**Contribuir**](#-contribuir) · [**Discord**](https://discord.gg/AqKSFaQ8g3)
 
 <br/>
 
@@ -79,10 +80,10 @@ Pegue o instalador da sua plataforma na [página de releases](https://github.com
 
 | Sistema | Arquivo | Como instalar |
 |---|---|---|
-| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.6.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
-| 🪟 **Windows** (64 bits) | [`AutoDock_0.6.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_x64-setup.exe) | Execute o instalador. |
-| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.6.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_amd64.deb) | `sudo apt install ./AutoDock_0.6.0_amd64.deb` |
-| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.6.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.6.0/AutoDock_0.6.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
+| 🍎 **macOS** (Intel e Apple Silicon) | [`AutoDock_0.7.0_universal.dmg`](https://github.com/joaopanucci/autodock/releases/download/v0.7.0/AutoDock_0.7.0_universal.dmg) | Abra o DMG e arraste para *Aplicativos*. |
+| 🪟 **Windows** (64 bits) | [`AutoDock_0.7.0_x64-setup.exe`](https://github.com/joaopanucci/autodock/releases/download/v0.7.0/AutoDock_0.7.0_x64-setup.exe) | Execute o instalador. |
+| 🐧 **Linux** (Debian/Ubuntu) | [`AutoDock_0.7.0_amd64.deb`](https://github.com/joaopanucci/autodock/releases/download/v0.7.0/AutoDock_0.7.0_amd64.deb) | `sudo apt install ./AutoDock_0.7.0_amd64.deb` |
+| 🐧 **Linux** (qualquer distro) | [`AutoDock_0.7.0_amd64.AppImage`](https://github.com/joaopanucci/autodock/releases/download/v0.7.0/AutoDock_0.7.0_amd64.AppImage) | `chmod +x AutoDock_*.AppImage && ./AutoDock_*.AppImage` |
 
 > **Requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução para criar e rodar os ambientes.
 
@@ -100,7 +101,7 @@ curl -fsSL https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/i
 irm https://raw.githubusercontent.com/joaopanucci/autodock/main/scripts/install.ps1 | iex
 ```
 
-Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.6.0`.
+Como o download não passa pelo navegador, o arquivo **não recebe a marca de "baixado da internet"** que dispara o aviso do macOS (Gatekeeper) e do Windows (SmartScreen). Isso não desliga nenhuma proteção do sistema, e o app continua não assinado. Os scripts são curtos e abertos: [`install.sh`](scripts/install.sh) e [`install.ps1`](scripts/install.ps1). Para fixar uma versão: `AUTODOCK_VERSION=v0.7.0`.
 
 <details>
 <summary><b>⚠️ Baixou pelo navegador e apareceu "desenvolvedor não identificado"? É esperado</b></summary>
@@ -116,7 +117,7 @@ O AutoDock é um projeto open source e os instaladores **ainda não são assinad
 Conferir a integridade do arquivo:
 
 ```bash
-shasum -a 256 AutoDock_0.6.0_universal.dmg   # compare com o SHA256SUMS.txt
+shasum -a 256 AutoDock_0.7.0_universal.dmg   # compare com o SHA256SUMS.txt
 ```
 
 </details>
@@ -194,6 +195,17 @@ Escolha um projeto Maven e o AutoDock mostra o nível do Java e a versão do Spr
 <tr>
 <td width="50%"><b>O plano</b><br/>Os passos em ordem, as dependências que ele adiciona e onde a cópia vai ficar. Nada roda antes da sua confirmação.<br/><img src="docs/screenshots/14-java-plano.png" alt="Plano do upgrade de Java: Java 7 para 25 e Spring Boot 1.5 para 4.0" /></td>
 <td width="50%"><b>O relatório</b><br/>Cada passo compilou, os testes do próprio projeto rodaram na cópia e há um botão para revisar as mudanças no editor.<br/><img src="docs/screenshots/15-java-relatorio.png" alt="Relatório do upgrade de Java" /></td>
+</tr>
+</table>
+
+#### Uma pasta sem `pom.xml`
+
+Um projeto antigo em Ant ou Eclipse não tem `pom.xml`, então o AutoDock primeiro **mapeia** a pasta e depois, se você quiser, **transforma num projeto Maven numa cópia** (`autodock java map` e `autodock java convert` fazem o mesmo pelo terminal). A cópia é um projeto Maven normal: o upgrade acima assume daí (um pequeno projeto Ant foi do Java 8 ao Java 25, com o teste passando, em 24 segundos, com o Docker já tendo a imagem do Maven e as dependências em cache).
+
+<table>
+<tr>
+<td width="50%"><b>O mapa</b><br/>Arquivos de build, onde os fontes realmente estão (pelo <code>package</code> de cada um), bibliotecas, classes com main e o nível do Java que os arquivos do projeto declaram.<br/><img src="docs/screenshots/28-java-mapa.png" alt="Mapa de uma pasta sem pom.xml" /></td>
+<td width="50%"><b>A cópia Maven</b><br/>Coordenadas que você pode mudar, as dependências achadas pelos nomes dos jars, o <code>pom.xml</code> como será gravado e uma confirmação.<br/><img src="docs/screenshots/29-java-conversao.png" alt="Plano da cópia Maven" /></td>
 </tr>
 </table>
 
@@ -346,6 +358,7 @@ npm --prefix apps/desktop run tauri dev
 
 O AutoDock é feito de forma aberta e toda ajuda conta:
 
+- 💬 **Entre na [comunidade no Discord](https://discord.gg/AqKSFaQ8g3)** para saber das novidades primeiro, tirar dúvidas e conversar com quem usa o AutoDock.
 - ⭐ **Dê uma estrela** para ajudar outras pessoas a encontrarem o projeto.
 - 🐛 **Relate problemas** e 💡 **sugira ideias** nas [issues](https://github.com/joaopanucci/autodock/issues).
 - 🔧 **Envie um pull request.** Leia o [CONTRIBUTING](CONTRIBUTING.pt-BR.md) e o [guia de desenvolvimento](docs/DEVELOPMENT.pt-BR.md).

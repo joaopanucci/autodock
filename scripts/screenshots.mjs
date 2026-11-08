@@ -8,6 +8,9 @@
 //   AUTODOCK_OUT=<pasta>       onde gravar (padrão docs/screenshots[/dark][/en])
 //   AUTODOCK_VIEWPORT=1440x810 e AUTODOCK_SCALE=1.3333  tamanho da janela e escala (padrão 1360x860 e 2;
 //                              o exemplo dá imagens de 1920x1080, boas para vídeo)
+//   AUTODOCK_MESSY_DIR=<pasta> liga as telas 28 e 29 (mapa de uma pasta Java sem pom.xml e plano da cópia Maven):
+//                              uma pasta Ant/Eclipse com .java e .jar; o script roda `autodock java map` e
+//                              `autodock java convert` nela (não precisa de Docker)
 //   AUTODOCK_JAVA_DIR=<pasta>  liga as telas de Java, do editor e do terminal (14 a 19). A pasta tem
 //                              in/<projeto> (um projeto Maven legado), out/<projeto>-java25 (a cópia
 //                              atualizada) e os JSON inspect.json, plan.json e report.json de
@@ -210,6 +213,25 @@ if (process.env.AUTODOCK_JAVA_DIR) {
   };
 }
 
+// A folder without a pom.xml: the real map and the real plan of the Maven copy, under a made-up folder.
+let messy = null;
+if (process.env.AUTODOCK_MESSY_DIR) {
+  const dir = path.resolve(process.env.AUTODOCK_MESSY_DIR);
+  const name = path.basename(dir);
+  const shown = "/Users/maria/projetos";
+  const slashes = (text) => text.replaceAll("\\", "/").replace("//?/", "");
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const swaps = [
+    [dir, `${shown}/${name}`],
+    [path.dirname(dir), shown],
+  ].flatMap(([from, to]) => [[slashes(path.resolve(from)), to], [slashes(fs.realpathSync.native(from)), to]]);
+  const hide = (text) => swaps.reduce((acc, [from, to]) => acc.replace(new RegExp(escape(from), "gi"), to), slashes(text));
+  const deep = (value) =>
+    typeof value === "string" ? hide(value) : Array.isArray(value) ? value.map(deep) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, deep(v)])) : value;
+  const asJson = (...args) => deep(JSON.parse(execFileSync(cli, ["--lang", lang, "java", ...args, "--json"], { env: process.env }).toString().replace(/^\uFEFF/, "")));
+  messy = { path: `${shown}/${name}`, map: asJson("map", dir), plan: asJson("convert", dir) };
+}
+
 const browser = await chromium.launch({ channel: process.env.AUTODOCK_BROWSER_CHANNEL ?? (process.platform === "win32" ? "msedge" : "chrome") });
 const context = await browser.newContext({ viewport: { width: viewWidth, height: viewHeight }, deviceScaleFactor: viewScale, colorScheme: theme, locale: lang === "en" ? "en-US" : "pt-BR" });
 const page = await context.newPage();
@@ -217,7 +239,7 @@ await page.addInitScript(({ theme, lang }) => {
   localStorage.setItem("autodock.theme", theme);
   localStorage.setItem("autodock.language", lang);
 }, { theme, lang });
-await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes, expo, tour }) => {
+await page.addInitScript(({ scan, doctor, containers, files, project, ports, previewNotes, expo, tour, messy }) => {
   const callbacks = {};
   let nextCallback = 1;
   let ticks = 0;
@@ -260,7 +282,9 @@ await page.addInitScript(({ scan, doctor, containers, files, project, ports, pre
             stdout: args.operation === "containers" ? lines.map((line) => JSON.stringify(line)).join("\n") : "Docker version 27.3.1, build ce12230", stderr: "", detail: "", truncated: false, durationMs: 84,
           };
         }
-        case "java_inspect": return tour.java.project;
+        case "java_inspect": return messy && args.path === messy.path ? null : tour?.java.project ?? null;
+        case "java_map": return messy.map;
+        case "java_convert_plan": return messy.plan;
         case "java_upgrade_plan": return tour.java.plan;
         case "java_upgrade_run": return tour.java.report;
         case "editor_open_root": return { path: args.path, name: args.path.split("/").pop() };
@@ -336,7 +360,7 @@ await page.addInitScript(({ scan, doctor, containers, files, project, ports, pre
       }
     },
   };
-}, { scan, doctor, containers, files, project, ports, previewNotes, expo, tour });
+}, { scan, doctor, containers, files, project, ports, previewNotes, expo, tour, messy });
 
 const shot = async (name) => {
   await page.waitForTimeout(250);
@@ -495,6 +519,20 @@ if (tour) {
   await page.evaluate((text) => window.__terminal({ event: "data", data: btoa(text) }), lines.join("\r\n"));
   await page.waitForTimeout(600);
   await shot("19-editor-terminal");
+}
+
+// Uma pasta sem pom.xml: o mapa e o plano da cópia Maven
+if (messy) {
+  await page.evaluate((folder) => { window.__dialogPath = folder; }, messy.path);
+  await nav(T("nav.java"));
+  await page.getByRole("button", { name: T("java.pick.button") }).first().click();
+  await page.getByTestId("java-map").waitFor();
+  await page.getByTestId("java-map").evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await shot("28-java-mapa");
+  await page.getByRole("button", { name: T("java.convert.plan") }).click();
+  await page.getByText(T("java.convert.coordinates")).waitFor();
+  await page.getByTestId("java-convert").evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await shot("29-java-conversao");
 }
 
 await browser.close();

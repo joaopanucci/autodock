@@ -6,6 +6,7 @@ Thanks for wanting to help! AutoDock is open source ([Apache-2.0](LICENSE)) and 
 
 ## Ways to help
 
+- 💬 **Join the [Discord community](https://discord.gg/AqKSFaQ8g3)** to hear about new releases and talk with other people using AutoDock.
 - 🐛 **Report a problem** or 💡 **suggest an idea** by opening an [issue](https://github.com/joaopanucci/autodock/issues/new/choose).
 - 🧪 **Test on Windows and Linux** and tell us how it went (the complete app was mostly tested on macOS).
 - 🔧 **Send a pull request** (workflow below).

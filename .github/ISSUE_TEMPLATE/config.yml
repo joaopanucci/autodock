@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 💬 Chat with the community on Discord
+    url: https://discord.gg/AqKSFaQ8g3
+    about: Questions, ideas and news about new releases. For bugs and feature requests, open an issue here.
   - name: 🔒 Report a vulnerability
     url: https://github.com/joaopanucci/autodock/security/advisories/new
     about: Do not open a public issue for security flaws. Use private reporting.
