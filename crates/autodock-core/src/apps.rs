@@ -416,6 +416,30 @@ fn classify(dir: &Path, rel: &str, project_name: &str, report: &mut AppsReport) 
             ),
         );
     }
+
+    // A package.json next to a backend (Laravel, Rails, Django, Spring...) is that
+    // project's asset tooling (Vite, webpack). Two apps in one folder would share
+    // one Dockerfile, so the second would run with the wrong image and fall over.
+    let backend_here = report
+        .apps
+        .iter()
+        .any(|a| a.path == rel && a.stack != Stack::Nodejs);
+    if backend_here {
+        let before = report.apps.len();
+        report
+            .apps
+            .retain(|a| !(a.path == rel && a.stack == Stack::Nodejs));
+        if report.apps.len() != before {
+            skip(
+                report,
+                rel,
+                tr!(
+                    "package.json do front-end (Vite, webpack) de um projeto que já tem backend nesta pasta: roda junto com ele, não como outro app",
+                    "package.json of the front-end tooling (Vite, webpack) of a project that already has a backend in this folder: it runs with it, not as another app"
+                ),
+            );
+        }
+    }
 }
 
 fn node_app(
@@ -713,6 +737,38 @@ mod tests {
         let mobile = app(&report, "mobile");
         assert_eq!((mobile.role, mobile.selected), (AppRole::Mobile, false));
         assert!(mobile.note.is_some());
+    }
+
+    #[test]
+    fn a_backend_with_its_own_vite_tooling_is_one_app_not_two() {
+        let dir = tree(&[
+            (
+                "composer.json",
+                r#"{"require":{"laravel/framework":"^13"}}"#,
+            ),
+            (
+                "package.json",
+                r#"{"scripts":{"dev":"vite","build":"vite build"},"devDependencies":{"vite":"^7"}}"#,
+            ),
+            ("api/package.json", r#"{"scripts":{"start":"node ."}}"#),
+        ]);
+        let report = detect(&dir);
+        let root: Vec<_> = report
+            .apps
+            .iter()
+            .filter(|a| a.path.is_empty() || a.path == ".")
+            .collect();
+        assert_eq!(root.len(), 1, "{:?}", report.apps);
+        assert_eq!(root[0].stack, Stack::Laravel);
+        // A real second app in another folder is still found.
+        assert!(report
+            .apps
+            .iter()
+            .any(|a| a.path == "api" && a.stack == Stack::Nodejs));
+        assert!(report
+            .skipped
+            .iter()
+            .any(|s| s.reason.contains("front-end") || s.reason.contains("package.json of")));
     }
 
     #[test]
